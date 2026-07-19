@@ -90,6 +90,7 @@ type CouponFormValues = { code: string; kind: string; value: number; minimumYuan
 
 function money(fen: number): string { return `¥ ${(fen / 100).toFixed(2)}`; }
 function date(value?: string): string { return value ? new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : '—'; }
+function jsonOptions(headers: Record<string, string> = {}) { return { headers: { 'Content-Type': 'application/json', ...headers } }; }
 function statusColor(status: string): string {
   if (['active', 'paid', 'completed', 'confirmed', 'settled', 'open', 'published'].includes(status)) return 'success';
   if (['pending', 'provisioning', 'retry'].includes(status)) return 'processing';
@@ -230,7 +231,7 @@ export default function CommercialPage() {
   const saveCustomer = async () => {
     if (!editingCustomer) return;
     const values = await customerForm.validateFields();
-    const result = await HttpUtil.patch(`/panel/api/commercial/customers/${editingCustomer.id}`, { status: values.status, balanceFen: Math.round(values.balanceYuan * 100) });
+    const result = await HttpUtil.patch(`/panel/api/commercial/customers/${editingCustomer.id}`, { status: values.status, balanceFen: Math.round(values.balanceYuan * 100) }, jsonOptions());
     if (result.success) { messageApi.success('客户资料已更新'); setEditingCustomer(null); loadTab('customers'); }
   };
 
@@ -240,7 +241,7 @@ export default function CommercialPage() {
   };
   const saveCreatedCustomer = async () => {
     const values = await customerCreateForm.validateFields();
-    const result = await HttpUtil.post<Customer>('/panel/api/commercial/customers', values);
+    const result = await HttpUtil.post<Customer>('/panel/api/commercial/customers', values, jsonOptions());
     if (result.success) { messageApi.success('客户已创建，可立即登录前台'); setCreatingCustomer(false); loadTab('customers'); }
   };
 
@@ -272,7 +273,7 @@ export default function CommercialPage() {
       trafficQuota: Math.round(values.trafficGB * GB),
       deviceLimit: values.deviceLimit,
       resetTraffic: values.resetTraffic,
-    }, { headers: { 'X-Admin-Password': values.password, 'X-Admin-2FA': values.twoFactorCode || '' } });
+    }, jsonOptions({ 'X-Admin-Password': values.password, 'X-Admin-2FA': values.twoFactorCode || '' }));
     if (result.success) { messageApi.success(subscriptionCustomer.subscription ? '客户订阅已更新' : '客户订阅已手动开通'); setSubscriptionCustomer(null); loadTab('customers'); }
   };
 
@@ -293,7 +294,7 @@ export default function CommercialPage() {
     });
   };
   const deleteSubscription = (row: Customer) => confirmSensitiveDelete('删除客户订阅', `将撤销 ${row.email} 的订阅链接，并从所有 3X-UI 入站中删除对应客户端。客户账号与订单仍保留。`, async (headers) => {
-    const result = await HttpUtil.delete(`/panel/api/commercial/customers/${row.id}/subscription`, undefined, { headers });
+    const result = await HttpUtil.delete(`/panel/api/commercial/customers/${row.id}/subscription`, undefined, jsonOptions(headers));
     if (!result.success) return false;
     messageApi.success('客户订阅已彻底删除');
     setSubscriptionCustomer(null);
@@ -311,7 +312,7 @@ export default function CommercialPage() {
       return;
     }
     return confirmSensitiveDelete(uniqueIDs.length > 1 ? `批量删除 ${uniqueIDs.length} 个客户` : '永久删除客户', '此操作会清理账号、会话、验证码、订阅、3X-UI 客户端、订单、付款关联、工单和营销关联，且无法恢复。', async (headers) => {
-      const result = await HttpUtil.delete<{ deleted: string[]; failed: Record<string, string> }>('/panel/api/commercial/customers', { ids: uniqueIDs }, { headers });
+      const result = await HttpUtil.delete<{ deleted: string[]; failed: Record<string, string> }>('/panel/api/commercial/customers', { ids: uniqueIDs }, jsonOptions(headers));
       if (!result.success || !result.obj) return false;
       const failedIDs = Object.keys(result.obj.failed || {});
       const failedCount = failedIDs.length;
@@ -337,18 +338,18 @@ export default function CommercialPage() {
     if (desiredActive && inboundIDs.length === 0) { messageApi.error('套餐上架前必须绑定至少一个有效的 3X-UI 入站'); return; }
     if (desiredActive && !planPrices.some((price) => price.active)) { messageApi.error('套餐上架前必须启用至少一个价格'); return; }
     const planPayload = { ...values, id: editingPlan?.plan.id || '', trafficBytes: Math.round(values.trafficGB * GB), provisionInboundIds: [...new Set(inboundIDs)] };
-    const result = await HttpUtil.post<Plan>('/panel/api/commercial/plans', planPayload);
+    const result = await HttpUtil.post<Plan>('/panel/api/commercial/plans', planPayload, jsonOptions());
     if (!result.success || !result.obj) return;
     for (const removed of editingPlan?.prices.filter((price) => !planPrices.some((current) => current.id === price.id)) || []) {
-      const disabled = await HttpUtil.post('/panel/api/commercial/plan-prices', { ...removed, planId: result.obj.id, active: false });
+      const disabled = await HttpUtil.post('/panel/api/commercial/plan-prices', { ...removed, planId: result.obj.id, active: false }, jsonOptions());
       if (!disabled.success) return;
     }
     for (const price of planPrices) {
-      const saved = await HttpUtil.post('/panel/api/commercial/plan-prices', { ...price, planId: result.obj.id });
+      const saved = await HttpUtil.post('/panel/api/commercial/plan-prices', { ...price, planId: result.obj.id }, jsonOptions());
       if (!saved.success) return;
     }
     if (desiredActive) {
-      const published = await HttpUtil.post<Plan>('/panel/api/commercial/plans', { ...planPayload, id: result.obj.id, active: true });
+      const published = await HttpUtil.post<Plan>('/panel/api/commercial/plans', { ...planPayload, id: result.obj.id, active: true }, jsonOptions());
       if (!published.success) return;
     }
     messageApi.success(editingPlan ? '套餐与价格已更新' : '套餐已创建');
@@ -372,7 +373,7 @@ export default function CommercialPage() {
     if (!contentEditor) return;
     const values = await contentForm.validateFields();
     const endpoint = contentEditor.kind === 'notice' ? 'notices' : 'articles';
-    const result = await HttpUtil.post(`/panel/api/commercial/${endpoint}`, { ...values, id: contentEditor.row?.id || '', titleI18n: JSON.stringify(values.titles || {}), contentI18n: JSON.stringify(values.contents || {}) });
+    const result = await HttpUtil.post(`/panel/api/commercial/${endpoint}`, { ...values, id: contentEditor.row?.id || '', titleI18n: JSON.stringify(values.titles || {}), contentI18n: JSON.stringify(values.contents || {}) }, jsonOptions());
     if (result.success) { messageApi.success(contentEditor.row ? '内容已更新' : '内容已创建'); setContentEditor(null); loadTab('content'); }
   };
 
@@ -382,7 +383,7 @@ export default function CommercialPage() {
   };
   const saveApplication = async () => {
     const values = await applicationForm.validateFields();
-    const result = await HttpUtil.post('/panel/api/commercial/applications', { ...values, id: editingApplication?.id || '' });
+    const result = await HttpUtil.post('/panel/api/commercial/applications', { ...values, id: editingApplication?.id || '' }, jsonOptions());
     if (result.success) { messageApi.success(editingApplication ? '客户端入口已更新' : '客户端入口已创建'); setEditingApplication(undefined); loadTab('content'); }
   };
 
@@ -395,7 +396,7 @@ export default function CommercialPage() {
   const replyTicket = async () => {
     if (!selectedTicket) return;
     const values = await replyForm.validateFields();
-    const result = await HttpUtil.post(`/panel/api/commercial/tickets/${selectedTicket.id}/reply`, values);
+    const result = await HttpUtil.post(`/panel/api/commercial/tickets/${selectedTicket.id}/reply`, values, jsonOptions());
     if (result.success) { messageApi.success('回复已发送'); replyForm.resetFields(['body']); await openTicket({ ...selectedTicket, status: values.status }); loadTab('tickets'); }
   };
 
@@ -405,14 +406,14 @@ export default function CommercialPage() {
   };
   const saveCoupon = async () => {
     const values = await couponForm.validateFields();
-    const result = await HttpUtil.post('/panel/api/commercial/coupons', { ...values, id: editingCoupon?.id || '', minimumFen: Math.round(values.minimumYuan * 100), startsAt: values.startsAt || null, expiresAt: values.expiresAt || null, redeemedCount: editingCoupon?.redeemedCount || 0 });
+    const result = await HttpUtil.post('/panel/api/commercial/coupons', { ...values, id: editingCoupon?.id || '', minimumFen: Math.round(values.minimumYuan * 100), startsAt: values.startsAt || null, expiresAt: values.expiresAt || null, redeemedCount: editingCoupon?.redeemedCount || 0 }, jsonOptions());
     if (result.success) { messageApi.success(editingCoupon ? '优惠券已更新' : '优惠券已创建'); setEditingCoupon(undefined); loadTab('marketing'); }
   };
 
   const retryOrder = async (orderID: string) => { const result = await HttpUtil.post(`/panel/api/commercial/orders/${orderID}/retry`); if (result.success) { messageApi.success('开通任务已重新排队'); loadTab('orders'); } };
   const savePaymentSettings = async (values: PaymentSettingsFormValues) => {
     const { password, twoFactorCode, ...payload } = values;
-    const result = await HttpUtil.put('/panel/api/commercial/payment-settings', payload, { headers: { 'X-Admin-Password': password, 'X-Admin-2FA': twoFactorCode || '' } });
+    const result = await HttpUtil.put('/panel/api/commercial/payment-settings', payload, jsonOptions({ 'X-Admin-Password': password, 'X-Admin-2FA': twoFactorCode || '' }));
     if (result.success) {
       messageApi.success('支付设置已保存');
       await loadTab('settings');
@@ -424,14 +425,14 @@ export default function CommercialPage() {
   const createGiftCards = () => {
     let password = ''; let twoFactorCode = ''; let valueFen = 1000; let count = 1;
     Modal.confirm({ title: '发行礼品卡', content: <Space orientation="vertical" style={{ width: '100%' }}><Space.Compact block><Button disabled>¥</Button><InputNumber min={1} defaultValue={10} onChange={(value) => { valueFen = Math.round(Number(value || 0) * 100); }} style={{ width: '100%' }} /></Space.Compact><Space.Compact block><Button disabled>数量</Button><InputNumber min={1} max={100} defaultValue={1} onChange={(value) => { count = Number(value || 1); }} style={{ width: '100%' }} /></Space.Compact><Input.Password placeholder="管理员密码" onChange={(event) => { password = event.target.value; }} /><Input placeholder="2FA 验证码" onChange={(event) => { twoFactorCode = event.target.value; }} /></Space>, okText: '发行', onOk: async () => {
-      const result = await HttpUtil.post<{ codes: string[] }>('/panel/api/commercial/gift-cards', { valueFen, count, expiresAt: '' }, { headers: { 'X-Admin-Password': password, 'X-Admin-2FA': twoFactorCode } });
+      const result = await HttpUtil.post<{ codes: string[] }>('/panel/api/commercial/gift-cards', { valueFen, count, expiresAt: '' }, jsonOptions({ 'X-Admin-Password': password, 'X-Admin-2FA': twoFactorCode }));
       if (result.success && result.obj) { Modal.info({ title: '请立即复制兑换码', content: <Paragraph copyable code>{result.obj.codes.join('\n')}</Paragraph>, width: 620 }); loadTab('marketing'); }
     } });
   };
   const settleCommission = (row: Commission) => {
     let password = ''; let twoFactorCode = '';
     Modal.confirm({ title: '结算邀请佣金', content: <Space orientation="vertical" style={{ width: '100%' }}><Text>将 {money(row.amountFen)} 计入邀请人余额。</Text><Input.Password placeholder="管理员密码" onChange={(event) => { password = event.target.value; }} /><Input placeholder="2FA 验证码" onChange={(event) => { twoFactorCode = event.target.value; }} /></Space>, okText: '确认结算', onOk: async () => {
-      const result = await HttpUtil.post(`/panel/api/commercial/commissions/${row.id}/settle`, {}, { headers: { 'X-Admin-Password': password, 'X-Admin-2FA': twoFactorCode } });
+      const result = await HttpUtil.post(`/panel/api/commercial/commissions/${row.id}/settle`, {}, jsonOptions({ 'X-Admin-Password': password, 'X-Admin-2FA': twoFactorCode }));
       if (result.success) { messageApi.success('佣金已结算'); loadTab('marketing'); }
     } });
   };
@@ -440,7 +441,7 @@ export default function CommercialPage() {
     let role = row.role; let password = ''; let twoFactorCode = '';
     const roleOptions = [{ value: 'owner', label: '所有者' }, { value: 'administrator', label: '管理员' }, { value: 'finance', label: '财务' }, { value: 'support', label: '客服' }, { value: 'node_operator', label: '节点运维' }, { value: 'read_only_auditor', label: '只读审计' }];
     Modal.confirm({ title: `调整 ${row.username} 的角色`, content: <Space orientation="vertical" style={{ width: '100%' }}><Select defaultValue={row.role} options={roleOptions} onChange={(value) => { role = value; }} style={{ width: '100%' }} /><Input.Password placeholder="管理员密码" onChange={(event) => { password = event.target.value; }} /><Input placeholder="2FA 验证码" onChange={(event) => { twoFactorCode = event.target.value; }} /></Space>, okText: '保存角色', onOk: async () => {
-      const result = await HttpUtil.put(`/panel/api/commercial/roles/${row.userId}`, { role }, { headers: { 'X-Admin-Password': password, 'X-Admin-2FA': twoFactorCode } });
+      const result = await HttpUtil.put(`/panel/api/commercial/roles/${row.userId}`, { role }, jsonOptions({ 'X-Admin-Password': password, 'X-Admin-2FA': twoFactorCode }));
       if (result.success) { messageApi.success('管理员角色已更新'); loadTab('roles'); }
     } });
   };

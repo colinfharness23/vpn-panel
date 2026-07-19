@@ -91,6 +91,16 @@ func TestValidatePassword(t *testing.T) {
 	}
 }
 
+func TestAdminGrantIDFitsEntitlementOrderColumn(t *testing.T) {
+	grantID := newAdminGrantID()
+	if len(grantID) > 36 {
+		t.Fatalf("administrator grant ID length=%d exceeds entitlement order column", len(grantID))
+	}
+	if _, err := uuid.Parse(grantID); err != nil {
+		t.Fatalf("administrator grant ID is not a UUID: %v", err)
+	}
+}
+
 func TestChangePasswordRotatesCustomerSessions(t *testing.T) {
 	initCommercialTestDB(t)
 	db := database.GetDB()

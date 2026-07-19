@@ -92,6 +92,7 @@ NOVA_DOMAIN="${NOVA_DOMAIN:-$(saved_value NOVA_DOMAIN)}"
 NOVA_ACME_EMAIL="${NOVA_ACME_EMAIL:-$(saved_value NOVA_ACME_EMAIL)}"
 NOVA_ADMIN_PATH="${NOVA_ADMIN_PATH:-$(saved_value NOVA_ADMIN_PATH)}"
 NOVA_PANEL_PORT="${NOVA_PANEL_PORT:-$(saved_value NOVA_PANEL_PORT)}"
+NOVA_SUB_PORT="${NOVA_SUB_PORT:-$(saved_value NOVA_SUB_PORT)}"
 NOVA_DB_NAME="${NOVA_DB_NAME:-$(saved_value NOVA_DB_NAME)}"
 NOVA_DB_USER="${NOVA_DB_USER:-$(saved_value NOVA_DB_USER)}"
 NOVA_DB_PASSWORD="${NOVA_DB_PASSWORD:-$(saved_value NOVA_DB_PASSWORD)}"
@@ -133,6 +134,11 @@ fi
 [[ -n "$NOVA_PANEL_PORT" ]] || NOVA_PANEL_PORT="$(shuf -i 20000-59999 -n1)"
 [[ $NOVA_PANEL_PORT =~ ^[0-9]+$ ]] && ((NOVA_PANEL_PORT >= 1024 && NOVA_PANEL_PORT <= 65535)) ||
   die "内部面板端口必须位于 1024-65535。"
+
+[[ -n "$NOVA_SUB_PORT" ]] || NOVA_SUB_PORT=2096
+[[ $NOVA_SUB_PORT =~ ^[0-9]+$ ]] && ((NOVA_SUB_PORT >= 1024 && NOVA_SUB_PORT <= 65535)) ||
+  die "订阅服务端口必须位于 1024-65535。"
+[[ $NOVA_SUB_PORT != "$NOVA_PANEL_PORT" ]] || die "订阅服务端口不能与面板端口相同。"
 
 export DEBIAN_FRONTEND=noninteractive
 log "安装 Ubuntu 运行依赖……"
@@ -228,7 +234,11 @@ XUI_COMMERCIAL_DEMO=false
 XUI_COMMERCIAL_ENV=production
 GIN_MODE=release
 EOF
-chmod 600 /etc/default/x-ui
+# systemd reads the environment file before dropping privileges, while the
+# application also loads it at startup for the same configuration values.
+# Keep it private from every other account but readable by the service group.
+chown root:"$SERVICE_USER" /etc/default/x-ui
+chmod 640 /etc/default/x-ui
 
 cat >/etc/systemd/system/x-ui.service <<'EOF'
 [Unit]
@@ -274,12 +284,78 @@ else
 fi
 systemctl restart x-ui
 
+wait_http "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/guest/bootstrap" "$NOVA_DOMAIN" ||
+  die "面板未能在初始化订阅服务前通过健康检查。"
+if (( first_install == 1 )); then
+  PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -v ON_ERROR_STOP=1 <<SQL
+BEGIN;
+DELETE FROM settings WHERE key IN (
+  'subEnable', 'subJsonEnable', 'subClashEnable', 'subListen', 'subPort',
+  'subPath', 'subJsonPath', 'subClashPath', 'subDomain',
+  'subURI', 'subJsonURI', 'subClashURI'
+);
+INSERT INTO settings (key, value) VALUES
+  ('subEnable', 'true'),
+  ('subJsonEnable', 'true'),
+  ('subClashEnable', 'true'),
+  ('subListen', '127.0.0.1'),
+  ('subPort', '$NOVA_SUB_PORT'),
+  ('subPath', '/sub/'),
+  ('subJsonPath', '/json/'),
+  ('subClashPath', '/clash/'),
+  ('subDomain', '$NOVA_DOMAIN'),
+  ('subURI', 'https://$NOVA_DOMAIN'),
+  ('subJsonURI', 'https://$NOVA_DOMAIN'),
+  ('subClashURI', 'https://$NOVA_DOMAIN');
+COMMIT;
+SQL
+  systemctl restart x-ui
+  wait_http "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/guest/bootstrap" "$NOVA_DOMAIN" ||
+    die "面板未能在初始化订阅服务后恢复运行。"
+fi
+
 cat >/etc/nginx/sites-available/nova.conf <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name $NOVA_DOMAIN;
     client_max_body_size 16m;
+    location ^~ /sub/ {
+        proxy_pass http://127.0.0.1:$NOVA_SUB_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        add_header X-Nova-Service subscription always;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+    location ^~ /json/ {
+        proxy_pass http://127.0.0.1:$NOVA_SUB_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        add_header X-Nova-Service subscription always;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+    location ^~ /clash/ {
+        proxy_pass http://127.0.0.1:$NOVA_SUB_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        add_header X-Nova-Service subscription always;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
     location / {
         proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
         proxy_http_version 1.1;
@@ -320,6 +396,7 @@ NOVA_DOMAIN=$NOVA_DOMAIN
 NOVA_ACME_EMAIL=$NOVA_ACME_EMAIL
 NOVA_ADMIN_PATH=$NOVA_ADMIN_PATH
 NOVA_PANEL_PORT=$NOVA_PANEL_PORT
+NOVA_SUB_PORT=$NOVA_SUB_PORT
 NOVA_DB_NAME=$NOVA_DB_NAME
 NOVA_DB_USER=$NOVA_DB_USER
 NOVA_DB_PASSWORD=$NOVA_DB_PASSWORD
@@ -364,8 +441,12 @@ if [[ $NOVA_ADMIN_PATH != 123456789012345678 ]]; then
   status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$NOVA_DOMAIN/123456789012345678/")"
   [[ $status == 404 ]] || die "错误管理员路径未返回 404（HTTP $status）。"
 fi
-status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 "https://$NOVA_DOMAIN/sub/health-probe")"
+status="$(curl -sS -D "$tmp_dir/sub-health.headers" -o /dev/null -w '%{http_code}' --max-time 10 "https://$NOVA_DOMAIN/sub/health-probe")"
 [[ $status != 000 && $status -lt 500 ]] || die "订阅服务健康检查失败（HTTP $status）。"
+tr -d '\r' <"$tmp_dir/sub-health.headers" | grep -qi '^X-Nova-Service: subscription$' ||
+  die "订阅路径没有进入独立订阅服务。"
+ss -ltn | grep -Eq "127\\.0\\.0\\.1:$NOVA_SUB_PORT[[:space:]]" ||
+  die "订阅服务没有仅监听本机回环地址。"
 systemctl is-enabled --quiet certbot.timer
 
 cat >/root/nova-install-result.txt <<EOF

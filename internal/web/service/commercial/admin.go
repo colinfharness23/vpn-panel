@@ -276,7 +276,7 @@ func (s *AdminService) UpsertSubscription(customerID string, request entity.Comm
 	}
 	creating := errors.Is(lookupErr, gorm.ErrRecordNotFound)
 	if creating {
-		grantID := "admin-" + uuid.NewString()
+		grantID := newAdminGrantID()
 		entitlement = model.SubscriptionEntitlement{ID: uuid.NewString(), CustomerID: customerID, PlanID: plan.ID, OrderID: grantID, InternalClientID: internalClientID(customerID, grantID), SubscriptionID: uuid.NewString(), Status: "active", StartsAt: time.Now().UTC()}
 	}
 	entitlement.PlanID = plan.ID
@@ -312,6 +312,14 @@ func (s *AdminService) UpsertSubscription(customerID string, request entity.Comm
 		return nil, err
 	}
 	return &AdminSubscriptionSummary{Entitlement: entitlement, Plan: plan}, nil
+}
+
+// newAdminGrantID must fit SubscriptionEntitlement.OrderID (varchar(36)).
+// A UUID already distinguishes an administrator-issued entitlement from an
+// order-backed entitlement without adding a prefix that would overflow the
+// database column in PostgreSQL.
+func newAdminGrantID() string {
+	return uuid.NewString()
 }
 
 func (s *AdminService) applyAdminSubscriptionClient(entitlement *model.SubscriptionEntitlement, plan *model.Plan, inboundIDs []int, resetTraffic bool) error {

@@ -24,8 +24,11 @@ import './LoginPage.css';
 
 type LoginForm = LoginFormValues;
 type GuestBootstrap = { site?: Record<string, string> };
+type GuestBootstrapEnvelope = { success?: boolean; obj?: GuestBootstrap };
 
 const basePath = window.X_UI_BASE_PATH || '';
+const rawPublicBasePath = window.X_UI_PUBLIC_BASE_PATH || '/';
+const publicBasePath = rawPublicBasePath.endsWith('/') ? rawPublicBasePath : `${rawPublicBasePath}/`;
 const loginTheme = {
   token: {
     colorPrimary: '#4f95f5',
@@ -56,11 +59,13 @@ export default function LoginPage() {
     let cancelled = false;
     Promise.all([
       HttpUtil.post<boolean>('/getTwoFactorEnable', undefined, { silent: true }),
-      HttpUtil.get<GuestBootstrap>('/api/v1/guest/bootstrap', { locale: 'zh-CN' }, { silent: true }),
+      fetch('/api/v1/guest/bootstrap?locale=zh-CN', { credentials: 'same-origin' })
+        .then(async (response) => response.ok ? (await response.json()) as GuestBootstrapEnvelope : null)
+        .catch(() => null),
     ]).then(([twoFactorResult, bootstrapResult]) => {
       if (cancelled) return;
       if (twoFactorResult.success) setTwoFactorEnable(Boolean(twoFactorResult.obj));
-      const configuredName = bootstrapResult.obj?.site?.siteName?.trim();
+      const configuredName = bootstrapResult?.obj?.site?.siteName?.trim();
       if (configuredName) setSiteName(configuredName);
       setFetched(true);
     });
@@ -83,7 +88,7 @@ export default function LoginPage() {
       <Layout className="login-app">
         <Layout.Content className="login-content">
           <header className="login-header">
-            <a className="login-brand" href={`${basePath}portal/`} aria-label={`${siteName} 用户前台`}>
+            <a className="login-brand" href={`${publicBasePath}portal/`} aria-label={`${siteName} 用户前台`}>
               <span className="login-brand-mark"><SafetyCertificateFilled /></span>
               <span>{siteName}</span>
             </a>
