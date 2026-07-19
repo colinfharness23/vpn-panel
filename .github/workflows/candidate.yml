@@ -1,0 +1,187 @@
+name: Ubuntu release candidate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - "**.sh"
+      - ".github/workflows/candidate.yml"
+      - "deploy/ubuntu/**"
+      - "frontend/**"
+      - "x-ui.service.debian"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify application and database
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: nova_candidate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nova_candidate"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Verify generated contracts
+        run: |
+          npm run gen
+          git diff --exit-code -- src/generated public/openapi.json
+        working-directory: frontend
+
+      - name: Verify frontend
+        run: |
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+        working-directory: frontend
+
+      - name: Verify Go services
+        run: |
+          go list ./... | grep -v '/frontend/node_modules/' > /tmp/go-packages.txt
+          go test -p 1 -shuffle=on -count=1 -timeout 30m $(cat /tmp/go-packages.txt)
+
+      - name: Verify PostgreSQL migrations and durable writes
+        env:
+          XUI_DB_TYPE: postgres
+          XUI_DB_DSN: host=127.0.0.1 port=5432 user=postgres password=postgres dbname=nova_candidate sslmode=disable
+          XUI_TEST_PG_DSN: host=127.0.0.1 port=5432 user=postgres password=postgres dbname=nova_candidate sslmode=disable
+        run: |
+          go test -p 1 ./internal/database -run 'Postgres|MigrateData' -count=1 -v -timeout 20m
+          go test -p 1 ./internal/web/service -run 'PostgresCommitFailure' -count=1 -v -timeout 20m
+
+      - name: Verify race safety
+        run: go test -p 1 -race -shuffle=on -count=1 -timeout 45m ./internal/...
+
+      - name: Verify 10,000 subscriptions across 50 inbounds
+        env:
+          XUI_SCALE_TEST: "1"
+          XUI_SCALE_SIZES: "10000"
+        run: >-
+          go test -p 1
+          ./internal/web/service ./internal/sub ./internal/web/job
+          -run 'Scale$' -count=1 -v -timeout 20m
+
+  installer-contract:
+    name: Installer contract (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate scripts and interactive contract
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          bash -n deploy/ubuntu/*.sh
+          shellcheck -S error -x deploy/ubuntu/*.sh
+          install=deploy/ubuntu/install.sh
+          grep -Fq '管理员账号：' "$install"
+          grep -Fq '管理员密码（至少 12 位' "$install"
+          grep -Fq 'stty -echo' "$install"
+          grep -Fq '已解析到本机的域名：' "$install"
+          grep -Fq "Let's Encrypt 证书通知邮箱：" "$install"
+          grep -Fq 'generate_admin_path' "$install"
+          grep -Fq 'NOVA_RELEASE_ASSET_DIR' "$install"
+
+  build-amd64:
+    name: Build amd64 candidate archive
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend and server
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential unzip
+          cd frontend
+          npm ci
+          npm run build
+          cd ..
+          mkdir -p x-ui/bin x-ui/deploy/ubuntu
+          go build -ldflags "-w -s -X github.com/mhsanaei/3x-ui/v3/internal/config.buildCommit=${GITHUB_SHA::8}" -o x-ui/x-ui main.go
+          cp x-ui.service.debian x-ui/
+          cp x-ui.service.arch x-ui/
+          cp x-ui.service.rhel x-ui/
+          cp x-ui.sh x-ui/
+          cp deploy/ubuntu/*.sh x-ui/deploy/ubuntu/
+          chmod +x x-ui/x-ui x-ui/deploy/ubuntu/*.sh
+          cp internal/web/service/config.json x-ui/bin/config.json
+
+      - name: Add Xray runtime
+        working-directory: x-ui/bin
+        run: |
+          curl -fL --retry 5 -o xray.zip https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip
+          unzip -q xray.zip
+          rm xray.zip geoip.dat geosite.dat
+          mv xray xray-linux-amd64
+          curl -fL --retry 5 -o geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
+          curl -fL --retry 5 -o geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+
+      - name: Package and validate candidate
+        run: |
+          tar -czf x-ui-linux-amd64.tar.gz x-ui
+          sha256sum x-ui-linux-amd64.tar.gz > x-ui-linux-amd64.tar.gz.sha256
+          sha256sum --check x-ui-linux-amd64.tar.gz.sha256
+          tar -tzf x-ui-linux-amd64.tar.gz > /tmp/candidate-files.txt
+          grep -Fxq x-ui/x-ui /tmp/candidate-files.txt
+          grep -Fxq x-ui/bin/config.json /tmp/candidate-files.txt
+          grep -Fxq x-ui/bin/xray-linux-amd64 /tmp/candidate-files.txt
+          grep -Fxq x-ui/deploy/ubuntu/install.sh /tmp/candidate-files.txt
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: nova-ubuntu-amd64-candidate
+          path: |
+            x-ui-linux-amd64.tar.gz
+            x-ui-linux-amd64.tar.gz.sha256
+          retention-days: 3
+          if-no-files-found: error
