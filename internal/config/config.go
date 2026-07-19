@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 //go:embed version
@@ -109,6 +110,13 @@ func IsSkipHSTS() bool {
 	return os.Getenv("XUI_SKIP_HSTS") == "true"
 }
 
+// IsBehindHTTPSProxy marks deployments where TLS terminates at the local
+// reverse proxy. It lets the application issue Secure cookies and HSTS even
+// though its loopback listener itself is plain HTTP.
+func IsBehindHTTPSProxy() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_BEHIND_HTTPS_PROXY")), "true")
+}
+
 func GetPortOverride() (port int, configured bool, err error) {
 	value, ok := os.LookupEnv("XUI_PORT")
 	if !ok || strings.TrimSpace(value) == "" {
@@ -124,6 +132,39 @@ func GetPortOverride() (port int, configured bool, err error) {
 	}
 
 	return port, true, nil
+}
+
+// GetAdminBasePath returns the externally visible administrator route. The
+// commercial production profile requires an independently configured,
+// unguessable 18-digit path; development keeps the historical base path when
+// no override is present so upstream workflows remain usable.
+func GetAdminBasePath(fallback string) (string, error) {
+	raw := strings.TrimSpace(os.Getenv("XUI_ADMIN_BASE_PATH"))
+	if raw == "" {
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_COMMERCIAL_ENV")), "production") {
+			return "", fmt.Errorf("XUI_ADMIN_BASE_PATH is required in commercial production")
+		}
+		return normalizeURLBasePath(fallback), nil
+	}
+
+	value := strings.Trim(raw, "/")
+	if len(value) != 18 {
+		return "", fmt.Errorf("XUI_ADMIN_BASE_PATH must contain exactly 18 digits")
+	}
+	for _, r := range value {
+		if !unicode.IsDigit(r) || r > unicode.MaxASCII {
+			return "", fmt.Errorf("XUI_ADMIN_BASE_PATH must contain exactly 18 ASCII digits")
+		}
+	}
+	return "/" + value + "/", nil
+}
+
+func normalizeURLBasePath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == "/" {
+		return "/"
+	}
+	return "/" + strings.Trim(value, "/") + "/"
 }
 
 // GetBinFolderPath returns the path to the binary folder, defaulting to "bin" if not set via XUI_BIN_FOLDER.

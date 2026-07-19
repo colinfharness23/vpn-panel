@@ -17,6 +17,7 @@ var defaultLoginLimiter = newLoginLimiter(loginLimitMaxFailures, loginLimitWindo
 type loginLimiter struct {
 	mu          sync.Mutex
 	now         func() time.Time
+	enabled     bool
 	maxFailures int
 	window      time.Duration
 	cooldown    time.Duration
@@ -31,6 +32,7 @@ type loginLimitRecord struct {
 func newLoginLimiter(maxFailures int, window, cooldown time.Duration) *loginLimiter {
 	return &loginLimiter{
 		now:         time.Now,
+		enabled:     true,
 		maxFailures: maxFailures,
 		window:      window,
 		cooldown:    cooldown,
@@ -38,9 +40,33 @@ func newLoginLimiter(maxFailures int, window, cooldown time.Duration) *loginLimi
 	}
 }
 
+func (l *loginLimiter) configure(enabled bool, maxFailures int, window, cooldown time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if maxFailures < 1 {
+		maxFailures = loginLimitMaxFailures
+	}
+	if window <= 0 {
+		window = loginLimitWindow
+	}
+	if cooldown <= 0 {
+		cooldown = loginLimitCooldown
+	}
+	l.enabled = enabled
+	l.maxFailures = maxFailures
+	l.window = window
+	l.cooldown = cooldown
+	if !enabled {
+		l.attempts = make(map[string]*loginLimitRecord)
+	}
+}
+
 func (l *loginLimiter) allow(ip, username string) (time.Time, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if !l.enabled {
+		return time.Time{}, true
+	}
 
 	key := loginLimitKey(ip, username)
 	record := l.attempts[key]
@@ -62,6 +88,9 @@ func (l *loginLimiter) allow(ip, username string) (time.Time, bool) {
 func (l *loginLimiter) registerFailure(ip, username string) (time.Time, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if !l.enabled {
+		return time.Time{}, false
+	}
 
 	key := loginLimitKey(ip, username)
 	record := l.attempts[key]
@@ -83,6 +112,9 @@ func (l *loginLimiter) registerFailure(ip, username string) (time.Time, bool) {
 func (l *loginLimiter) registerSuccess(ip, username string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if !l.enabled {
+		return
+	}
 	delete(l.attempts, loginLimitKey(ip, username))
 }
 

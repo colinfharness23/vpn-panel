@@ -3,6 +3,9 @@ import { z } from 'zod';
 export const OnlineAPISupportSchema = z.number().int();
 export type OnlineAPISupport = z.infer<typeof OnlineAPISupportSchema>;
 
+export const PaymentProviderSchema = z.unknown();
+export type PaymentProvider = z.infer<typeof PaymentProviderSchema>;
+
 export const ProcessStateSchema = z.string();
 export type ProcessState = z.infer<typeof ProcessStateSchema>;
 
@@ -12,11 +15,78 @@ export type Protocol = z.infer<typeof ProtocolSchema>;
 export const SubLinkProviderSchema = z.unknown();
 export type SubLinkProvider = z.infer<typeof SubLinkProviderSchema>;
 
+export const VerificationMailerSchema = z.unknown();
+export type VerificationMailer = z.infer<typeof VerificationMailerSchema>;
+
+export const customerEmailSenderSchema = z.unknown();
+export type customerEmailSender = z.infer<typeof customerEmailSenderSchema>;
+
 export const staticEgressResolverSchema = z.string();
 export type staticEgressResolver = z.infer<typeof staticEgressResolverSchema>;
 
 export const transportBitsSchema = z.number().int();
 export type transportBits = z.infer<typeof transportBitsSchema>;
+
+export const AdminCustomerRowSchema = z.object({
+  balanceFen: z.number().int(),
+  createdAt: z.string(),
+  displayName: z.string(),
+  email: z.string(),
+  emailVerifiedAt: z.string().nullable().optional(),
+  id: z.string(),
+  inviteCode: z.string(),
+  invitedById: z.string().nullable().optional(),
+  lastLoginAt: z.string().nullable().optional(),
+  locale: z.string(),
+  status: z.string(),
+  subscription: z.lazy(() => AdminSubscriptionSummarySchema).nullable().optional(),
+  systemAdmin: z.boolean(),
+  termsAcceptedAt: z.string().nullable().optional(),
+  termsVersion: z.string().optional(),
+  updatedAt: z.string(),
+});
+export type AdminCustomerRow = z.infer<typeof AdminCustomerRowSchema>;
+
+export const AdminOverviewSchema = z.object({
+  activeEntitlements: z.number().int(),
+  customers: z.number().int(),
+  manualJobs: z.number().int(),
+  openTickets: z.number().int(),
+  orderStatus: z.record(z.string(), z.number().int()),
+  pendingOrders: z.number().int(),
+  revenueFen: z.number().int(),
+});
+export type AdminOverview = z.infer<typeof AdminOverviewSchema>;
+
+export const AdminRoleBindingSchema = z.object({
+  createdAt: z.string(),
+  role: z.string(),
+  updatedAt: z.string(),
+  userId: z.number().int(),
+});
+export type AdminRoleBinding = z.infer<typeof AdminRoleBindingSchema>;
+
+export const AdminSubscriptionSummarySchema = z.object({
+  active: z.boolean(),
+  capacity: z.number().int(),
+  createdAt: z.string(),
+  description: z.string(),
+  deviceLimit: z.number().int(),
+  entitlement: z.lazy(() => SubscriptionEntitlementSchema),
+  id: z.string(),
+  name: z.string(),
+  nodeGroup: z.string(),
+  provisionInboundIds: z.string(),
+  renewable: z.boolean(),
+  resetCycle: z.string(),
+  slug: z.string(),
+  sortOrder: z.number().int(),
+  trafficBytes: z.number().int(),
+  updatedAt: z.string(),
+  upgradable: z.boolean(),
+  visibility: z.string(),
+});
+export type AdminSubscriptionSummary = z.infer<typeof AdminSubscriptionSummarySchema>;
 
 export const AllSettingSchema = z.object({
   datepicker: z.string(),
@@ -98,9 +168,11 @@ export const AllSettingSchema = z.object({
   tgBotToken: z.string(),
   tgCpu: z.number().int().min(0).max(100),
   tgEnabledEvents: z.string(),
+  tgGroupLink: z.string(),
   tgLang: z.string(),
   tgMemory: z.number().int().min(0).max(100),
   tgRunTime: z.string(),
+  tgWebhookURL: z.string(),
   timeLocation: z.string(),
   trafficDiff: z.number().int().min(0).max(100),
   trustedProxyCIDRs: z.string(),
@@ -203,9 +275,11 @@ export const AllSettingViewSchema = z.object({
   tgBotToken: z.string(),
   tgCpu: z.number().int().min(0).max(100),
   tgEnabledEvents: z.string(),
+  tgGroupLink: z.string(),
   tgLang: z.string(),
   tgMemory: z.number().int().min(0).max(100),
   tgRunTime: z.string(),
+  tgWebhookURL: z.string(),
   timeLocation: z.string(),
   trafficDiff: z.number().int().min(0).max(100),
   trustedProxyCIDRs: z.string(),
@@ -268,6 +342,21 @@ export const ClientSchema = z.object({
 });
 export type Client = z.infer<typeof ClientSchema>;
 
+export const ClientApplicationSchema = z.object({
+  active: z.boolean(),
+  createdAt: z.string(),
+  description: z.string(),
+  id: z.string(),
+  name: z.string(),
+  officialUrl: z.string(),
+  platform: z.string(),
+  slug: z.string(),
+  sortOrder: z.number().int(),
+  sourceUrl: z.string(),
+  updatedAt: z.string(),
+});
+export type ClientApplication = z.infer<typeof ClientApplicationSchema>;
+
 export const ClientInboundSchema = z.object({
   clientId: z.number().int(),
   createdAt: z.number().int(),
@@ -327,11 +416,294 @@ export const ClientTrafficSchema = z.object({
 });
 export type ClientTraffic = z.infer<typeof ClientTrafficSchema>;
 
+export const CommercialAuditLogSchema = z.object({
+  action: z.string(),
+  actorRole: z.string(),
+  actorUserId: z.number().int(),
+  correlationId: z.string(),
+  createdAt: z.string(),
+  id: z.string(),
+  ipHash: z.string(),
+  metadata: z.string(),
+  targetId: z.string(),
+  targetType: z.string(),
+});
+export type CommercialAuditLog = z.infer<typeof CommercialAuditLogSchema>;
+
+export const CommercialCustomerCreateRequestSchema = z.object({
+  displayName: z.string().max(80),
+  email: z.string().min(1),
+  locale: z.string(),
+  password: z.string().min(1),
+  status: z.enum(['active', 'suspended']),
+});
+export type CommercialCustomerCreateRequest = z.infer<typeof CommercialCustomerCreateRequestSchema>;
+
+export const CommercialCustomerDeleteRequestSchema = z.object({
+  ids: z.array(z.string()),
+});
+export type CommercialCustomerDeleteRequest = z.infer<typeof CommercialCustomerDeleteRequestSchema>;
+
+export const CommercialCustomerUpdateRequestSchema = z.object({
+  balanceFen: z.number().int().nullable().optional(),
+  status: z.string(),
+});
+export type CommercialCustomerUpdateRequest = z.infer<typeof CommercialCustomerUpdateRequestSchema>;
+
+export const CommercialGiftCardBatchRequestSchema = z.object({
+  count: z.number().int().min(1).max(100),
+  expiresAt: z.string(),
+  valueFen: z.number().int().gt(0),
+});
+export type CommercialGiftCardBatchRequest = z.infer<typeof CommercialGiftCardBatchRequestSchema>;
+
+export const CommercialPaymentSettingsSchema = z.object({
+  alipayAppId: z.string(),
+  alipayEnabled: z.boolean(),
+  alipayMode: z.enum(['sandbox', 'production']),
+  alipayNotifyUrl: z.string(),
+  alipayPrivateKey: z.string(),
+  alipayPublicKey: z.string(),
+  alipaySellerId: z.string(),
+  codepayEnabled: z.boolean(),
+  codepayGatewayUrl: z.string(),
+  codepayKey: z.string(),
+  codepayMerchantId: z.string(),
+  codepayNotifyUrl: z.string(),
+  codepayPaymentType: z.string(),
+  codepayReturnUrl: z.string(),
+  epayEnabled: z.boolean(),
+  epayGatewayUrl: z.string(),
+  epayMerchantId: z.string(),
+  epayMerchantKey: z.string(),
+  epayNotifyUrl: z.string(),
+  epayPaymentType: z.string(),
+  epayReturnUrl: z.string(),
+  provider: z.enum(['epay', 'alipay_f2f', 'codepay']).optional(),
+});
+export type CommercialPaymentSettings = z.infer<typeof CommercialPaymentSettingsSchema>;
+
+export const CommercialPlanPriceRequestSchema = z.object({
+  active: z.boolean(),
+  amountFen: z.number().int().min(0),
+  billingPeriod: z.string().min(1),
+  id: z.string(),
+  months: z.number().int().min(0).max(120),
+  planId: z.string().min(1),
+});
+export type CommercialPlanPriceRequest = z.infer<typeof CommercialPlanPriceRequestSchema>;
+
+export const CommercialPlanRequestSchema = z.object({
+  active: z.boolean(),
+  capacity: z.number().int().min(0),
+  description: z.string(),
+  deviceLimit: z.number().int().min(0).max(1000),
+  id: z.string(),
+  name: z.string().min(1).max(120),
+  nodeGroup: z.string(),
+  provisionInboundIds: z.array(z.number().int()),
+  renewable: z.boolean(),
+  resetCycle: z.enum(['never', 'daily', 'weekly', 'monthly', 'quarterly']),
+  slug: z.string().min(1).max(80),
+  sortOrder: z.number().int(),
+  trafficBytes: z.number().int().min(0),
+  upgradable: z.boolean(),
+  visibility: z.enum(['public', 'hidden', 'invite']),
+});
+export type CommercialPlanRequest = z.infer<typeof CommercialPlanRequestSchema>;
+
+export const CommercialRoleRequestSchema = z.object({
+  role: z.string().min(1),
+});
+export type CommercialRoleRequest = z.infer<typeof CommercialRoleRequestSchema>;
+
+export const CommercialSettingSchema = z.object({
+  encrypted: z.boolean(),
+  key: z.string(),
+  updatedAt: z.string(),
+  value: z.string(),
+});
+export type CommercialSetting = z.infer<typeof CommercialSettingSchema>;
+
+export const CommercialSettingRequestSchema = z.object({
+  encrypted: z.boolean(),
+  key: z.string().min(1).max(120),
+  value: z.string(),
+});
+export type CommercialSettingRequest = z.infer<typeof CommercialSettingRequestSchema>;
+
+export const CommercialSubscriptionUpdateRequestSchema = z.object({
+  deviceLimit: z.number().int().min(0).max(1000),
+  expiresAt: z.string(),
+  planId: z.string().min(1),
+  resetTraffic: z.boolean(),
+  trafficQuota: z.number().int().min(0),
+});
+export type CommercialSubscriptionUpdateRequest = z.infer<typeof CommercialSubscriptionUpdateRequestSchema>;
+
+export const CommercialTicketReplyRequestSchema = z.object({
+  body: z.string().min(1).max(10000),
+  status: z.string(),
+});
+export type CommercialTicketReplyRequest = z.infer<typeof CommercialTicketReplyRequestSchema>;
+
+export const CouponSchema = z.object({
+  active: z.boolean(),
+  code: z.string(),
+  createdAt: z.string(),
+  expiresAt: z.string().nullable().optional(),
+  id: z.string(),
+  kind: z.string(),
+  maxRedemptions: z.number().int(),
+  minimumFen: z.number().int(),
+  redeemedCount: z.number().int(),
+  startsAt: z.string().nullable().optional(),
+  updatedAt: z.string(),
+  value: z.number().int(),
+});
+export type Coupon = z.infer<typeof CouponSchema>;
+
+export const CreateCommercialOrderRequestSchema = z.object({
+  couponCode: z.string(),
+  entitlementId: z.string().optional(),
+  orderKind: z.enum(['purchase', 'renewal', 'upgrade']).optional(),
+  planPriceId: z.string().min(1),
+  useBalance: z.boolean(),
+});
+export type CreateCommercialOrderRequest = z.infer<typeof CreateCommercialOrderRequestSchema>;
+
+export const CreatePaymentRequestSchema = z.object({
+  provider: z.enum(['epay', 'alipay_f2f', 'codepay', 'alipay-demo']),
+});
+export type CreatePaymentRequest = z.infer<typeof CreatePaymentRequestSchema>;
+
+export const CreateTicketRequestSchema = z.object({
+  body: z.string().min(1).max(10000),
+  subject: z.string().min(1).max(200),
+});
+export type CreateTicketRequest = z.infer<typeof CreateTicketRequestSchema>;
+
+export const CustomerSchema = z.object({
+  balanceFen: z.number().int(),
+  createdAt: z.string(),
+  displayName: z.string(),
+  email: z.string(),
+  emailVerifiedAt: z.string().nullable().optional(),
+  id: z.string(),
+  inviteCode: z.string(),
+  invitedById: z.string().nullable().optional(),
+  lastLoginAt: z.string().nullable().optional(),
+  locale: z.string(),
+  status: z.string(),
+  termsAcceptedAt: z.string().nullable().optional(),
+  termsVersion: z.string().optional(),
+  updatedAt: z.string(),
+});
+export type Customer = z.infer<typeof CustomerSchema>;
+
+export const CustomerDeleteResultSchema = z.object({
+  deleted: z.array(z.string()),
+  failed: z.record(z.string(), z.string()),
+});
+export type CustomerDeleteResult = z.infer<typeof CustomerDeleteResultSchema>;
+
+export const CustomerLoginRequestSchema = z.object({
+  email: z.string().min(1),
+  password: z.string().min(1),
+});
+export type CustomerLoginRequest = z.infer<typeof CustomerLoginRequestSchema>;
+
+export const CustomerRegisterRequestSchema = z.object({
+  acceptedTerms: z.boolean(),
+  code: z.string().length(6),
+  email: z.string().min(1),
+  inviteCode: z.string(),
+  locale: z.string(),
+  password: z.string().min(1),
+  termsVersion: z.string(),
+  turnstileToken: z.string(),
+});
+export type CustomerRegisterRequest = z.infer<typeof CustomerRegisterRequestSchema>;
+
+export const CustomerResetPasswordRequestSchema = z.object({
+  code: z.string().min(1).length(6),
+  email: z.string().min(1),
+  password: z.string().min(1),
+});
+export type CustomerResetPasswordRequest = z.infer<typeof CustomerResetPasswordRequestSchema>;
+
+export const CustomerSessionSchema = z.object({
+  createdAt: z.string(),
+  customerId: z.string(),
+  expiresAt: z.string(),
+  id: z.string(),
+  ipHash: z.string(),
+  lastSeenAt: z.string(),
+  revokedAt: z.string().nullable().optional(),
+  userAgentHash: z.string(),
+});
+export type CustomerSession = z.infer<typeof CustomerSessionSchema>;
+
+export const DashboardSchema = z.object({
+  balanceFen: z.number().int(),
+  createdAt: z.string(),
+  displayName: z.string(),
+  email: z.string(),
+  emailVerifiedAt: z.string().nullable().optional(),
+  id: z.string(),
+  invitation: z.lazy(() => InvitationOverviewSchema),
+  inviteCode: z.string(),
+  invitedById: z.string().nullable().optional(),
+  lastLoginAt: z.string().nullable().optional(),
+  locale: z.string(),
+  notices: z.array(z.lazy(() => LocalizedContentSchema)),
+  orders: z.array(z.lazy(() => OrderSchema)),
+  status: z.string(),
+  subscription: z.lazy(() => SubscriptionOverviewSchema).nullable().optional(),
+  termsAcceptedAt: z.string().nullable().optional(),
+  termsVersion: z.string().optional(),
+  updatedAt: z.string(),
+});
+export type Dashboard = z.infer<typeof DashboardSchema>;
+
+export const EmailVerificationSchema = z.object({
+  attempts: z.number().int(),
+  createdAt: z.string(),
+  email: z.string(),
+  expiresAt: z.string(),
+  id: z.string(),
+  purpose: z.string(),
+  usedAt: z.string().nullable().optional(),
+});
+export type EmailVerification = z.infer<typeof EmailVerificationSchema>;
+
 export const FallbackParentInfoSchema = z.object({
   masterId: z.number().int(),
   path: z.string().optional(),
 });
 export type FallbackParentInfo = z.infer<typeof FallbackParentInfoSchema>;
+
+export const GiftCardSchema = z.object({
+  createdAt: z.string(),
+  displayCode: z.string(),
+  expiresAt: z.string().nullable().optional(),
+  id: z.string(),
+  redeemedAt: z.string().nullable().optional(),
+  redeemedBy: z.string().nullable().optional(),
+  status: z.string(),
+  valueFen: z.number().int(),
+});
+export type GiftCard = z.infer<typeof GiftCardSchema>;
+
+export const GuestBootstrapSchema = z.object({
+  applications: z.array(z.lazy(() => ClientApplicationSchema)),
+  articles: z.array(z.lazy(() => LocalizedContentSchema)),
+  notices: z.array(z.lazy(() => LocalizedContentSchema)),
+  paymentMethods: z.array(z.lazy(() => PaymentMethodSchema)),
+  plans: z.array(z.lazy(() => PlanCatalogItemSchema)),
+  site: z.record(z.string(), z.string()),
+});
+export type GuestBootstrap = z.infer<typeof GuestBootstrapSchema>;
 
 export const HistoryOfSeedersSchema = z.object({
   id: z.number().int(),
@@ -363,7 +735,7 @@ export const HostSchema = z.object({
   path: z.string(),
   pinnedPeerCertSha256: z.array(z.string()),
   port: z.number().int().min(0).max(65535),
-  remark: z.string().max(256),
+  remark: z.string().min(1).max(256),
   security: z.enum(['same', 'tls', 'none', 'reality']),
   serverDescription: z.string().max(64),
   shuffleHost: z.boolean(),
@@ -399,7 +771,7 @@ export const HostGroupSchema = z.object({
   path: z.string(),
   pinnedPeerCertSha256: z.array(z.string()),
   port: z.number().int().min(0).max(65535),
-  remark: z.string().max(256),
+  remark: z.string().min(1).max(256),
   security: z.enum(['same', 'tls', 'none', 'reality']),
   serverDescription: z.string().max(64),
   shuffleHost: z.boolean(),
@@ -480,6 +852,54 @@ export const InboundOptionSchema = z.object({
 });
 export type InboundOption = z.infer<typeof InboundOptionSchema>;
 
+export const InvitationCommissionSchema = z.object({
+  amountFen: z.number().int(),
+  createdAt: z.string(),
+  id: z.string(),
+  inviteeId: z.string(),
+  inviterId: z.string(),
+  orderId: z.string(),
+  settledAt: z.string().nullable().optional(),
+  status: z.string(),
+});
+export type InvitationCommission = z.infer<typeof InvitationCommissionSchema>;
+
+export const InvitationOverviewSchema = z.object({
+  commissionFirstPaymentOnly: z.boolean(),
+  commissionPercent: z.number().int(),
+  confirmedFen: z.number().int(),
+  directInviteCount: z.number().int(),
+  enabled: z.boolean(),
+  inviteCode: z.string(),
+  inviteCodesNeverExpire: z.boolean(),
+  pendingFen: z.number().int(),
+  settledFen: z.number().int(),
+});
+export type InvitationOverview = z.infer<typeof InvitationOverviewSchema>;
+
+export const KnowledgeArticleSchema = z.object({
+  category: z.string(),
+  contentI18n: z.string(),
+  createdAt: z.string(),
+  id: z.string(),
+  published: z.boolean(),
+  slug: z.string(),
+  sortOrder: z.number().int(),
+  titleI18n: z.string(),
+  updatedAt: z.string(),
+});
+export type KnowledgeArticle = z.infer<typeof KnowledgeArticleSchema>;
+
+export const LocalizedContentSchema = z.object({
+  category: z.string().optional(),
+  content: z.string(),
+  id: z.string(),
+  level: z.string().optional(),
+  slug: z.string(),
+  title: z.string(),
+});
+export type LocalizedContent = z.infer<typeof LocalizedContentSchema>;
+
 export const MsgSchema = z.object({
   msg: z.string(),
   obj: z.unknown(),
@@ -489,7 +909,7 @@ export type Msg = z.infer<typeof MsgSchema>;
 
 export const NodeSchema = z.object({
   activeCount: z.number().int(),
-  address: z.string(),
+  address: z.string().min(1),
   allowPrivateAddress: z.boolean(),
   apiToken: z.string(),
   basePath: z.string(),
@@ -510,7 +930,7 @@ export const NodeSchema = z.object({
   lastHeartbeat: z.number().int(),
   latencyMs: z.number().int(),
   memPct: z.number(),
-  name: z.string(),
+  name: z.string().min(1),
   netDown: z.number().int(),
   netUp: z.number().int(),
   onlineCount: z.number().int(),
@@ -532,6 +952,45 @@ export const NodeSchema = z.object({
 });
 export type Node = z.infer<typeof NodeSchema>;
 
+export const NoticeSchema = z.object({
+  contentI18n: z.string(),
+  createdAt: z.string(),
+  id: z.string(),
+  level: z.string(),
+  published: z.boolean(),
+  publishedAt: z.string().nullable().optional(),
+  slug: z.string(),
+  titleI18n: z.string(),
+  updatedAt: z.string(),
+});
+export type Notice = z.infer<typeof NoticeSchema>;
+
+export const OrderSchema = z.object({
+  balancePaidFen: z.number().int(),
+  completedAt: z.string().nullable().optional(),
+  couponCode: z.string(),
+  createdAt: z.string(),
+  currency: z.string(),
+  customerId: z.string(),
+  discountFen: z.number().int(),
+  entitlementId: z.string().optional(),
+  expiresAt: z.string(),
+  failureReason: z.string(),
+  id: z.string(),
+  orderKind: z.string(),
+  originalFen: z.number().int(),
+  outTradeNo: z.string(),
+  paidAt: z.string().nullable().optional(),
+  paidFen: z.number().int(),
+  payableFen: z.number().int(),
+  planId: z.string(),
+  planPriceId: z.string(),
+  resultExpiresAt: z.string().nullable().optional(),
+  status: z.string(),
+  updatedAt: z.string(),
+});
+export type Order = z.infer<typeof OrderSchema>;
+
 export const OutboundTrafficsSchema = z.object({
   down: z.number().int(),
   id: z.number().int(),
@@ -541,6 +1000,34 @@ export const OutboundTrafficsSchema = z.object({
 });
 export type OutboundTraffics = z.infer<typeof OutboundTrafficsSchema>;
 
+export const OutboxEventSchema = z.object({
+  aggregateId: z.string(),
+  aggregateType: z.string(),
+  attempts: z.number().int(),
+  createdAt: z.string(),
+  eventType: z.string(),
+  id: z.string(),
+  lastError: z.string(),
+  nextRunAt: z.string(),
+  payload: z.string(),
+  processedAt: z.string().nullable().optional(),
+  status: z.string(),
+  updatedAt: z.string(),
+});
+export type OutboxEvent = z.infer<typeof OutboxEventSchema>;
+
+export const PaginatedCustomersSchema = z.object({
+  items: z.array(z.lazy(() => AdminCustomerRowSchema)),
+  total: z.number().int(),
+});
+export type PaginatedCustomers = z.infer<typeof PaginatedCustomersSchema>;
+
+export const PaginatedOrdersSchema = z.object({
+  items: z.array(z.lazy(() => OrderSchema)),
+  total: z.number().int(),
+});
+export type PaginatedOrders = z.infer<typeof PaginatedOrdersSchema>;
+
 export const PanelUpdateStatusSchema = z.object({
   exitCode: z.number().int(),
   finishedAt: z.number().int(),
@@ -548,6 +1035,89 @@ export const PanelUpdateStatusSchema = z.object({
   state: z.string(),
 });
 export type PanelUpdateStatus = z.infer<typeof PanelUpdateStatusSchema>;
+
+export const PaymentIntentSchema = z.object({
+  amountFen: z.number().int(),
+  expiresAt: z.string(),
+  outTradeNo: z.string(),
+  provider: z.string(),
+  providerTradeNo: z.string().optional(),
+  qrCode: z.string(),
+});
+export type PaymentIntent = z.infer<typeof PaymentIntentSchema>;
+
+export const PaymentMethodSchema = z.object({
+  code: z.string(),
+  name: z.string(),
+});
+export type PaymentMethod = z.infer<typeof PaymentMethodSchema>;
+
+export const PaymentTransactionSchema = z.object({
+  amountFen: z.number().int(),
+  createdAt: z.string(),
+  id: z.string(),
+  orderId: z.string(),
+  provider: z.string(),
+  providerTradeNo: z.string(),
+  status: z.string(),
+  updatedAt: z.string(),
+});
+export type PaymentTransaction = z.infer<typeof PaymentTransactionSchema>;
+
+export const PlanSchema = z.object({
+  active: z.boolean(),
+  capacity: z.number().int(),
+  createdAt: z.string(),
+  description: z.string(),
+  deviceLimit: z.number().int(),
+  id: z.string(),
+  name: z.string(),
+  nodeGroup: z.string(),
+  provisionInboundIds: z.string(),
+  renewable: z.boolean(),
+  resetCycle: z.string(),
+  slug: z.string(),
+  sortOrder: z.number().int(),
+  trafficBytes: z.number().int(),
+  updatedAt: z.string(),
+  upgradable: z.boolean(),
+  visibility: z.string(),
+});
+export type Plan = z.infer<typeof PlanSchema>;
+
+export const PlanCatalogItemSchema = z.object({
+  active: z.boolean(),
+  capacity: z.number().int(),
+  createdAt: z.string(),
+  description: z.string(),
+  deviceLimit: z.number().int(),
+  id: z.string(),
+  name: z.string(),
+  nodeGroup: z.string(),
+  prices: z.array(z.lazy(() => PlanPriceSchema)),
+  provisionInboundIds: z.string(),
+  renewable: z.boolean(),
+  resetCycle: z.string(),
+  slug: z.string(),
+  sortOrder: z.number().int(),
+  trafficBytes: z.number().int(),
+  updatedAt: z.string(),
+  upgradable: z.boolean(),
+  visibility: z.string(),
+});
+export type PlanCatalogItem = z.infer<typeof PlanCatalogItemSchema>;
+
+export const PlanPriceSchema = z.object({
+  active: z.boolean(),
+  amountFen: z.number().int(),
+  billingPeriod: z.string(),
+  createdAt: z.string(),
+  id: z.string(),
+  months: z.number().int(),
+  planId: z.string(),
+  updatedAt: z.string(),
+});
+export type PlanPrice = z.infer<typeof PlanPriceSchema>;
 
 export const ProbeResultUISchema = z.object({
   cpuPct: z.number(),
@@ -562,6 +1132,20 @@ export const ProbeResultUISchema = z.object({
   xrayVersion: z.string(),
 });
 export type ProbeResultUI = z.infer<typeof ProbeResultUISchema>;
+
+export const ProvisioningJobSchema = z.object({
+  attempts: z.number().int(),
+  createdAt: z.string(),
+  customerId: z.string(),
+  id: z.string(),
+  lastError: z.string(),
+  lockedAt: z.string().nullable().optional(),
+  nextRunAt: z.string(),
+  orderId: z.string(),
+  status: z.string(),
+  updatedAt: z.string(),
+});
+export type ProvisioningJob = z.infer<typeof ProvisioningJobSchema>;
 
 export const RealityScanResultSchema = z.object({
   alpn: z.string(),
@@ -585,12 +1169,90 @@ export const RealityScanResultSchema = z.object({
 });
 export type RealityScanResult = z.infer<typeof RealityScanResultSchema>;
 
+export const SendVerificationCodeRequestSchema = z.object({
+  email: z.string().min(1),
+  purpose: z.enum(['register', 'reset']),
+  turnstileToken: z.string(),
+});
+export type SendVerificationCodeRequest = z.infer<typeof SendVerificationCodeRequestSchema>;
+
 export const SettingSchema = z.object({
   id: z.number().int(),
   key: z.string(),
   value: z.string(),
 });
 export type Setting = z.infer<typeof SettingSchema>;
+
+export const SubscriptionEntitlementSchema = z.object({
+  createdAt: z.string(),
+  customerId: z.string(),
+  deviceLimit: z.number().int(),
+  expiresAt: z.string().nullable().optional(),
+  id: z.string(),
+  internalClientId: z.string(),
+  lastResetAt: z.string().nullable().optional(),
+  nodeGroup: z.string(),
+  orderId: z.string(),
+  planId: z.string(),
+  startsAt: z.string(),
+  status: z.string(),
+  trafficQuota: z.number().int(),
+  trafficUsed: z.number().int(),
+  updatedAt: z.string(),
+});
+export type SubscriptionEntitlement = z.infer<typeof SubscriptionEntitlementSchema>;
+
+export const SubscriptionLinksSchema = z.object({
+  clash: z.string(),
+  json: z.string(),
+  raw: z.string(),
+});
+export type SubscriptionLinks = z.infer<typeof SubscriptionLinksSchema>;
+
+export const SubscriptionOverviewSchema = z.object({
+  active: z.boolean(),
+  capacity: z.number().int(),
+  createdAt: z.string(),
+  description: z.string(),
+  deviceLimit: z.number().int(),
+  entitlement: z.lazy(() => SubscriptionEntitlementSchema),
+  id: z.string(),
+  links: z.lazy(() => SubscriptionLinksSchema),
+  name: z.string(),
+  nodeGroup: z.string(),
+  provisionInboundIds: z.string(),
+  renewable: z.boolean(),
+  resetCycle: z.string(),
+  slug: z.string(),
+  sortOrder: z.number().int(),
+  trafficBytes: z.number().int(),
+  updatedAt: z.string(),
+  upgradable: z.boolean(),
+  usedBytes: z.number().int(),
+  visibility: z.string(),
+});
+export type SubscriptionOverview = z.infer<typeof SubscriptionOverviewSchema>;
+
+export const TicketSchema = z.object({
+  createdAt: z.string(),
+  customerId: z.string(),
+  id: z.string(),
+  priority: z.string(),
+  status: z.string(),
+  subject: z.string(),
+  updatedAt: z.string(),
+});
+export type Ticket = z.infer<typeof TicketSchema>;
+
+export const TicketMessageSchema = z.object({
+  body: z.string(),
+  createdAt: z.string(),
+  id: z.string(),
+  senderId: z.string(),
+  senderType: z.string(),
+  ticketId: z.string(),
+});
+export type TicketMessage = z.infer<typeof TicketMessageSchema>;
 
 export const UserSchema = z.object({
   id: z.number().int(),

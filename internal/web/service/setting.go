@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"reflect"
 	"strconv"
@@ -64,6 +65,9 @@ var defaultValueMap = map[string]string{
 	"tgBotProxy":                  "",
 	"tgBotAPIServer":              "",
 	"tgBotChatId":                 "",
+	"tgGroupLink":                 "",
+	"tgWebhookURL":                "",
+	"tgWebhookSecret":             "",
 	"tgRunTime":                   "@daily",
 	"tgBotBackup":                 "false",
 	"tgCpu":                       "80",
@@ -515,6 +519,30 @@ func (s *SettingService) GetTgBotChatId() (string, error) {
 
 func (s *SettingService) SetTgBotChatId(chatIds string) error {
 	return s.setString("tgBotChatId", chatIds)
+}
+
+func (s *SettingService) GetTgGroupLink() (string, error) {
+	return s.getString("tgGroupLink")
+}
+
+func (s *SettingService) SetTgGroupLink(link string) error {
+	return s.setString("tgGroupLink", link)
+}
+
+func (s *SettingService) GetTgWebhookURL() (string, error) {
+	return s.getString("tgWebhookURL")
+}
+
+func (s *SettingService) SetTgWebhookURL(webhookURL string) error {
+	return s.setString("tgWebhookURL", webhookURL)
+}
+
+func (s *SettingService) GetTgWebhookSecret() (string, error) {
+	return s.getString("tgWebhookSecret")
+}
+
+func (s *SettingService) SetTgWebhookSecret(secret string) error {
+	return s.setString("tgWebhookSecret", secret)
 }
 
 func (s *SettingService) GetTgbotEnabled() (bool, error) {
@@ -1188,6 +1216,20 @@ func validateSettingsURLs(allSetting *entity.AllSetting) error {
 		}
 		allSetting.TgBotAPIServer = u
 	}
+	if allSetting.TgWebhookURL != "" {
+		u, err := ValidateTelegramWebhookURL(allSetting.TgWebhookURL)
+		if err != nil {
+			return err
+		}
+		allSetting.TgWebhookURL = u
+	}
+	if allSetting.TgGroupLink != "" {
+		u, err := validateTelegramGroupLink(allSetting.TgGroupLink)
+		if err != nil {
+			return err
+		}
+		allSetting.TgGroupLink = u
+	}
 	// Support/profile links land in subscription headers and page data, where
 	// client apps resolve a scheme-less value against the panel's own domain.
 	// Non-http schemes (tg://, mailto:) are legitimate here, so only default
@@ -1195,6 +1237,52 @@ func validateSettingsURLs(allSetting *entity.AllSetting) error {
 	allSetting.SubSupportUrl = common.EnsureURLScheme(allSetting.SubSupportUrl)
 	allSetting.SubProfileUrl = common.EnsureURLScheme(allSetting.SubProfileUrl)
 	return nil
+}
+
+// ValidateTelegramWebhookURL normalizes the public callback entered by an
+// administrator. Telegram's hosted Bot API requires HTTPS and cannot deliver
+// updates to an arbitrary panel page, so the URL must target our fixed receiver.
+func ValidateTelegramWebhookURL(raw string) (string, error) {
+	clean, err := SanitizeHTTPURL(raw)
+	if err != nil {
+		return "", common.NewError("telegram webhook URL is invalid:", err)
+	}
+	if clean == "" {
+		return "", common.NewError("telegram webhook URL is required")
+	}
+	u, err := url.Parse(clean)
+	if err != nil {
+		return "", common.NewError("telegram webhook URL is invalid:", err)
+	}
+	if u.Scheme != "https" {
+		return "", common.NewError("telegram webhook URL must use HTTPS")
+	}
+	if u.RawQuery != "" || u.Fragment != "" {
+		return "", common.NewError("telegram webhook URL cannot contain a query or fragment")
+	}
+	if !strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/telegram/webhook") {
+		return "", common.NewError("telegram webhook URL must end with /telegram/webhook")
+	}
+	return clean, nil
+}
+
+func validateTelegramGroupLink(raw string) (string, error) {
+	clean, err := SanitizeHTTPURL(raw)
+	if err != nil {
+		return "", common.NewError("telegram support link is invalid:", err)
+	}
+	u, err := url.Parse(clean)
+	if err != nil {
+		return "", common.NewError("telegram support link is invalid:", err)
+	}
+	host := strings.ToLower(u.Hostname())
+	if u.Scheme != "https" || (host != "t.me" && host != "telegram.me") {
+		return "", common.NewError("telegram support link must use https://t.me or https://telegram.me")
+	}
+	if strings.Trim(u.EscapedPath(), "/") == "" {
+		return "", common.NewError("telegram support link must include a username or destination")
+	}
+	return clean, nil
 }
 
 func (s *SettingService) UpdateSecret(key string, value string) error {

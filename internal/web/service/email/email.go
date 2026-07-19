@@ -31,6 +31,15 @@ func NewEmailService(settingService service.SettingService) *EmailService {
 
 // Send sends an HTML email to all configured recipients.
 func (s *EmailService) Send(subject, body string) error {
+	toStr, _ := s.settingService.GetSmtpTo()
+	recipients := parseRecipients(toStr)
+	if len(recipients) == 0 {
+		return fmt.Errorf("no recipients configured")
+	}
+	return s.SendTo(recipients, subject, body)
+}
+
+func (s *EmailService) SendTo(recipients []string, subject, body string) error {
 	host, err := s.settingService.GetSmtpHost()
 	if err != nil || host == "" {
 		return fmt.Errorf("smtp host not configured")
@@ -41,7 +50,6 @@ func (s *EmailService) Send(subject, body string) error {
 	}
 	username, _ := s.settingService.GetSmtpUsername()
 	password, _ := s.settingService.GetSmtpPassword()
-	toStr, _ := s.settingService.GetSmtpTo()
 	encryptionType, _ := s.settingService.GetSmtpEncryptionType()
 
 	from := username
@@ -49,7 +57,6 @@ func (s *EmailService) Send(subject, body string) error {
 		return fmt.Errorf("smtp from not configured")
 	}
 
-	recipients := parseRecipients(toStr)
 	if len(recipients) == 0 {
 		return fmt.Errorf("no recipients configured")
 	}

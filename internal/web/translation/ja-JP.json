@@ -105,6 +105,9 @@
     "email": "メール"
   },
   "menu": {
+    "commercial": "商用コンソール",
+    "systemManagement": "システム管理",
+    "enterSite": "サイトを開く",
     "theme": "テーマ",
     "dark": "ダーク",
     "ultraDark": "ウルトラダーク",

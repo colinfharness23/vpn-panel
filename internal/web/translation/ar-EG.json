@@ -105,6 +105,9 @@
     "email": "البريد"
   },
   "menu": {
+    "commercial": "لوحة التحكم التجارية",
+    "systemManagement": "إدارة النظام",
+    "enterSite": "فتح الموقع",
     "theme": "الثيم",
     "dark": "داكن",
     "ultraDark": "داكن جدًا",

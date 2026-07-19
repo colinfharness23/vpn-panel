@@ -30,8 +30,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Stub internal/web/dist for go:embed
-        run: mkdir -p internal/web/dist && touch internal/web/dist/.gitkeep
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build embedded frontend
+        run: |
+          npm ci
+          npm run build
+        working-directory: frontend
       - name: Test
         run: |
           go list ./... | grep -v '/frontend/node_modules/' > /tmp/go-packages.txt
@@ -111,8 +119,16 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Stub internal/web/dist for go:embed
-        run: mkdir -p internal/web/dist && touch internal/web/dist/.gitkeep
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build embedded frontend
+        run: |
+          npm ci
+          npm run build
+        working-directory: frontend
       - name: Race + shuffle
         run: |
           go list ./... | grep -v '/frontend/node_modules/' > /tmp/go-packages.txt

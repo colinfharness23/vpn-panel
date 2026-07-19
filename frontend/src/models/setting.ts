@@ -19,6 +19,8 @@ export class AllSetting {
   tgBotToken = '';
   tgBotAPIServer = '';
   tgBotChatId = '';
+  tgGroupLink = '';
+  tgWebhookURL = '';
   tgRunTime = '@daily';
   tgBotBackup = false;
   tgCpu = 80;

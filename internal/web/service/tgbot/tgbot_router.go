@@ -38,7 +38,56 @@ func (t *Tgbot) OnReceive() {
 	tgBotMutex.Unlock()
 
 	// Get updates channel using the context with shorter timeout for better error recovery
-	updates, _ := bot.UpdatesViaLongPolling(ctx, &params)
+	updates, err := bot.UpdatesViaLongPolling(ctx, &params)
+	if err != nil {
+		t.failReceiverStart(cancel, err)
+		return
+	}
+	t.runUpdateHandler(updates)
+}
+
+// OnReceiveWebhook creates the same command router as long polling, but gets
+// updates from the authenticated public HTTP callback registered by web.go.
+func (t *Tgbot) OnReceiveWebhook() {
+	tgBotMutex.Lock()
+	if botCancel != nil || isRunning {
+		tgBotMutex.Unlock()
+		logger.Warning("TgBot webhook receiver called while already running; ignoring.")
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	botCancel = cancel
+	isRunning = true
+	botWG.Add(1)
+	tgBotMutex.Unlock()
+
+	updates, err := bot.UpdatesViaWebhook(ctx, func(handler telego.WebhookHandler) error {
+		tgBotMutex.Lock()
+		webhookHandler = handler
+		tgBotMutex.Unlock()
+		return nil
+	})
+	if err != nil {
+		t.failReceiverStart(cancel, err)
+		return
+	}
+	t.runUpdateHandler(updates)
+}
+
+func (t *Tgbot) failReceiverStart(cancel context.CancelFunc, err error) {
+	cancel()
+	tgBotMutex.Lock()
+	if botCancel != nil {
+		botCancel = nil
+	}
+	isRunning = false
+	webhookHandler = nil
+	tgBotMutex.Unlock()
+	botWG.Done()
+	logger.Warning("Telegram bot receiver failed to start:", err)
+}
+
+func (t *Tgbot) runUpdateHandler(updates <-chan telego.Update) {
 	go func() {
 		defer botWG.Done()
 		h, _ := th.NewBotHandler(bot, updates)

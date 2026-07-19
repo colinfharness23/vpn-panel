@@ -105,6 +105,9 @@
     "email": "Email"
   },
   "menu": {
+    "commercial": "Комерційна панель",
+    "systemManagement": "Керування системою",
+    "enterSite": "Відкрити сайт",
     "theme": "Тема",
     "dark": "Темна",
     "ultraDark": "Ультра темна",

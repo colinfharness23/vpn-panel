@@ -105,6 +105,9 @@
     "copyAllConfigsCopied": "همه کانفیگ‌ها کپی شدند"
   },
   "menu": {
+    "commercial": "کنسول تجاری",
+    "systemManagement": "مدیریت سیستم",
+    "enterSite": "ورود به وب‌سایت",
     "theme": "تم",
     "dark": "تیره",
     "ultraDark": "فوق تیره",

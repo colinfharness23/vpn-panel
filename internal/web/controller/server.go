@@ -14,6 +14,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/global"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -29,11 +30,14 @@ type ServerController struct {
 	settingService     service.SettingService
 	panelService       panel.PanelService
 	xrayMetricsService service.XrayMetricsService
+	migrationManager   *service.MigrationManager
+	userService        panel.UserService
 }
 
 // NewServerController creates a new ServerController, initializes routes, and starts background tasks.
 func NewServerController(g *gin.RouterGroup) *ServerController {
 	a := &ServerController{}
+	a.migrationManager = service.NewMigrationManager(&a.serverService)
 	service.RestoreSystemMetrics()
 	a.initRouter(g)
 	a.startTask()
@@ -64,6 +68,8 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.GET("/getNewVlessEnc", a.getNewVlessEnc)
 	g.GET("/clientIps", a.getClientIps)
 	g.GET("/fail2banStatus", a.getFail2banStatus)
+	g.GET("/migration/source", a.getMigrationSource)
+	g.GET("/migration/status/:id", a.getMigrationStatus)
 
 	g.POST("/stopXrayService", a.stopXrayService)
 	g.POST("/restartXrayService", a.restartXrayService)
@@ -81,6 +87,53 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.POST("/scanRealityTarget", a.scanRealityTarget)
 	g.POST("/scanRealityTargets", a.scanRealityTargets)
 	g.POST("/clientIps", a.setClientIps)
+	g.POST("/migration/preflight", a.preflightMigration)
+	g.POST("/migration/start", a.requireMigrationReauth, a.startMigration)
+}
+
+func (a *ServerController) requireMigrationReauth(c *gin.Context) {
+	user := session.GetLoginUser(c)
+	password := c.GetHeader("X-Admin-Password")
+	twoFactorCode := c.GetHeader("X-Admin-2FA")
+	if user == nil || password == "" {
+		c.AbortWithStatusJSON(http.StatusPreconditionRequired, entity.Msg{Success: false, Msg: "迁移需要重新验证管理员密码与验证码"})
+		return
+	}
+	checked, err := a.userService.CheckUser(user.Username, password, twoFactorCode)
+	if err != nil || checked == nil || checked.Id != user.Id {
+		c.AbortWithStatusJSON(http.StatusForbidden, entity.Msg{Success: false, Msg: "管理员重新验证失败"})
+		return
+	}
+	c.Next()
+}
+
+func (a *ServerController) getMigrationSource(c *gin.Context) {
+	jsonObj(c, a.migrationManager.SourceInfo(), nil)
+}
+
+func (a *ServerController) preflightMigration(c *gin.Context) {
+	var request service.ServerMigrationRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		jsonMsg(c, "迁移参数格式无效", err)
+		return
+	}
+	result, err := a.migrationManager.Preflight(c.Request.Context(), request)
+	jsonObj(c, result, err)
+}
+
+func (a *ServerController) startMigration(c *gin.Context) {
+	var request service.ServerMigrationRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		jsonMsg(c, "迁移参数格式无效", err)
+		return
+	}
+	result, err := a.migrationManager.Start(c.Request.Context(), request)
+	jsonObj(c, result, err)
+}
+
+func (a *ServerController) getMigrationStatus(c *gin.Context) {
+	result, err := a.migrationManager.Status(c.Param("id"))
+	jsonObj(c, result, err)
 }
 
 // startTask registers the @2s ticker that refreshes server status, samples

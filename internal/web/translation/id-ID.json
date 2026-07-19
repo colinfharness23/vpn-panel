@@ -105,6 +105,9 @@
     "email": "Email"
   },
   "menu": {
+    "commercial": "Konsol komersial",
+    "systemManagement": "Manajemen sistem",
+    "enterSite": "Buka situs",
     "theme": "Tema",
     "dark": "Gelap",
     "ultraDark": "Sangat Gelap",

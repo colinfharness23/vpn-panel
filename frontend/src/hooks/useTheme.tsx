@@ -123,18 +123,26 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
-export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [isDark, setIsDark] = useState<boolean>(initialDark);
-  const [isUltra, setIsUltra] = useState<boolean>(initialUltra);
+export function ThemeProvider({ children, lockedLight = false }: { children: ReactNode; lockedLight?: boolean }) {
+  const [storedDark, setStoredDark] = useState<boolean>(initialDark);
+  const [storedUltra, setStoredUltra] = useState<boolean>(initialUltra);
+  const isDark = lockedLight ? false : storedDark;
+  const isUltra = lockedLight ? false : storedUltra;
 
   useEffect(() => {
     applyDom(isDark, isUltra);
-    localStorage.setItem(STORAGE_DARK, String(isDark));
-    localStorage.setItem(STORAGE_ULTRA, String(isUltra));
-  }, [isDark, isUltra]);
+    if (!lockedLight) {
+      localStorage.setItem(STORAGE_DARK, String(isDark));
+      localStorage.setItem(STORAGE_ULTRA, String(isUltra));
+    }
+  }, [isDark, isUltra, lockedLight]);
 
-  const toggleTheme = useCallback(() => setIsDark((v) => !v), []);
-  const toggleUltra = useCallback(() => setIsUltra((v) => !v), []);
+  const toggleTheme = useCallback(() => {
+    if (!lockedLight) setStoredDark((v) => !v);
+  }, [lockedLight]);
+  const toggleUltra = useCallback(() => {
+    if (!lockedLight) setStoredUltra((v) => !v);
+  }, [lockedLight]);
 
   const antdThemeConfig = useMemo(() => buildAntdThemeConfig(isDark, isUltra), [isDark, isUltra]);
 

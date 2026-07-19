@@ -23,6 +23,9 @@
 > [!IMPORTANT]
 > 本项目仅供个人使用。请勿将其用于非法目的，也请勿在生产环境中使用。
 
+> 当前分支包含机场商业门户与运营后台。若要按本项目方案部署到 Ubuntu，
+> 请使用 [Ubuntu 裸机一键部署说明](deploy/ubuntu/README.md)，不需要 Docker。
+
 ## 功能特性
 
 - **多协议入站** — VLESS、VMess、Trojan、Shadowsocks、WireGuard、Hysteria2、HTTP、SOCKS (Mixed)、Dokodemo-door / Tunnel 和 TUN。

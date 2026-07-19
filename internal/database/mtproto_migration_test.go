@@ -83,6 +83,7 @@ func TestStripMtprotoInboundSecretsIsGated(t *testing.T) {
 		"secret":        "eebeef61",
 		"clients":       []any{map[string]any{"email": "x", "secret": "eeaa61", "enable": true}},
 	})
+	clearSeederHistory(t, "StripMtprotoInboundSecrets")
 
 	if err := stripMtprotoInboundSecrets(); err != nil {
 		t.Fatalf("first run: %v", err)

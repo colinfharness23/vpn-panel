@@ -38,6 +38,8 @@ type AllSetting struct {
 	TgBotProxy      string `json:"tgBotProxy" form:"tgBotProxy"`
 	TgBotAPIServer  string `json:"tgBotAPIServer" form:"tgBotAPIServer"`
 	TgBotChatId     string `json:"tgBotChatId" form:"tgBotChatId"`
+	TgGroupLink     string `json:"tgGroupLink" form:"tgGroupLink"`
+	TgWebhookURL    string `json:"tgWebhookURL" form:"tgWebhookURL"`
 	TgRunTime       string `json:"tgRunTime" form:"tgRunTime"`
 	TgBotBackup     bool   `json:"tgBotBackup" form:"tgBotBackup"`
 	TgCpu           int    `json:"tgCpu" form:"tgCpu" validate:"gte=0,lte=100"`

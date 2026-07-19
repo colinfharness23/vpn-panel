@@ -103,6 +103,7 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	// /panel/api/xray/*.
 	a.settingController = NewSettingController(api)
 	a.xraySettingController = NewXraySettingController(api)
+	NewCommercialAdminController(api.Group("/commercial"))
 
 	// Extra routes
 	api.POST("/backuptotgbot", a.BackuptoTgbot)

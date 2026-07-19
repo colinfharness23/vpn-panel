@@ -1,5 +1,5 @@
 import { Input, InputNumber, Switch, Tabs } from 'antd';
-import { BranchesOutlined, CompassOutlined, IdcardOutlined, InfoCircleOutlined, NodeIndexOutlined, SafetyCertificateOutlined, SettingOutlined } from '@ant-design/icons';
+import { BranchesOutlined, CloudServerOutlined, CompassOutlined, IdcardOutlined, InfoCircleOutlined, NodeIndexOutlined, SafetyCertificateOutlined, SettingOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import type { AllSetting } from '@/models/setting';
 import { SettingListItem } from '@/components/ui';
@@ -7,18 +7,36 @@ import { RemarkTemplateField } from '@/components/form';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { catTabLabel } from './catTabLabel';
 import { sanitizePath, normalizePath } from './uriPath';
+import SubscriptionSettingsPane from './SubscriptionSettingsPane';
+import type { SubscriptionSettings } from './useSubscriptionSettings';
 
 interface SubscriptionGeneralTabProps {
   allSetting: AllSetting;
   updateSetting: (patch: Partial<AllSetting>) => void;
+  subscriptionSettings: SubscriptionSettings;
+  subscriptionSettingsError?: string;
+  updateSubscriptionSettings: (patch: Partial<SubscriptionSettings>) => void;
 }
 
-export default function SubscriptionGeneralTab({ allSetting, updateSetting }: SubscriptionGeneralTabProps) {
+export default function SubscriptionGeneralTab({ allSetting, updateSetting, subscriptionSettings, subscriptionSettingsError, updateSubscriptionSettings }: SubscriptionGeneralTabProps) {
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
 
   return (
-    <Tabs defaultActiveKey="1" items={[
+    <Tabs defaultActiveKey="subscription-settings" items={[
+      {
+        key: 'subscription-settings',
+        label: catTabLabel(<CloudServerOutlined />, '订阅设置', isMobile),
+        children: (
+          <SubscriptionSettingsPane
+            settings={subscriptionSettings}
+            allSetting={allSetting}
+            error={subscriptionSettingsError}
+            onChange={updateSubscriptionSettings}
+            onAllSettingChange={updateSetting}
+          />
+        ),
+      },
       {
         key: '1',
         label: catTabLabel(<SettingOutlined />, t('pages.settings.panelSettings'), isMobile),
@@ -104,25 +122,6 @@ export default function SubscriptionGeneralTab({ allSetting, updateSetting }: Su
             <SettingListItem paddings="small" title={t('pages.settings.subAnnounce')} description={t('pages.settings.subAnnounceDesc')}>
               <Input.TextArea value={allSetting.subAnnounce}
                 onChange={(e) => updateSetting({ subAnnounce: e.target.value })} />
-            </SettingListItem>
-            <SettingListItem
-              paddings="small"
-              title={t('pages.settings.subThemeDir')}
-              description={(
-                <>
-                  {t('pages.settings.subThemeDirDesc')}{' '}
-                  <a
-                    href="https://github.com/MHSanaei/3x-ui/blob/main/docs/custom-subscription-templates.md"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {t('pages.settings.subThemeDirDocs')}
-                  </a>
-                </>
-              )}
-            >
-              <Input value={allSetting.subThemeDir} placeholder="/etc/3x-ui/sub_templates/my-theme/"
-                onChange={(e) => updateSetting({ subThemeDir: e.target.value })} />
             </SettingListItem>
           </>
         ),

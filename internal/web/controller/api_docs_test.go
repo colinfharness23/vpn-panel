@@ -101,6 +101,8 @@ func TestAPIRoutesDocumented(t *testing.T) {
 			basePath = "/panel/api/setting"
 		case "xray_setting.go":
 			basePath = "/panel/api/xray"
+		case "commercial_admin.go":
+			basePath = "/panel/api/commercial"
 		case "websocket.go":
 			basePath = ""
 		}
@@ -162,5 +164,40 @@ func TestAPIRoutesDocumented(t *testing.T) {
 
 	if missingFromDocs > 0 {
 		t.Errorf("Found %d undocumented route(s). Update endpoints.ts to match.", missingFromDocs)
+	}
+}
+
+func TestCommercialSurfaceHasNoReversalChannel(t *testing.T) {
+	controllerDir, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatalf("failed to get current dir: %v", err)
+	}
+	root := filepath.Join(controllerDir, "..", "..", "..")
+	files := []string{
+		filepath.Join(controllerDir, "commercial_admin.go"),
+		filepath.Join(controllerDir, "commercial_public.go"),
+		filepath.Join(root, "internal", "web", "entity", "commercial.go"),
+		filepath.Join(root, "internal", "web", "service", "commercial", "payment.go"),
+		filepath.Join(root, "internal", "web", "service", "commercial", "alipay.go"),
+		filepath.Join(root, "internal", "web", "service", "commercial", "orders.go"),
+		filepath.Join(root, "internal", "web", "service", "commercial", "worker.go"),
+		filepath.Join(root, "internal", "database", "model", "commercial.go"),
+		filepath.Join(root, "frontend", "src", "portal", "PortalApp.tsx"),
+		filepath.Join(root, "frontend", "src", "portal", "translations.ts"),
+		filepath.Join(root, "frontend", "src", "pages", "commercial", "CommercialPage.tsx"),
+		filepath.Join(root, "frontend", "src", "pages", "api-docs", "endpoints.ts"),
+	}
+	forbiddenTerms := []string{"ref" + "und", "退" + "款"}
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", path, err)
+		}
+		content := strings.ToLower(string(data))
+		for _, term := range forbiddenTerms {
+			if strings.Contains(content, strings.ToLower(term)) {
+				t.Errorf("commercial surface %s contains a forbidden reversal capability", path)
+			}
+		}
 	}
 }

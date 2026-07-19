@@ -21,7 +21,7 @@ readyI18n().then(() => {
   const root = document.getElementById('app');
   if (root) {
     createRoot(root).render(
-      <ThemeProvider>
+      <ThemeProvider lockedLight>
         <QueryProvider>
           <LoginPage />
         </QueryProvider>

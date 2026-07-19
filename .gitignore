@@ -8,6 +8,7 @@
 
 # Ignore log files
 *.log
+.artifacts/
 
 # Ignore temporary files
 tmp/
@@ -23,6 +24,9 @@ internal/web/dist/*
 !internal/web/dist/.gitkeep
 release/
 node_modules/
+log/
+frontend/pnpm-lock.yaml
+frontend/pnpm-workspace.yaml
 
 # Ignore compiled binaries
 main

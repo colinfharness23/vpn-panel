@@ -22,6 +22,8 @@ import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { catTabLabel } from './catTabLabel';
 import { sanitizePath } from './uriPath';
 import SecretInput from './SecretInput';
+import SiteSettingsTab from './SiteSettingsTab';
+import type { SiteSettings, TrialPlanOption } from './useSiteSettings';
 
 interface ApiMsg<T = unknown> {
   success?: boolean;
@@ -31,6 +33,12 @@ interface ApiMsg<T = unknown> {
 interface GeneralTabProps {
   allSetting: AllSetting;
   updateSetting: (patch: Partial<AllSetting>) => void;
+  siteSettings: SiteSettings;
+  trialPlans: TrialPlanOption[];
+  siteSettingsError?: string;
+  updateSiteSettings: (patch: Partial<SiteSettings>) => void;
+  saveSiteLogo: (logoUrl: string) => Promise<unknown>;
+  logoSaving?: boolean;
 }
 
 const DATEPICKER_LIST: { name: string; value: 'gregorian' | 'jalalian' }[] = [
@@ -38,7 +46,7 @@ const DATEPICKER_LIST: { name: string; value: 'gregorian' | 'jalalian' }[] = [
   { name: 'Jalalian (شمسی)', value: 'jalalian' },
 ];
 
-export default function GeneralTab({ allSetting, updateSetting }: GeneralTabProps) {
+export default function GeneralTab({ allSetting, updateSetting, siteSettings, trialPlans, siteSettingsError, updateSiteSettings, saveSiteLogo, logoSaving }: GeneralTabProps) {
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
 
@@ -154,7 +162,21 @@ export default function GeneralTab({ allSetting, updateSetting }: GeneralTabProp
   );
 
   return (
-    <Tabs defaultActiveKey="1" items={[
+    <Tabs defaultActiveKey="site" items={[
+      {
+        key: 'site',
+        label: catTabLabel(<GlobalOutlined />, '站点设置', isMobile),
+        children: (
+          <SiteSettingsTab
+            settings={siteSettings}
+            plans={trialPlans}
+            error={siteSettingsError}
+            onChange={updateSiteSettings}
+            onLogoSave={saveSiteLogo}
+            logoSaving={logoSaving}
+          />
+        ),
+      },
       {
         key: '1',
         label: catTabLabel(<SettingOutlined />, t('pages.settings.panelSettings'), isMobile),

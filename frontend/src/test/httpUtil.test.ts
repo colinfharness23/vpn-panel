@@ -47,6 +47,33 @@ describe('HttpUtil', () => {
     expect(toast.success).toHaveBeenCalledWith('done');
   });
 
+  it('supports PATCH for editable commercial resources', async () => {
+    mockRequest.mockResolvedValue(envelope({ success: true, msg: '', obj: { updated: true } }));
+
+    const msg = await HttpUtil.patch('/panel/api/commercial/customers/1', { status: 'suspended' }, { silent: true });
+
+    expect(msg.success).toBe(true);
+    expect(mockRequest).toHaveBeenCalledWith('PATCH', '/panel/api/commercial/customers/1', { status: 'suspended' }, {});
+  });
+
+  it('supports DELETE for customer session revocation', async () => {
+    mockRequest.mockResolvedValue(envelope({ success: true, msg: '', obj: { revoked: true } }));
+
+    const msg = await HttpUtil.delete('/api/v1/user/sessions/session-1', undefined, { silent: true });
+
+    expect(msg.success).toBe(true);
+    expect(mockRequest).toHaveBeenCalledWith('DELETE', '/api/v1/user/sessions/session-1', undefined, {});
+  });
+
+  it('supports PUT for administrator role changes', async () => {
+    mockRequest.mockResolvedValue(envelope({ success: true, msg: '', obj: { saved: true } }));
+
+    const msg = await HttpUtil.put('/panel/api/commercial/roles/1', { role: 'support' }, { silent: true });
+
+    expect(msg.success).toBe(true);
+    expect(mockRequest).toHaveBeenCalledWith('PUT', '/panel/api/commercial/roles/1', { role: 'support' }, {});
+  });
+
   it('suppresses the success toast with silentSuccess but still warns on nodePending', async () => {
     mockRequest.mockResolvedValue(envelope({ success: true, msg: 'saved', obj: { nodePending: true } }));
 

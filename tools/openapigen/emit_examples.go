@@ -60,12 +60,43 @@ func (g *exampleGen) forField(f Field, visited map[string]bool) any {
 		return v
 	}
 	bk := baseKind(f.Type)
+	if bk.Kind == KindString {
+		if v, ok := stringExample(f.Validate); ok {
+			return v
+		}
+	}
 	if bk.Kind == KindInt || bk.Kind == KindNumber {
 		if v, ok := numericFloor(bk.Kind, f.Validate); ok {
 			return v
 		}
 	}
 	return g.forType(f.Type, visited)
+}
+
+func stringExample(rules []ValidateRule) (string, bool) {
+	for _, r := range rules {
+		switch r.Name {
+		case "email":
+			return "user@example.com", true
+		case "url":
+			return "https://example.com", true
+		}
+	}
+	for _, r := range rules {
+		if r.Name != "len" && r.Name != "min" {
+			continue
+		}
+		n, err := strconv.Atoi(r.Param)
+		if err == nil && n > 0 {
+			return strings.Repeat("x", n), true
+		}
+	}
+	for _, r := range rules {
+		if r.Name == "required" {
+			return "example", true
+		}
+	}
+	return "", false
 }
 
 func (g *exampleGen) forType(t TypeRef, visited map[string]bool) any {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"embed"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -29,6 +30,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/network"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/runtime"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/commercial"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/email"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgbot"
@@ -162,7 +164,8 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 
 	engine := gin.Default()
 	directHTTPS := s.isDirectHTTPSConfigured()
-	sendHSTS := directHTTPS && !config.IsSkipHSTS()
+	externalHTTPS := directHTTPS || config.IsBehindHTTPSProxy()
+	sendHSTS := externalHTTPS && !config.IsSkipHSTS()
 	engine.Use(middleware.SecurityHeadersMiddleware(sendHSTS))
 
 	// Cap request bodies on state-changing requests so a stolen session/API
@@ -192,15 +195,22 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	if err != nil {
 		return nil, err
 	}
+	adminBasePath, err := config.GetAdminBasePath(basePath)
+	if err != nil {
+		return nil, err
+	}
 	engine.Use(gzip.Gzip(gzip.DefaultCompression))
-	assetsBasePath := basePath + "assets/"
+	assetsBasePaths := []string{basePath + "assets/"}
+	if adminBasePath != basePath {
+		assetsBasePaths = append(assetsBasePaths, adminBasePath+"assets/")
+	}
 
 	store := cookie.NewStore(secret)
 	// Configure default session cookie options, including expiration (MaxAge)
 	sessionOptions := sessions.Options{
 		Path:     basePath,
 		HttpOnly: true,
-		Secure:   directHTTPS,
+		Secure:   externalHTTPS,
 		SameSite: http.SameSiteLaxMode,
 	}
 	if sessionMaxAge, err := s.settingService.GetSessionMaxAge(); err == nil && sessionMaxAge > 0 {
@@ -210,11 +220,15 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	engine.Use(sessions.Sessions("3x-ui", store))
 	engine.Use(func(c *gin.Context) {
 		c.Set("base_path", basePath)
+		c.Set("public_base_path", basePath)
 	})
 	engine.Use(func(c *gin.Context) {
 		uri := c.Request.RequestURI
-		if strings.HasPrefix(uri, assetsBasePath) {
-			c.Header("Cache-Control", "max-age=31536000")
+		for _, assetsBasePath := range assetsBasePaths {
+			if strings.HasPrefix(uri, assetsBasePath) {
+				c.Header("Cache-Control", "max-age=31536000")
+				break
+			}
 		}
 	})
 
@@ -231,10 +245,13 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	// so the Vite watcher's incremental rebuilds show up without
 	// restarting the binary; in prod we serve the embedded dist FS
 	// rooted at `dist/assets/`.
-	if config.IsDebug() {
-		engine.StaticFS(basePath+"assets", http.FS(os.DirFS("internal/web/dist/assets")))
-	} else {
-		engine.StaticFS(basePath+"assets", http.FS(&wrapDistFS{FS: distFS}))
+	for _, assetsPath := range assetsBasePaths {
+		assetsRoute := strings.TrimSuffix(assetsPath, "/")
+		if config.IsDebug() {
+			engine.StaticFS(assetsRoute, http.FS(os.DirFS("internal/web/dist/assets")))
+		} else {
+			engine.StaticFS(assetsRoute, http.FS(&wrapDistFS{FS: distFS}))
+		}
 	}
 
 	// Hand the embedded `dist/` filesystem to the controller package
@@ -243,12 +260,41 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	// rendering a legacy template.
 	controller.SetDistFS(distFS)
 
-	g := engine.Group(basePath)
+	publicGroup := engine.Group(basePath)
+	publicGroup.POST("/telegram/webhook", func(c *gin.Context) {
+		const maxTelegramUpdateBytes = 1 << 20
+		body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxTelegramUpdateBytes))
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false})
+			return
+		}
+		secret := c.GetHeader("X-Telegram-Bot-Api-Secret-Token")
+		err = s.tgbotService.HandleWebhook(context.WithoutCancel(c.Request.Context()), secret, body)
+		switch {
+		case errors.Is(err, tgbot.ErrWebhookUnauthorized):
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false})
+		case errors.Is(err, tgbot.ErrWebhookUnavailable):
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"success": false})
+		case err != nil:
+			logger.Warning("Telegram webhook update rejected:", err)
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false})
+		default:
+			c.Status(http.StatusOK)
+		}
+	})
 
-	s.index = controller.NewIndexController(g)
-	s.panel = controller.NewXUIController(g)
-	g.GET("/panel/api/openapi.json", controller.ServeOpenAPISpec)
-	s.api = controller.NewAPIController(g)
+	controller.NewCommercialPublicController(publicGroup, email.NewEmailService(s.settingService))
+
+	adminGroup := engine.Group(adminBasePath)
+	adminGroup.Use(func(c *gin.Context) {
+		c.Set("base_path", adminBasePath)
+		c.Set("public_base_path", basePath)
+		c.Next()
+	})
+	s.index = controller.NewIndexController(adminGroup)
+	s.panel = controller.NewXUIController(adminGroup)
+	adminGroup.GET("/panel/api/openapi.json", controller.ServeOpenAPISpec)
+	s.api = controller.NewAPIController(adminGroup)
 
 	// Initialize WebSocket hub
 	s.wsHub = websocket.NewHub()
@@ -257,8 +303,8 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	// Initialize WebSocket controller — service owns per-connection pumps,
 	// controller is HTTP-layer only (auth + upgrade).
 	s.ws = controller.NewWebSocketController(panel.NewWebSocketService(s.wsHub))
-	// Register WebSocket route with basePath (g already has basePath prefix)
-	g.GET("/ws", s.ws.HandleWebSocket)
+	// Register WebSocket route with the private administrator prefix.
+	adminGroup.GET("/ws", s.ws.HandleWebSocket)
 
 	// Chrome DevTools endpoint for debugging web apps
 	engine.GET("/.well-known/appspecific/com.chrome.devtools.json", func(c *gin.Context) {
@@ -268,8 +314,12 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	// Let unknown panel document routes fall back to the SPA shell, while every
 	// non-SPA miss still returns a hard 404.
 	engine.NoRoute(func(c *gin.Context) {
-		if s.panel.HandleNoRoutePanelSPA(c) {
-			return
+		if strings.HasPrefix(c.Request.URL.Path, adminBasePath) {
+			c.Set("base_path", adminBasePath)
+			c.Set("public_base_path", basePath)
+			if s.panel.HandleNoRoutePanelSPA(c) {
+				return
+			}
 		}
 		c.AbortWithStatus(http.StatusNotFound)
 	})
@@ -633,6 +683,37 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 		s.tgbotService.SendMsgToTgbotAdmins("✅ Test message from 3x-ui")
 		return nil
 	})
+	controller.SetConfigureTgWebhookFunc(func(ctx context.Context, webhookURL string) (any, error) {
+		status, err := s.tgbotService.ConfigureWebhook(ctx, webhookURL)
+		if err != nil {
+			return nil, err
+		}
+		enabled, enabledErr := s.settingService.GetTgbotEnabled()
+		if enabledErr != nil {
+			return status, enabledErr
+		}
+		if enabled {
+			tgBot := s.tgbotService.NewTgbot()
+			if startErr := tgBot.Start(i18nFS); startErr != nil {
+				return status, startErr
+			}
+		}
+		return status, nil
+	})
+	controller.SetDeleteTgWebhookFunc(func(ctx context.Context) error {
+		if err := s.tgbotService.DeleteWebhook(ctx); err != nil {
+			return err
+		}
+		enabled, enabledErr := s.settingService.GetTgbotEnabled()
+		if enabledErr != nil {
+			return enabledErr
+		}
+		if enabled {
+			tgBot := s.tgbotService.NewTgbot()
+			return tgBot.Start(i18nFS)
+		}
+		return nil
+	})
 
 	controller.SetReloadTgbotFunc(func() {
 		enabled, err := s.settingService.GetTgbotEnabled()
@@ -655,6 +736,8 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 			s.bus.Subscribe("tg-notifier", s.tgbotService.HandleEvent)
 		}
 	})
+
+	go commercial.NewWorker().Run(s.ctx)
 
 	s.startTask(restartXray)
 

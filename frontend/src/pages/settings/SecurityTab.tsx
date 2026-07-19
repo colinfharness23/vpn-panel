@@ -12,13 +12,16 @@ import {
   Tabs,
   message,
 } from 'antd';
-import { ApiOutlined, SafetyOutlined, UserOutlined } from '@ant-design/icons';
+import { ApiOutlined, SafetyCertificateOutlined, SafetyOutlined, UserOutlined } from '@ant-design/icons';
 import { ClipboardManager, HttpUtil, IntlUtil, RandomUtil } from '@/utils';
 import type { AllSetting } from '@/models/setting';
 import { SettingListItem } from '@/components/ui';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { catTabLabel } from './catTabLabel';
 import TwoFactorModal from './TwoFactorModal';
+import SecuritySettingsPane from './SecuritySettingsPane';
+import { DEFAULT_SECURITY_SETTINGS } from './useSecuritySettings';
+import type { SecuritySettings } from './useSecuritySettings';
 import './SecurityTab.css';
 
 interface ApiMsg<T = unknown> {
@@ -38,6 +41,9 @@ interface SecurityTabProps {
   allSetting: AllSetting;
   updateSetting: (patch: Partial<AllSetting>) => void;
   saveSetting: (payload: Partial<AllSetting> & Record<string, unknown>) => Promise<unknown>;
+  securitySettings?: SecuritySettings;
+  securitySettingsError?: string;
+  updateSecuritySettings?: (patch: Partial<SecuritySettings>) => void;
 }
 
 const UNIX_MILLISECONDS_THRESHOLD = 100_000_000_000;
@@ -66,7 +72,7 @@ const TFA_INITIAL: TfaState = {
   onConfirm: () => {},
 };
 
-export default function SecurityTab({ allSetting, updateSetting, saveSetting }: SecurityTabProps) {
+export default function SecurityTab({ allSetting, updateSetting, saveSetting, securitySettings = DEFAULT_SECURITY_SETTINGS, securitySettingsError, updateSecuritySettings = () => {} }: SecurityTabProps) {
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
   const [modal, modalContextHolder] = Modal.useModal();
@@ -251,7 +257,20 @@ export default function SecurityTab({ allSetting, updateSetting, saveSetting }: 
     <>
       {messageContextHolder}
       {modalContextHolder}
-      <Tabs defaultActiveKey="1" items={[
+      <Tabs defaultActiveKey="policy" items={[
+        {
+          key: 'policy',
+          label: catTabLabel(<SafetyOutlined />, '安全设置', isMobile),
+          children: (
+            <SecuritySettingsPane
+              settings={securitySettings}
+              backendPath={allSetting.webBasePath}
+              error={securitySettingsError}
+              onChange={updateSecuritySettings}
+              onBackendPathChange={(webBasePath) => updateSetting({ webBasePath })}
+            />
+          ),
+        },
         {
           key: '1',
           label: catTabLabel(<UserOutlined />, t('pages.settings.security.admin'), isMobile),
@@ -285,7 +304,7 @@ export default function SecurityTab({ allSetting, updateSetting, saveSetting }: 
         },
         {
           key: '2',
-          label: catTabLabel(<SafetyOutlined />, t('pages.settings.security.twoFactor'), isMobile),
+          label: catTabLabel(<SafetyCertificateOutlined />, t('pages.settings.security.twoFactor'), isMobile),
           children: (
             <SettingListItem
               paddings="small"
