@@ -445,7 +445,7 @@ status="$(curl -sS -D "$tmp_dir/sub-health.headers" -o /dev/null -w '%{http_code
 [[ $status != 000 && $status -lt 500 ]] || die "订阅服务健康检查失败（HTTP $status）。"
 tr -d '\r' <"$tmp_dir/sub-health.headers" | grep -qi '^X-Nova-Service: subscription$' ||
   die "订阅路径没有进入独立订阅服务。"
-ss -ltn | grep -Eq "127\\.0\\.0\\.1:$NOVA_SUB_PORT[[:space:]]" ||
+ss -ltn | grep -Eq "127\\.0\\.0\\.1:${NOVA_SUB_PORT}[[:space:]]" ||
   die "订阅服务没有仅监听本机回环地址。"
 systemctl is-enabled --quiet certbot.timer
 
