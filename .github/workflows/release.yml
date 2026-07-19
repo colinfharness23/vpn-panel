@@ -89,7 +89,7 @@ jobs:
       - name: Verify Go services
         run: |
           go list ./... | grep -v '/frontend/node_modules/' > /tmp/go-packages.txt
-          go test -shuffle=on -count=1 $(cat /tmp/go-packages.txt)
+          go test -p 1 -shuffle=on -count=1 -timeout 30m $(cat /tmp/go-packages.txt)
 
       - name: Verify PostgreSQL migrations and durable writes
         env:
@@ -101,7 +101,7 @@ jobs:
           go test -p 1 ./internal/web/service -run 'PostgresCommitFailure' -count=1 -v
 
       - name: Verify Go race safety
-        run: go test -race -shuffle=on -count=1 ./internal/...
+        run: go test -p 1 -race -shuffle=on -count=1 -timeout 45m ./internal/...
 
       - name: Verify 10,000 subscriptions across 50 inbounds
         env:

@@ -87,6 +87,7 @@ first_install=1
 
 NOVA_GITHUB_REPO="${NOVA_GITHUB_REPO:-$(saved_value NOVA_GITHUB_REPO)}"
 NOVA_RELEASE_TAG="${NOVA_RELEASE_TAG:-latest}"
+NOVA_RELEASE_ASSET_DIR="${NOVA_RELEASE_ASSET_DIR:-}"
 NOVA_DOMAIN="${NOVA_DOMAIN:-$(saved_value NOVA_DOMAIN)}"
 NOVA_ACME_EMAIL="${NOVA_ACME_EMAIL:-$(saved_value NOVA_ACME_EMAIL)}"
 NOVA_ADMIN_PATH="${NOVA_ADMIN_PATH:-$(saved_value NOVA_ADMIN_PATH)}"
@@ -161,17 +162,30 @@ fi
 runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_database WHERE datname='$NOVA_DB_NAME'" | grep -q 1 ||
   runuser -u postgres -- createdb -O "$NOVA_DB_USER" "$NOVA_DB_NAME"
 
-if [[ $NOVA_RELEASE_TAG == latest ]]; then
+if [[ -z $NOVA_RELEASE_ASSET_DIR && $NOVA_RELEASE_TAG == latest ]]; then
   NOVA_RELEASE_TAG="$(curl -fsSL --retry 4 "https://api.github.com/repos/$NOVA_GITHUB_REPO/releases/latest" | jq -r '.tag_name // empty')"
+fi
+if [[ -n $NOVA_RELEASE_ASSET_DIR && $NOVA_RELEASE_TAG == latest ]]; then
+  NOVA_RELEASE_TAG="candidate-local"
 fi
 [[ $NOVA_RELEASE_TAG =~ ^[A-Za-z0-9._-]+$ ]] || die "没有找到可安装的 GitHub Release。"
 
 tmp_dir="$(mktemp -d)"
 asset="x-ui-linux-$ARCH.tar.gz"
 asset_url="https://github.com/$NOVA_GITHUB_REPO/releases/download/$NOVA_RELEASE_TAG/$asset"
-log "下载并校验 $NOVA_RELEASE_TAG ($ARCH)……"
-curl -fL --retry 5 --retry-delay 3 --max-time 600 -o "$tmp_dir/$asset" "$asset_url"
-curl -fL --retry 5 --retry-delay 3 --max-time 60 -o "$tmp_dir/$asset.sha256" "$asset_url.sha256"
+if [[ -n $NOVA_RELEASE_ASSET_DIR ]]; then
+  [[ $NOVA_RELEASE_ASSET_DIR == /* && -d $NOVA_RELEASE_ASSET_DIR ]] ||
+    die "NOVA_RELEASE_ASSET_DIR 必须是存在的绝对目录。"
+  [[ -f $NOVA_RELEASE_ASSET_DIR/$asset && -f $NOVA_RELEASE_ASSET_DIR/$asset.sha256 ]] ||
+    die "本地候选安装包或校验文件不存在。"
+  log "载入并校验本地候选版本 $NOVA_RELEASE_TAG ($ARCH)……"
+  cp "$NOVA_RELEASE_ASSET_DIR/$asset" "$tmp_dir/$asset"
+  cp "$NOVA_RELEASE_ASSET_DIR/$asset.sha256" "$tmp_dir/$asset.sha256"
+else
+  log "下载并校验 $NOVA_RELEASE_TAG ($ARCH)……"
+  curl -fL --retry 5 --retry-delay 3 --max-time 600 -o "$tmp_dir/$asset" "$asset_url"
+  curl -fL --retry 5 --retry-delay 3 --max-time 60 -o "$tmp_dir/$asset.sha256" "$asset_url.sha256"
+fi
 (cd "$tmp_dir" && sha256sum --check "$asset.sha256")
 tar -tzf "$tmp_dir/$asset" | grep -Eq '(^/|(^|/)\.\.(/|$))' && die "安装包包含不安全路径。"
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
