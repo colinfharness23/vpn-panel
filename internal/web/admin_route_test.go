@@ -7,9 +7,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/robfig/cron/v3"
+
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/global"
-	"github.com/robfig/cron/v3"
 )
 
 func TestPrivateAdminRouteIsIndependentFromPortal(t *testing.T) {

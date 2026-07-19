@@ -20,10 +20,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/ssh"
+
 	"github.com/mhsanaei/3x-ui/v3/internal/config"
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
-	"golang.org/x/crypto/ssh"
 )
 
 const (
@@ -338,7 +339,6 @@ func (m *MigrationManager) run(id string, req ServerMigrationRequest) {
 		fail(err)
 		return
 	}
-	backup = nil
 
 	m.update(id, 48, "安装目标服务", "正在安装运行依赖、应用程序、PostgreSQL、Nginx 与 TLS。", nil)
 	installCommand := migrationInstallCommand(deploy, installRemote)

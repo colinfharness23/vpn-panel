@@ -555,11 +555,10 @@ func TestInvitationCommissionPolicyDistributionFirstPaymentAndAutoConfirm(t *tes
 	if err := db.Model(&model.Order{}).Where("id = ?", autoOrder.ID).Updates(map[string]any{"status": OrderCompleted, "completed_at": completedAt}).Error; err != nil {
 		t.Fatal(err)
 	}
-	before := level1.BalanceFen
 	if err := db.First(&level1, "id = ?", level1.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	before = level1.BalanceFen
+	before := level1.BalanceFen
 	// Legacy installations may still contain the old withdrawal flag. It must
 	// never prevent commission credit now that rewards are account credit only.
 	if err := admin.config.Set("invitation.withdrawal_closed", "false", false); err != nil {

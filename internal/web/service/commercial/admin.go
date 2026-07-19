@@ -63,8 +63,10 @@ type AdminUserRole struct {
 	Role     string `json:"role"`
 }
 
-var commercialSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$`)
-var commercialCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,8}$`)
+var (
+	commercialSlugPattern     = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,78}[a-z0-9]$`)
+	commercialCurrencyPattern = regexp.MustCompile(`^[A-Z]{3,8}$`)
+)
 
 type AdminService struct {
 	db       *gorm.DB
