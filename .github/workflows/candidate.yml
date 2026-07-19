@@ -85,14 +85,14 @@ jobs:
       - name: Verify race safety
         run: go test -p 1 -race -shuffle=on -count=1 -timeout 45m ./internal/...
 
-      - name: Verify 10,000 subscriptions across 50 inbounds
+      - name: Verify 100,000 subscriptions across 50 inbounds
         env:
           XUI_SCALE_TEST: "1"
-          XUI_SCALE_SIZES: "10000"
+          XUI_SCALE_SIZES: "100000"
         run: >-
           go test -p 1
           ./internal/web/service ./internal/sub ./internal/web/job
-          -run 'Scale$' -count=1 -v -timeout 20m
+          -run 'Scale$' -count=1 -v -timeout 60m
 
   installer-contract:
     name: Installer contract (${{ matrix.runner }})
@@ -165,6 +165,11 @@ jobs:
           mv xray xray-linux-amd64
           curl -fL --retry 5 -o geoip.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat
           curl -fL --retry 5 -o geosite.dat https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+
+      - name: Verify Trojan and Hysteria2 traffic through packaged Xray
+        env:
+          XRAY_E2E_BINARY: ${{ github.workspace }}/x-ui/bin/xray-linux-amd64
+        run: go test ./internal/xray -run 'TestXrayProtocolConnectivity_E2E' -count=1 -v -timeout 2m
 
       - name: Package and validate candidate
         run: |

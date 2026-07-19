@@ -103,14 +103,14 @@ jobs:
       - name: Verify Go race safety
         run: go test -p 1 -race -shuffle=on -count=1 -timeout 45m ./internal/...
 
-      - name: Verify 10,000 subscriptions across 50 inbounds
+      - name: Verify 100,000 subscriptions across 50 inbounds
         env:
           XUI_SCALE_TEST: "1"
-          XUI_SCALE_SIZES: "10000"
+          XUI_SCALE_SIZES: "100000"
         run: >-
           go test -p 1
           ./internal/web/service ./internal/sub ./internal/web/job
-          -run 'Scale$' -count=1 -v -timeout 20m
+          -run 'Scale$' -count=1 -v -timeout 60m
 
   build:
     needs: verify
@@ -263,6 +263,12 @@ jobs:
               ;;
           esac
           cd ../..
+
+      - name: Verify Trojan and Hysteria2 traffic through packaged Xray
+        if: matrix.platform == 'amd64'
+        env:
+          XRAY_E2E_BINARY: ${{ github.workspace }}/x-ui/bin/xray-linux-amd64
+        run: go test ./internal/xray -run 'TestXrayProtocolConnectivity_E2E' -count=1 -v -timeout 2m
 
       - name: Package
         run: |
