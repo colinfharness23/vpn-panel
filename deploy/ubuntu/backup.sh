@@ -4,6 +4,7 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo "请使用 root 执行。" >&2; exit 1; }
 # shellcheck disable=SC1091
 source /etc/nova/deploy.env
+[[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]] || { echo "部署配置中的管理员入口无效。" >&2; exit 1; }
 
 backup_dir="/var/backups/nova/database"
 install -d -m 700 "$backup_dir"
@@ -20,5 +21,5 @@ config_files=(etc/nova/deploy.env etc/default/x-ui)
 tar -czf "$config_target" -C / "${config_files[@]}"
 chmod 600 "$db_target" "$config_target"
 find "$backup_dir" -type f \( -name '*.dump' -o -name 'config-*.tar.gz' \) -mtime +14 -delete
-echo "备份完成：$db_target"
-echo "部署配置备份：$config_target"
+echo "数据库备份完成：$db_target"
+echo "部署配置备份完成：$config_target"

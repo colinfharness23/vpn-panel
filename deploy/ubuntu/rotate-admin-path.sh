@@ -21,7 +21,7 @@ restore_old_path() {
 }
 trap 'restore_old_path "$?"' ERR
 
-generate_path() {
+generate_admin_path() {
   local result="" byte
   for _ in $(seq 1 18); do
     byte="$(od -An -N1 -tu1 /dev/urandom | tr -d ' ')"
@@ -31,8 +31,8 @@ generate_path() {
 }
 
 old_path="$NOVA_ADMIN_PATH"
-new_path="$(generate_path)"
-while [[ $new_path == "$old_path" ]]; do new_path="$(generate_path)"; done
+new_path="$(generate_admin_path)"
+while [[ $new_path == "$old_path" ]]; do new_path="$(generate_admin_path)"; done
 
 revert_armed=1
 sed -i "s|^NOVA_ADMIN_PATH=.*$|NOVA_ADMIN_PATH=$new_path|" /etc/nova/deploy.env

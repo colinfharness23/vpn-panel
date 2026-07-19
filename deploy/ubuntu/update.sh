@@ -4,6 +4,7 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo "请使用 root 执行。" >&2; exit 1; }
 # shellcheck disable=SC1091
 source /etc/nova/deploy.env
+[[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]] || { echo "部署配置中的管理员入口无效。" >&2; exit 1; }
 
 tmp_dir=""
 backup=""
@@ -33,7 +34,7 @@ requested_tag="${1:-latest}"
 case "$(uname -m)" in
   x86_64|amd64) arch=amd64 ;;
   aarch64|arm64) arch=arm64 ;;
-  *) echo "不支持当前架构。" >&2; exit 1 ;;
+  *) echo "不支持当前 CPU 架构。" >&2; exit 1 ;;
 esac
 if [[ $requested_tag == latest ]]; then
   requested_tag="$(curl -fsSL --retry 4 "https://api.github.com/repos/$NOVA_GITHUB_REPO/releases/latest" | jq -r '.tag_name // empty')"
@@ -48,7 +49,7 @@ asset_url="https://github.com/$NOVA_GITHUB_REPO/releases/download/$requested_tag
 curl -fL --retry 5 --retry-delay 3 --max-time 600 -o "$tmp_dir/$asset" "$asset_url"
 curl -fL --retry 5 --retry-delay 3 --max-time 60 -o "$tmp_dir/$asset.sha256" "$asset_url.sha256"
 (cd "$tmp_dir" && sha256sum --check "$asset.sha256")
-tar -tzf "$tmp_dir/$asset" | grep -Eq '(^/|(^|/)\.\.(/|$))' && { echo "安装包路径不安全。" >&2; exit 1; }
+tar -tzf "$tmp_dir/$asset" | grep -Eq '(^/|(^|/)\.\.(/|$))' && { echo "安装包包含不安全路径。" >&2; exit 1; }
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 [[ -x $tmp_dir/x-ui/x-ui && -f $tmp_dir/x-ui/bin/config.json && -x $tmp_dir/x-ui/bin/xray-linux-$arch ]] ||
   { echo "Release 缺少面板、Xray 或初始配置。" >&2; exit 1; }

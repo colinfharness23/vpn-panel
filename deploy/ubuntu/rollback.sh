@@ -4,6 +4,7 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo "请使用 root 执行。" >&2; exit 1; }
 # shellcheck disable=SC1091
 source /etc/nova/deploy.env
+[[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]] || { echo "部署配置中的管理员入口无效。" >&2; exit 1; }
 
 current=""
 recovery_armed=0
@@ -31,8 +32,8 @@ if [[ -z $backup ]]; then
   backup="$(find /var/backups/nova/releases -maxdepth 1 -type f -name 'x-ui-*.tar.gz' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
 fi
 [[ -n $backup && -f $backup ]] || { echo "没有找到可回滚版本。" >&2; exit 1; }
-tar -tzf "$backup" | grep -Eq '(^/|(^|/)\.\.(/|$))' && { echo "备份包路径不安全。" >&2; exit 1; }
-tar -tzf "$backup" | grep -Ev '^x-ui(/|$)' | grep -q . && { echo "备份包包含非 x-ui 路径。" >&2; exit 1; }
+tar -tzf "$backup" | grep -Eq '(^/|(^|/)\.\.(/|$))' && { echo "备份包包含不安全路径。" >&2; exit 1; }
+tar -tzf "$backup" | grep -Ev '^x-ui(/|$)' | grep -q . && { echo "备份包含非 x-ui 路径。" >&2; exit 1; }
 
 /usr/local/sbin/nova-backup
 systemctl stop x-ui
@@ -65,5 +66,5 @@ for _ in $(seq 1 40); do
   sleep 1
 done
 
-echo "回滚后健康检查失败；将恢复回滚前版本。" >&2
+echo "回滚后健康检查失败，将恢复回滚前版本。" >&2
 false
