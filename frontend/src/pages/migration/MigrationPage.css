@@ -1,0 +1,125 @@
+.migration-page-shell {
+  min-height: 100vh;
+}
+
+.migration-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+}
+
+.migration-page-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.migration-page-heading .ant-typography {
+  margin: 0;
+}
+
+.migration-steps-card .ant-card-body {
+  padding: 20px 24px;
+}
+
+.migration-card {
+  height: 100%;
+}
+
+.migration-connection-card .ant-alert {
+  margin-bottom: 18px;
+}
+
+.migration-empty {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: var(--ant-color-text-tertiary);
+  text-align: center;
+}
+
+.migration-empty > .anticon {
+  font-size: 44px;
+  color: var(--ant-color-primary);
+}
+
+.migration-target-summary {
+  margin-bottom: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.migration-fingerprint {
+  max-width: 260px;
+}
+
+.migration-check-list .ant-list-item-meta-avatar {
+  font-size: 18px;
+}
+
+.migration-check-success { color: var(--ant-color-success); }
+.migration-check-warning { color: var(--ant-color-warning); }
+.migration-check-error { color: var(--ant-color-error); }
+
+.migration-preflight-actions {
+  width: 100%;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.migration-job-running {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: 760px;
+  margin: 20px auto 28px;
+  text-align: center;
+}
+
+.migration-job-running > .anticon {
+  font-size: 42px;
+  color: var(--ant-color-primary);
+}
+
+.migration-job-running .ant-progress {
+  margin-top: 12px;
+}
+
+.migration-log-panel {
+  padding: 14px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  background: var(--ant-color-fill-quaternary);
+  color: var(--ant-color-text-secondary);
+  line-height: 1.8;
+}
+
+.migration-log-panel strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ant-color-text);
+}
+
+.migration-scope-card p {
+  margin: 4px 0 0;
+  color: var(--ant-color-text-secondary);
+}
+
+.migration-scope-card .ant-space > .anticon {
+  margin-top: 3px;
+  color: var(--ant-color-primary);
+}
+
+@media (max-width: 767px) {
+  .migration-page { padding: 12px; }
+  .migration-page-heading { flex-direction: column; }
+  .migration-steps-card .ant-card-body { padding: 16px; }
+  .migration-steps-card .ant-steps { flex-direction: column; }
+}

@@ -3,7 +3,11 @@ package tgbot
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"embed"
+	"encoding/base64"
+	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -38,11 +42,12 @@ var (
 	// botWG waits for the OnReceive Long Polling goroutine to finish.
 	botWG sync.WaitGroup
 
-	botHandler  *th.BotHandler
-	adminIds    []int64
-	isRunning   bool
-	hostname    string
-	hashStorage *global.HashStorage
+	botHandler     *th.BotHandler
+	webhookHandler telego.WebhookHandler
+	adminIds       []int64
+	isRunning      bool
+	hostname       string
+	hashStorage    *global.HashStorage
 
 	// EventBus is set from web layer to publish login/security events.
 	EventBus *eventbus.Bus
@@ -82,6 +87,17 @@ var (
 	client_Comment       string
 	client_Reset         int
 )
+
+var (
+	ErrWebhookUnauthorized = errors.New("telegram webhook secret is invalid")
+	ErrWebhookUnavailable  = errors.New("telegram webhook receiver is not running")
+)
+
+type WebhookStatus struct {
+	URL                string `json:"url"`
+	PendingUpdateCount int    `json:"pendingUpdateCount"`
+	LastErrorMessage   string `json:"lastErrorMessage,omitempty"`
+}
 
 // userStateStore guards the per-chat conversation states. The Telegram command
 // and callback handlers run on a worker-pool goroutine while the message handler
@@ -320,13 +336,23 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 
 	t.trySetBotCommands(bot)
 
-	// Start receiving Telegram bot messages
+	// Start receiving Telegram bot messages. Webhook and long polling are
+	// mutually exclusive in Telegram, so the persisted URL selects one mode.
 	tgBotMutex.Lock()
 	alreadyRunning := isRunning || botCancel != nil
 	tgBotMutex.Unlock()
 	if !alreadyRunning {
-		logger.Info("Telegram bot receiver started")
-		go t.OnReceive()
+		webhookURL, webhookErr := t.settingService.GetTgWebhookURL()
+		if webhookErr != nil {
+			return webhookErr
+		}
+		if strings.TrimSpace(webhookURL) != "" {
+			logger.Info("Telegram bot webhook receiver started")
+			go t.OnReceiveWebhook()
+		} else {
+			logger.Info("Telegram bot long-polling receiver started")
+			go t.OnReceive()
+		}
 	}
 
 	return nil
@@ -470,6 +496,7 @@ func StopBot() {
 	botCancel = nil
 	handler := botHandler
 	botHandler = nil
+	webhookHandler = nil
 	isRunning = false
 	tgBotMutex.Unlock()
 
@@ -487,6 +514,118 @@ func StopBot() {
 		botWG.Wait()
 		logger.Info("Telegram bot successfully stopped.")
 	}
+}
+
+// HandleWebhook verifies Telegram's per-webhook secret header and forwards a
+// JSON update to telego's webhook decoder. It is safe to call from Gin because
+// the request context is detached by the HTTP layer before delivery.
+func (t *Tgbot) HandleWebhook(ctx context.Context, secret string, data []byte) error {
+	expected, err := t.settingService.GetTgWebhookSecret()
+	if err != nil {
+		return err
+	}
+	if expected == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(expected)) != 1 {
+		return ErrWebhookUnauthorized
+	}
+	tgBotMutex.Lock()
+	handler := webhookHandler
+	tgBotMutex.Unlock()
+	if handler == nil {
+		return ErrWebhookUnavailable
+	}
+	return handler(ctx, data)
+}
+
+func (t *Tgbot) webhookBot() (*telego.Bot, error) {
+	token, err := t.settingService.GetTgBotToken()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(token) == "" {
+		return nil, errors.New("telegram bot token is not configured")
+	}
+	proxyURL, _ := t.settingService.GetTgBotProxy()
+	if proxyURL == "" {
+		proxyURL = t.settingService.PanelEgressProxyURL()
+	}
+	apiServer, _ := t.settingService.GetTgBotAPIServer()
+	return t.NewBot(token, proxyURL, apiServer)
+}
+
+func (t *Tgbot) ensureWebhookSecret() (string, error) {
+	secret, err := t.settingService.GetTgWebhookSecret()
+	if err != nil {
+		return "", err
+	}
+	if secret != "" {
+		return secret, nil
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	secret = base64.RawURLEncoding.EncodeToString(raw)
+	if err := t.settingService.SetTgWebhookSecret(secret); err != nil {
+		return "", err
+	}
+	return secret, nil
+}
+
+// ConfigureWebhook registers Telegram's outgoing callback, persists the mode,
+// and stops any long-polling receiver. The web layer restarts the bot so it
+// immediately begins consuming the new webhook channel.
+func (t *Tgbot) ConfigureWebhook(ctx context.Context, webhookURL string) (*WebhookStatus, error) {
+	clean, err := service.ValidateTelegramWebhookURL(webhookURL)
+	if err != nil {
+		return nil, err
+	}
+	secret, err := t.ensureWebhookSecret()
+	if err != nil {
+		return nil, err
+	}
+	configuredBot, err := t.webhookBot()
+	if err != nil {
+		return nil, err
+	}
+	if err := configuredBot.SetWebhook(ctx, &telego.SetWebhookParams{
+		URL:            clean,
+		SecretToken:    secret,
+		MaxConnections: 40,
+	}); err != nil {
+		return nil, err
+	}
+	if err := t.settingService.SetTgWebhookURL(clean); err != nil {
+		_ = configuredBot.DeleteWebhook(ctx, nil)
+		return nil, err
+	}
+	StopBot()
+	info, infoErr := configuredBot.GetWebhookInfo(ctx)
+	if infoErr != nil {
+		logger.Warning("Telegram webhook configured but status lookup failed:", infoErr)
+		return &WebhookStatus{URL: clean}, nil
+	}
+	return &WebhookStatus{
+		URL:                info.URL,
+		PendingUpdateCount: info.PendingUpdateCount,
+		LastErrorMessage:   info.LastErrorMessage,
+	}, nil
+}
+
+// DeleteWebhook removes Telegram's outgoing callback and clears the persisted
+// mode. The web layer then restarts the existing bot in long-polling mode.
+func (t *Tgbot) DeleteWebhook(ctx context.Context) error {
+	configuredBot, err := t.webhookBot()
+	if err != nil {
+		return err
+	}
+	if err := configuredBot.DeleteWebhook(ctx, nil); err != nil {
+		return err
+	}
+	if err := t.settingService.SetTgWebhookURL(""); err != nil {
+		return fmt.Errorf("telegram webhook removed remotely but local mode could not be saved: %w", err)
+	}
+	StopBot()
+	return nil
 }
 
 // encodeQuery encodes the query string if it's longer than 64 characters.

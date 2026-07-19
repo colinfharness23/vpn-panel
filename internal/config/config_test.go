@@ -79,3 +79,39 @@ func TestGetPortOverride(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAdminBasePath(t *testing.T) {
+	t.Run("development fallback", func(t *testing.T) {
+		t.Setenv("XUI_ADMIN_BASE_PATH", "")
+		t.Setenv("XUI_COMMERCIAL_ENV", "test")
+		got, err := GetAdminBasePath("/legacy/")
+		if err != nil || got != "/legacy/" {
+			t.Fatalf("GetAdminBasePath() = %q, %v; want /legacy/", got, err)
+		}
+	})
+
+	t.Run("valid 18 digit path", func(t *testing.T) {
+		t.Setenv("XUI_ADMIN_BASE_PATH", "583104927618350492")
+		got, err := GetAdminBasePath("/")
+		if err != nil || got != "/583104927618350492/" {
+			t.Fatalf("GetAdminBasePath() = %q, %v", got, err)
+		}
+	})
+
+	for _, value := range []string{"123", "/admin/", "/12345678901234567a/", "/１２３４５６７８９０１２３４５６７８/"} {
+		t.Run("reject_"+value, func(t *testing.T) {
+			t.Setenv("XUI_ADMIN_BASE_PATH", value)
+			if _, err := GetAdminBasePath("/"); err == nil {
+				t.Fatalf("GetAdminBasePath(%q) unexpectedly succeeded", value)
+			}
+		})
+	}
+
+	t.Run("production requires path", func(t *testing.T) {
+		t.Setenv("XUI_ADMIN_BASE_PATH", "")
+		t.Setenv("XUI_COMMERCIAL_ENV", "production")
+		if _, err := GetAdminBasePath("/"); err == nil {
+			t.Fatal("production without XUI_ADMIN_BASE_PATH unexpectedly succeeded")
+		}
+	})
+}

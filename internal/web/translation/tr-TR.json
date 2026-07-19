@@ -105,6 +105,9 @@
     "email": "E-posta"
   },
   "menu": {
+    "commercial": "Ticari konsol",
+    "systemManagement": "Sistem yönetimi",
+    "enterSite": "Siteyi aç",
     "theme": "Tema",
     "dark": "Koyu",
     "ultraDark": "Ultra Koyu",

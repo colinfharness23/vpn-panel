@@ -108,6 +108,9 @@ function bypassMigratedRoute(req) {
     if (stripped === 'panel' || stripped === 'panel/' || stripped.startsWith('panel/')) {
       return '/index.html';
     }
+    if (stripped === 'portal' || stripped === 'portal/' || stripped.startsWith('portal/')) {
+      return '/portal.html';
+    }
   }
   return undefined;
 }
@@ -179,6 +182,7 @@ export default defineConfig({
         index: path.resolve(__dirname, 'index.html'),
         login: path.resolve(__dirname, 'login.html'),
         subpage: path.resolve(__dirname, 'subpage.html'),
+        portal: path.resolve(__dirname, 'portal.html'),
       },
       output: {
         manualChunks(id) {
@@ -229,6 +233,8 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '^/(?:[^/]+/)?(login|logout|getTwoFactorEnable|csrf-token|panel|server)(?:/|$)': makeBackendProxy(BACKEND_TARGET),
+      '^/(?:[^/]+/)?api/v1(?:/|$)': makeBackendProxy(BACKEND_TARGET),
+      '^/(?!src/)(?:[^/]+/)?portal(?:/|$)': makeBackendProxy(BACKEND_TARGET),
       '^/$': makeBackendProxy(BACKEND_TARGET),
       '^/[^/]+/$': makeBackendProxy(BACKEND_TARGET),
       '^/(?:[^/]+/)?ws$': {

@@ -8,25 +8,25 @@ import {
   ApiOutlined,
   CloseOutlined,
   CloudServerOutlined,
+  CloudSyncOutlined,
   ClusterOutlined,
   CodeOutlined,
   DashboardOutlined,
   DatabaseOutlined,
   ExportOutlined,
+  FileTextOutlined,
+  GiftOutlined,
   GithubOutlined,
   GlobalOutlined,
-  HeartOutlined,
+  HomeOutlined,
   ImportOutlined,
   LogoutOutlined,
   MailOutlined,
   MenuOutlined,
   MessageOutlined,
-  MoonFilled,
-  MoonOutlined,
-  ReadOutlined,
   SafetyOutlined,
+  ShopOutlined,
   SettingOutlined,
-  SunOutlined,
   SwapOutlined,
   TagsOutlined,
   TeamOutlined,
@@ -35,17 +35,17 @@ import {
 
 import { HttpUtil } from '@/utils';
 import { formatPanelVersion } from '@/lib/panel-version';
-import { pauseAnimationsUntilLeave, useTheme } from '@/hooks/useTheme';
-import { useAllSettings } from '@/api/queries/useAllSettings';
+import { useTheme } from '@/hooks/useTheme';
 import './AppSidebar.css';
 
 const SIDEBAR_COLLAPSED_KEY = 'isSidebarCollapsed';
-const DONATE_URL = 'https://donate.sanaei.dev/';
-const DOCS_URL = 'https://docs.sanaei.dev/';
 const REPO_URL = 'https://github.com/MHSanaei/3x-ui';
 const LOGOUT_KEY = '__logout__';
+const PORTAL_KEY = '__portal__';
+const INVITATION_COMMISSION_KEY = '__invitation_commission__';
 
-type IconName = 'dashboard' | 'inbound' | 'team' | 'groups' | 'setting' | 'tool' | 'cluster' | 'hosts' | 'logout' | 'apidocs' | 'outbound' | 'routing';
+type SidebarSection = 'xui' | 'system' | 'utility';
+type IconName = 'dashboard' | 'inbound' | 'team' | 'groups' | 'setting' | 'tool' | 'cluster' | 'hosts' | 'logout' | 'website' | 'apidocs' | 'outbound' | 'routing' | 'commercial' | 'migration' | 'siteSettings' | 'securitySettings' | 'subscriptionSettings' | 'invitationSettings' | 'emailSettings' | 'telegramSettings' | 'subscriptionTemplate' | 'subscriptionFormats';
 
 const iconByName: Record<IconName, ComponentType> = {
   dashboard: DashboardOutlined,
@@ -57,9 +57,20 @@ const iconByName: Record<IconName, ComponentType> = {
   cluster: ClusterOutlined,
   hosts: GlobalOutlined,
   logout: LogoutOutlined,
+  website: HomeOutlined,
   apidocs: ApiOutlined,
   outbound: ExportOutlined,
   routing: SwapOutlined,
+  commercial: ShopOutlined,
+  migration: CloudSyncOutlined,
+  siteSettings: GlobalOutlined,
+  securitySettings: SafetyOutlined,
+  subscriptionSettings: CloudServerOutlined,
+  invitationSettings: GiftOutlined,
+  emailSettings: MailOutlined,
+  telegramSettings: MessageOutlined,
+  subscriptionTemplate: FileTextOutlined,
+  subscriptionFormats: CodeOutlined,
 };
 
 function readCollapsed(): boolean {
@@ -68,36 +79,6 @@ function readCollapsed(): boolean {
   } catch {
     return false;
   }
-}
-
-function DonateButton({ ariaLabel }: { ariaLabel: string }) {
-  return (
-    <a
-      href={DONATE_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="sidebar-donate"
-      aria-label={ariaLabel}
-      title={ariaLabel}
-    >
-      <HeartOutlined />
-    </a>
-  );
-}
-
-function DocsButton({ ariaLabel }: { ariaLabel: string }) {
-  return (
-    <a
-      href={DOCS_URL}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="sidebar-docs"
-      aria-label={ariaLabel}
-      title={ariaLabel}
-    >
-      <ReadOutlined />
-    </a>
-  );
 }
 
 function VersionBadge({ version, collapsed }: { version: string; collapsed?: boolean }) {
@@ -118,35 +99,11 @@ function VersionBadge({ version, collapsed }: { version: string; collapsed?: boo
   );
 }
 
-function ThemeCycleButton({ id, isDark, isUltra, onCycle, ariaLabel }: {
-  id: string;
-  isDark: boolean;
-  isUltra: boolean;
-  onCycle: () => void;
-  ariaLabel: string;
-}) {
-  const icon = !isDark ? <SunOutlined /> : !isUltra ? <MoonOutlined /> : <MoonFilled />;
-  return (
-    <button
-      id={id}
-      type="button"
-      className="sidebar-theme-cycle"
-      aria-label={ariaLabel}
-      title={ariaLabel}
-      onClick={onCycle}
-    >
-      {icon}
-    </button>
-  );
-}
-
 export default function AppSidebar() {
   const { t } = useTranslation();
-  const { isDark, isUltra, toggleTheme, toggleUltra } = useTheme();
+  const { isDark } = useTheme();
   const navigate = useNavigate();
   const { pathname, hash } = useLocation();
-  const { allSetting } = useAllSettings();
-  const showSubFormats = !!(allSetting.subJsonEnable || allSetting.subClashEnable);
 
   const [collapsed, setCollapsed] = useState<boolean>(() => readCollapsed());
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -154,37 +111,34 @@ export default function AppSidebar() {
   const currentTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
   const panelVersion = window.X_UI_CUR_VER || '';
 
-  const tabs = useMemo<{ key: string; icon: IconName; title: string }[]>(() => [
-    { key: '/', icon: 'dashboard', title: t('menu.dashboard') },
-    { key: '/inbounds', icon: 'inbound', title: t('menu.inbounds') },
-    { key: '/clients', icon: 'team', title: t('menu.clients') },
-    { key: '/groups', icon: 'groups', title: t('menu.groups') },
-    { key: '/nodes', icon: 'cluster', title: t('menu.nodes') },
-    { key: '/hosts', icon: 'hosts', title: t('menu.hosts') },
-    { key: '/outbound', icon: 'outbound', title: t('menu.outbounds') },
-    { key: '/routing', icon: 'routing', title: t('menu.routing') },
-    { key: '/settings', icon: 'setting', title: t('menu.settings') },
-    { key: '/xray', icon: 'tool', title: t('menu.xray') },
-    { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs') },
-    { key: LOGOUT_KEY, icon: 'logout', title: t('logout') },
+  const tabs = useMemo<{ key: string; icon: IconName; title: string; section: SidebarSection }[]>(() => [
+    { key: '/inbounds', icon: 'inbound', title: t('menu.inbounds'), section: 'xui' },
+    { key: '/clients', icon: 'team', title: t('menu.clients'), section: 'xui' },
+    { key: '/groups', icon: 'groups', title: t('menu.groups'), section: 'xui' },
+    { key: '/nodes', icon: 'cluster', title: t('menu.nodes'), section: 'xui' },
+    { key: '/hosts', icon: 'hosts', title: t('menu.hosts'), section: 'xui' },
+    { key: '/outbound', icon: 'outbound', title: t('menu.outbounds'), section: 'xui' },
+    { key: '/routing', icon: 'routing', title: t('menu.routing'), section: 'xui' },
+    { key: '/xray', icon: 'tool', title: t('menu.xray'), section: 'xui' },
+    { key: '/', icon: 'dashboard', title: t('menu.dashboard'), section: 'system' },
+    { key: '/migration', icon: 'migration', title: '一键迁移', section: 'system' },
+    { key: '/commercial', icon: 'commercial', title: t('menu.commercial'), section: 'system' },
+    { key: '/settings#general', icon: 'siteSettings', title: '站点设置', section: 'system' },
+    { key: '/settings#security', icon: 'securitySettings', title: '安全设置', section: 'system' },
+    { key: '/settings#subscription', icon: 'subscriptionSettings', title: '订阅设置', section: 'system' },
+    { key: INVITATION_COMMISSION_KEY, icon: 'invitationSettings', title: '邀请&佣金设置', section: 'system' },
+    { key: '/settings#email', icon: 'emailSettings', title: '邮件设置', section: 'system' },
+    { key: '/settings#telegram', icon: 'telegramSettings', title: 'Telegram设置', section: 'system' },
+    { key: '/settings#subscription-template', icon: 'subscriptionTemplate', title: '订阅模板', section: 'system' },
+    { key: '/settings#subscription-formats', icon: 'subscriptionFormats', title: '订阅格式', section: 'system' },
+    { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs'), section: 'system' },
+    { key: PORTAL_KEY, icon: 'website', title: t('menu.enterSite'), section: 'utility' },
+    { key: LOGOUT_KEY, icon: 'logout', title: t('logout'), section: 'utility' },
   ], [t]);
 
-  const navItems = useMemo(() => tabs.filter((tab) => tab.icon !== 'logout'), [tabs]);
-  const utilItems = useMemo(() => tabs.filter((tab) => tab.icon === 'logout'), [tabs]);
-
-  const settingsChildren = useMemo<NonNullable<MenuProps['items']>>(() => {
-    const children: NonNullable<MenuProps['items']> = [
-      { key: '/settings#general', icon: <SettingOutlined />, label: t('pages.settings.panelSettings') },
-      { key: '/settings#security', icon: <SafetyOutlined />, label: t('pages.settings.securitySettings') },
-      { key: '/settings#telegram', icon: <MessageOutlined />, label: t('pages.settings.TGBotSettings') },
-      { key: '/settings#email', icon: <MailOutlined />, label: t('pages.settings.emailSettings') },
-      { key: '/settings#subscription', icon: <CloudServerOutlined />, label: t('pages.settings.subSettings') },
-    ];
-    if (showSubFormats) {
-      children.push({ key: '/settings#subscription-formats', icon: <CodeOutlined />, label: 'Sub Formats' });
-    }
-    return children;
-  }, [t, showSubFormats]);
+  const xuiItems = useMemo(() => tabs.filter((tab) => tab.section === 'xui'), [tabs]);
+  const systemItems = useMemo(() => tabs.filter((tab) => tab.section === 'system'), [tabs]);
+  const utilItems = useMemo(() => tabs.filter((tab) => tab.section === 'utility'), [tabs]);
 
   const xrayChildren = useMemo<NonNullable<MenuProps['items']>>(() => [
     { key: '/xray#basic', icon: <SettingOutlined />, label: t('pages.xray.basicTemplate') },
@@ -195,37 +149,77 @@ export default function AppSidebar() {
 
   const settingsActive = pathname === '/settings';
   const xrayActive = pathname === '/xray';
-  const selectedKey = settingsActive
+  const invitationCommissionActive = pathname === '/commercial' && hash === '#marketing';
+  const selectedKey = invitationCommissionActive
+    ? INVITATION_COMMISSION_KEY
+    : settingsActive
     ? `/settings${hash || '#general'}`
     : xrayActive
       ? `/xray${hash || '#basic'}`
       : (pathname === '' ? '/' : pathname);
 
-  const openSubmenu = settingsActive ? '/settings' : xrayActive ? '/xray' : null;
-  const [openKeys, setOpenKeys] = useState<string[]>(() => (openSubmenu ? [openSubmenu] : []));
+  const requiredOpenKeys = useMemo(() => xrayActive ? ['/xray'] : [], [xrayActive]);
+  const [openKeys, setOpenKeys] = useState<string[]>(() => requiredOpenKeys);
   useEffect(() => {
-    if (openSubmenu) {
-      setOpenKeys((keys) => (keys.includes(openSubmenu) ? keys : [...keys, openSubmenu]));
+    if (requiredOpenKeys.length > 0) {
+      setOpenKeys((keys) => Array.from(new Set([...keys, ...requiredOpenKeys])));
     }
-  }, [openSubmenu]);
+  }, [requiredOpenKeys]);
 
   const toMenuItems = useCallback((items: typeof tabs): MenuProps['items'] =>
     items.map((tab) => {
       const Icon = iconByName[tab.icon];
-      if (tab.key === '/settings') {
-        return { key: tab.key, icon: <Icon />, label: tab.title, children: settingsChildren };
-      }
       if (tab.key === '/xray') {
         return { key: tab.key, icon: <Icon />, label: tab.title, children: xrayChildren };
       }
       return { key: tab.key, icon: <Icon />, label: tab.title };
     }),
-  [settingsChildren, xrayChildren]);
+  [xrayChildren]);
+
+  const groupedNavItems = useMemo<MenuProps['items']>(() => [
+    {
+      type: 'group',
+      key: '__xui_group__',
+      label: collapsed ? null : '3X-UI',
+      children: toMenuItems(xuiItems),
+    },
+    {
+      type: 'group',
+      key: '__system_group__',
+      label: collapsed ? null : t('menu.systemManagement'),
+      children: toMenuItems(systemItems),
+    },
+  ], [collapsed, systemItems, t, toMenuItems, xuiItems]);
+
+  const drawerNavItems = useMemo<MenuProps['items']>(() => [
+    {
+      type: 'group',
+      key: '__drawer_xui_group__',
+      label: '3X-UI',
+      children: toMenuItems(xuiItems),
+    },
+    {
+      type: 'group',
+      key: '__drawer_system_group__',
+      label: t('menu.systemManagement'),
+      children: toMenuItems(systemItems),
+    },
+  ], [systemItems, t, toMenuItems, xuiItems]);
 
   const openLink = useCallback(async (key: string) => {
+    if (key === PORTAL_KEY) {
+      const basePath = window.X_UI_PUBLIC_BASE_PATH || '/';
+      const normalizedBasePath = basePath.endsWith('/') ? basePath : `${basePath}/`;
+      window.location.href = `${normalizedBasePath}portal/`;
+      return;
+    }
     if (key === LOGOUT_KEY) {
       await HttpUtil.post('/logout');
       window.location.href = window.X_UI_BASE_PATH || '/';
+      return;
+    }
+    if (key === INVITATION_COMMISSION_KEY) {
+      navigate('/commercial#marketing');
       return;
     }
     navigate(key);
@@ -242,19 +236,6 @@ export default function AppSidebar() {
     }
   }, []);
 
-  const cycleTheme = useCallback((id: string) => {
-    pauseAnimationsUntilLeave(id);
-    if (!isDark) {
-      toggleTheme();
-      if (isUltra) toggleUltra();
-    } else if (!isUltra) {
-      toggleUltra();
-    } else {
-      toggleUltra();
-      toggleTheme();
-    }
-  }, [isDark, isUltra, toggleTheme, toggleUltra]);
-
   return (
     <div className="ant-sidebar">
       <Layout.Sider
@@ -263,26 +244,9 @@ export default function AppSidebar() {
         collapsible
         collapsed={collapsed}
         breakpoint="md"
+        trigger={null}
         onCollapse={onSiderCollapse}
       >
-        <div className={`sider-brand${collapsed ? ' sider-brand-collapsed' : ''}`}>
-          <div className="brand-block">
-            <span className="brand-text">{collapsed ? '3X' : '3X-UI'}</span>
-          </div>
-          {!collapsed && (
-            <div className="brand-actions">
-              <DocsButton ariaLabel={t('menu.docs') || 'Documentation'} />
-              <DonateButton ariaLabel={t('menu.donate') || 'Donate'} />
-              <ThemeCycleButton
-                id="theme-cycle"
-                isDark={isDark}
-                isUltra={isUltra}
-                onCycle={() => cycleTheme('theme-cycle')}
-                ariaLabel={t('menu.theme')}
-              />
-            </div>
-          )}
-        </div>
         <Menu
           theme={currentTheme}
           mode="inline"
@@ -290,7 +254,7 @@ export default function AppSidebar() {
           openKeys={collapsed ? undefined : openKeys}
           onOpenChange={(keys) => setOpenKeys(keys as string[])}
           className="sider-nav"
-          items={toMenuItems(navItems)}
+          items={groupedNavItems}
           onClick={onMenuClick}
         />
         <Menu
@@ -324,15 +288,6 @@ export default function AppSidebar() {
             <span className="drawer-brand">3X-UI</span>
           </div>
           <div className="drawer-header-actions">
-            <DocsButton ariaLabel={t('menu.docs') || 'Documentation'} />
-            <DonateButton ariaLabel={t('menu.donate') || 'Donate'} />
-            <ThemeCycleButton
-              id="theme-cycle-drawer"
-              isDark={isDark}
-              isUltra={isUltra}
-              onCycle={() => cycleTheme('theme-cycle-drawer')}
-              ariaLabel={t('menu.theme')}
-            />
             <button
               className="drawer-close"
               type="button"
@@ -350,7 +305,7 @@ export default function AppSidebar() {
           openKeys={openKeys}
           onOpenChange={(keys) => setOpenKeys(keys as string[])}
           className="drawer-menu drawer-nav"
-          items={toMenuItems(navItems)}
+          items={drawerNavItems}
           onClick={(info) => { onMenuClick(info); setDrawerOpen(false); }}
         />
         <Menu

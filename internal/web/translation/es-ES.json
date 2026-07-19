@@ -105,6 +105,9 @@
     "email": "Email"
   },
   "menu": {
+    "commercial": "Panel comercial",
+    "systemManagement": "Administración del sistema",
+    "enterSite": "Abrir sitio web",
     "theme": "Tema",
     "dark": "Oscuro",
     "ultraDark": "Ultra Oscuro",

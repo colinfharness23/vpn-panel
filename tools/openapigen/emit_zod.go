@@ -83,7 +83,9 @@ func applyZodValidations(expr string, t TypeRef, rules []ValidateRule) string {
 	for _, r := range rules {
 		switch r.Name {
 		case "required":
-			continue
+			if baseKind(t).Kind == KindString {
+				expr += ".min(1)"
+			}
 		case "omitempty":
 			continue
 		case "gte":
@@ -115,6 +117,10 @@ func applyZodValidations(expr string, t TypeRef, rules []ValidateRule) string {
 				expr += fmt.Sprintf(".max(%s)", r.Param)
 			case KindInt, KindNumber:
 				expr += fmt.Sprintf(".max(%s)", r.Param)
+			}
+		case "len":
+			if baseKind(t).Kind == KindString {
+				expr += fmt.Sprintf(".length(%s)", r.Param)
 			}
 		case "url":
 			expr += ".url()"

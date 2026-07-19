@@ -20,6 +20,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/middleware"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/network"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/commercial"
 
 	"github.com/gin-gonic/gin"
 )
@@ -184,6 +185,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	if err != nil {
 		SubIncyRoutingRules = ""
 	}
+	subscriptionPolicy := commercial.NewConfigStore().SubscriptionPolicy()
 
 	// set per-request localizer from headers/cookies
 	engine.Use(locale.LocalizerMiddleware())
@@ -243,7 +245,8 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		g, LinksPath, JsonPath, ClashPath, subJsonEnable, subClashEnable, Encrypt, RemarkTemplate, SubUpdates,
 		SubJsonMux, SubJsonRules, SubJsonFinalMask, SubClashEnableRouting, SubClashRules, SubTitle, SubSupportUrl,
 		SubProfileUrl, SubAnnounce, SubEnableRouting, SubRoutingRules, SubHideSettings,
-		SubIncyEnableRouting, SubIncyRoutingRules)
+		SubIncyEnableRouting, SubIncyRoutingRules, subscriptionPolicy.ShowSubscriptionInfo,
+		subscriptionPolicy.ShowProtocolInNodeName)
 
 	return engine, nil
 }

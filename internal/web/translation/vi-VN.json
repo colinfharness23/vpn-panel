@@ -105,6 +105,9 @@
     "email": "Email"
   },
   "menu": {
+    "commercial": "Bảng điều khiển thương mại",
+    "systemManagement": "Quản lý hệ thống",
+    "enterSite": "Mở trang web",
     "theme": "Chủ đề",
     "dark": "Tối",
     "ultraDark": "Siêu tối",

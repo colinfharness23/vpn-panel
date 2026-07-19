@@ -82,6 +82,10 @@ func serveDistPage(c *gin.Context, name string) {
 	if basePath == "" {
 		basePath = "/"
 	}
+	publicBasePath := c.GetString("public_base_path")
+	if publicBasePath == "" {
+		publicBasePath = basePath
+	}
 
 	if basePath != "/" {
 		body = bytes.ReplaceAll(body, []byte(`src="/assets/`), []byte(`src="`+basePath+`assets/`))
@@ -98,6 +102,7 @@ func serveDistPage(c *gin.Context, name string) {
 		"&", `&`,
 	)
 	escapedBase := jsEscape.Replace(basePath)
+	escapedPublicBase := jsEscape.Replace(publicBasePath)
 	csrfToken, err := session.EnsureCSRFToken(c)
 	if err != nil {
 		logger.Warning("Unable to mint CSRF token for", name+":", err)
@@ -111,6 +116,7 @@ func serveDistPage(c *gin.Context, name string) {
 		nonceAttr = ` nonce="` + htmlpkg.EscapeString(nonce) + `"`
 	}
 	script := `<script data-cfasync="false"` + nonceAttr + `>window.X_UI_BASE_PATH="` + escapedBase + `"`
+	script += `;window.X_UI_PUBLIC_BASE_PATH="` + escapedPublicBase + `"`
 	if name != "login.html" {
 		escapedVer := jsEscape.Replace(config.GetPanelVersion())
 		script += `;window.X_UI_CUR_VER="` + escapedVer + `"`

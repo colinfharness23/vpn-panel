@@ -28,9 +28,10 @@ import (
 
 // SubService provides business logic for generating subscription links and managing subscription data.
 type SubService struct {
-	address        string
-	remarkTemplate string
-	datepicker     string
+	address            string
+	remarkTemplate     string
+	showProtocolInName bool
+	datepicker         string
 	// subscriptionBody is true only when rendering the actual subscription
 	// content a client app imports (raw /sub fetch, /json, /clash). The remark
 	// template's per-client info is emitted there (on the first link); every
@@ -1866,7 +1867,18 @@ func (s *SubService) genRemark(inbound *model.Inbound, email string, extra strin
 	if s.remarkTemplate != "" {
 		return s.genTemplatedRemark(inbound, s.lookupClient(inbound, email), extra, transport)
 	}
-	return fallbackRemark(inbound.Remark, extra, email)
+	return s.withProtocolName(inbound, fallbackRemark(inbound.Remark, extra, email))
+}
+
+func (s *SubService) withProtocolName(inbound *model.Inbound, remark string) string {
+	if !s.showProtocolInName || inbound == nil {
+		return remark
+	}
+	protocol := strings.ToUpper(strings.TrimSpace(string(inbound.Protocol)))
+	if protocol == "" || strings.Contains(strings.ToUpper(remark), protocol) {
+		return remark
+	}
+	return strings.TrimSpace(protocol + " " + remark)
 }
 
 func fallbackRemark(parts ...string) string {

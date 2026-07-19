@@ -26,6 +26,238 @@
       }
     },
     "schemas": {
+      "AdminCustomerRow": {
+        "properties": {
+          "balanceFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "emailVerifiedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inviteCode": {
+            "type": "string"
+          },
+          "invitedById": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastLoginAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subscription": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AdminSubscriptionSummary"
+              }
+            ],
+            "nullable": true
+          },
+          "systemAdmin": {
+            "type": "boolean"
+          },
+          "termsAcceptedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "termsVersion": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "balanceFen",
+          "createdAt",
+          "displayName",
+          "email",
+          "id",
+          "inviteCode",
+          "locale",
+          "status",
+          "systemAdmin",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AdminOverview": {
+        "properties": {
+          "activeEntitlements": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "customers": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "manualJobs": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "openTickets": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "orderStatus": {
+            "additionalProperties": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "pendingOrders": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "revenueFen": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "activeEntitlements",
+          "customers",
+          "manualJobs",
+          "openTickets",
+          "orderStatus",
+          "pendingOrders",
+          "revenueFen"
+        ],
+        "type": "object"
+      },
+      "AdminRoleBinding": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "userId": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "role",
+          "updatedAt",
+          "userId"
+        ],
+        "type": "object"
+      },
+      "AdminSubscriptionSummary": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "deviceLimit": {
+            "type": "integer"
+          },
+          "entitlement": {
+            "$ref": "#/components/schemas/SubscriptionEntitlement"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nodeGroup": {
+            "type": "string"
+          },
+          "provisionInboundIds": {
+            "type": "string"
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "resetCycle": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "trafficBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upgradable": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "capacity",
+          "createdAt",
+          "description",
+          "deviceLimit",
+          "entitlement",
+          "id",
+          "name",
+          "nodeGroup",
+          "provisionInboundIds",
+          "renewable",
+          "resetCycle",
+          "slug",
+          "sortOrder",
+          "trafficBytes",
+          "updatedAt",
+          "upgradable",
+          "visibility"
+        ],
+        "type": "object"
+      },
       "AllSetting": {
         "properties": {
           "datepicker": {
@@ -287,6 +519,9 @@
           "tgEnabledEvents": {
             "type": "string"
           },
+          "tgGroupLink": {
+            "type": "string"
+          },
           "tgLang": {
             "type": "string"
           },
@@ -296,6 +531,9 @@
             "type": "integer"
           },
           "tgRunTime": {
+            "type": "string"
+          },
+          "tgWebhookURL": {
             "type": "string"
           },
           "timeLocation": {
@@ -420,9 +658,11 @@
           "tgBotToken",
           "tgCpu",
           "tgEnabledEvents",
+          "tgGroupLink",
           "tgLang",
           "tgMemory",
           "tgRunTime",
+          "tgWebhookURL",
           "timeLocation",
           "trafficDiff",
           "trustedProxyCIDRs",
@@ -720,6 +960,9 @@
           "tgEnabledEvents": {
             "type": "string"
           },
+          "tgGroupLink": {
+            "type": "string"
+          },
           "tgLang": {
             "type": "string"
           },
@@ -729,6 +972,9 @@
             "type": "integer"
           },
           "tgRunTime": {
+            "type": "string"
+          },
+          "tgWebhookURL": {
             "type": "string"
           },
           "timeLocation": {
@@ -860,9 +1106,11 @@
           "tgBotToken",
           "tgCpu",
           "tgEnabledEvents",
+          "tgGroupLink",
           "tgLang",
           "tgMemory",
           "tgRunTime",
+          "tgWebhookURL",
           "timeLocation",
           "trafficDiff",
           "trustedProxyCIDRs",
@@ -1062,6 +1310,59 @@
           "subId",
           "tgId",
           "totalGB"
+        ],
+        "type": "object"
+      },
+      "ClientApplication": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "officialUrl": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "sourceUrl": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "createdAt",
+          "description",
+          "id",
+          "name",
+          "officialUrl",
+          "platform",
+          "slug",
+          "sortOrder",
+          "sourceUrl",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -1287,6 +1588,958 @@
         ],
         "type": "object"
       },
+      "CommercialAuditLog": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "actorRole": {
+            "type": "string"
+          },
+          "actorUserId": {
+            "type": "integer"
+          },
+          "correlationId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ipHash": {
+            "type": "string"
+          },
+          "metadata": {
+            "type": "string"
+          },
+          "targetId": {
+            "type": "string"
+          },
+          "targetType": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "actorRole",
+          "actorUserId",
+          "correlationId",
+          "createdAt",
+          "id",
+          "ipHash",
+          "metadata",
+          "targetId",
+          "targetType"
+        ],
+        "type": "object"
+      },
+      "CommercialCustomerCreateRequest": {
+        "properties": {
+          "displayName": {
+            "maxLength": 80,
+            "type": "string"
+          },
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "displayName",
+          "email",
+          "locale",
+          "password",
+          "status"
+        ],
+        "type": "object"
+      },
+      "CommercialCustomerDeleteRequest": {
+        "properties": {
+          "ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "ids"
+        ],
+        "type": "object"
+      },
+      "CommercialCustomerUpdateRequest": {
+        "properties": {
+          "balanceFen": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
+      "CommercialGiftCardBatchRequest": {
+        "properties": {
+          "count": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "valueFen": {
+            "example": 1000,
+            "exclusiveMinimum": true,
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "count",
+          "expiresAt",
+          "valueFen"
+        ],
+        "type": "object"
+      },
+      "CommercialPaymentSettings": {
+        "properties": {
+          "alipayAppId": {
+            "type": "string"
+          },
+          "alipayEnabled": {
+            "type": "boolean"
+          },
+          "alipayMode": {
+            "enum": [
+              "sandbox",
+              "production"
+            ],
+            "type": "string"
+          },
+          "alipayNotifyUrl": {
+            "type": "string"
+          },
+          "alipayPrivateKey": {
+            "type": "string"
+          },
+          "alipayPublicKey": {
+            "type": "string"
+          },
+          "alipaySellerId": {
+            "type": "string"
+          },
+          "codepayEnabled": {
+            "type": "boolean"
+          },
+          "codepayGatewayUrl": {
+            "type": "string"
+          },
+          "codepayKey": {
+            "type": "string"
+          },
+          "codepayMerchantId": {
+            "type": "string"
+          },
+          "codepayNotifyUrl": {
+            "type": "string"
+          },
+          "codepayPaymentType": {
+            "type": "string"
+          },
+          "codepayReturnUrl": {
+            "type": "string"
+          },
+          "epayEnabled": {
+            "type": "boolean"
+          },
+          "epayGatewayUrl": {
+            "type": "string"
+          },
+          "epayMerchantId": {
+            "type": "string"
+          },
+          "epayMerchantKey": {
+            "type": "string"
+          },
+          "epayNotifyUrl": {
+            "type": "string"
+          },
+          "epayPaymentType": {
+            "type": "string"
+          },
+          "epayReturnUrl": {
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "epay",
+              "alipay_f2f",
+              "codepay"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "alipayAppId",
+          "alipayEnabled",
+          "alipayMode",
+          "alipayNotifyUrl",
+          "alipayPrivateKey",
+          "alipayPublicKey",
+          "alipaySellerId",
+          "codepayEnabled",
+          "codepayGatewayUrl",
+          "codepayKey",
+          "codepayMerchantId",
+          "codepayNotifyUrl",
+          "codepayPaymentType",
+          "codepayReturnUrl",
+          "epayEnabled",
+          "epayGatewayUrl",
+          "epayMerchantId",
+          "epayMerchantKey",
+          "epayNotifyUrl",
+          "epayPaymentType",
+          "epayReturnUrl"
+        ],
+        "type": "object"
+      },
+      "CommercialPlanPriceRequest": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "amountFen": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "billingPeriod": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "months": {
+            "maximum": 120,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "planId": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "amountFen",
+          "billingPeriod",
+          "id",
+          "months",
+          "planId"
+        ],
+        "type": "object"
+      },
+      "CommercialPlanRequest": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": {
+            "type": "string"
+          },
+          "deviceLimit": {
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "nodeGroup": {
+            "type": "string"
+          },
+          "provisionInboundIds": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "resetCycle": {
+            "enum": [
+              "never",
+              "daily",
+              "weekly",
+              "monthly",
+              "quarterly"
+            ],
+            "minLength": 1,
+            "type": "string"
+          },
+          "slug": {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "trafficBytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "upgradable": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "enum": [
+              "public",
+              "hidden",
+              "invite"
+            ],
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "capacity",
+          "description",
+          "deviceLimit",
+          "id",
+          "name",
+          "nodeGroup",
+          "provisionInboundIds",
+          "renewable",
+          "resetCycle",
+          "slug",
+          "sortOrder",
+          "trafficBytes",
+          "upgradable",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "CommercialRoleRequest": {
+        "properties": {
+          "role": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      },
+      "CommercialSetting": {
+        "properties": {
+          "encrypted": {
+            "type": "boolean"
+          },
+          "key": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "encrypted",
+          "key",
+          "updatedAt",
+          "value"
+        ],
+        "type": "object"
+      },
+      "CommercialSettingRequest": {
+        "properties": {
+          "encrypted": {
+            "type": "boolean"
+          },
+          "key": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "encrypted",
+          "key",
+          "value"
+        ],
+        "type": "object"
+      },
+      "CommercialSubscriptionUpdateRequest": {
+        "properties": {
+          "deviceLimit": {
+            "maximum": 1000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expiresAt": {
+            "type": "string"
+          },
+          "planId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "resetTraffic": {
+            "type": "boolean"
+          },
+          "trafficQuota": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "deviceLimit",
+          "expiresAt",
+          "planId",
+          "resetTraffic",
+          "trafficQuota"
+        ],
+        "type": "object"
+      },
+      "CommercialTicketReplyRequest": {
+        "properties": {
+          "body": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "status"
+        ],
+        "type": "object"
+      },
+      "Coupon": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "maxRedemptions": {
+            "type": "integer"
+          },
+          "minimumFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "redeemedCount": {
+            "type": "integer"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "value": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "code",
+          "createdAt",
+          "id",
+          "kind",
+          "maxRedemptions",
+          "minimumFen",
+          "redeemedCount",
+          "updatedAt",
+          "value"
+        ],
+        "type": "object"
+      },
+      "CreateCommercialOrderRequest": {
+        "properties": {
+          "couponCode": {
+            "type": "string"
+          },
+          "entitlementId": {
+            "type": "string"
+          },
+          "orderKind": {
+            "enum": [
+              "purchase",
+              "renewal",
+              "upgrade"
+            ],
+            "type": "string"
+          },
+          "planPriceId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "useBalance": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "couponCode",
+          "planPriceId",
+          "useBalance"
+        ],
+        "type": "object"
+      },
+      "CreatePaymentRequest": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "epay",
+              "alipay_f2f",
+              "codepay",
+              "alipay-demo"
+            ],
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "type": "object"
+      },
+      "CreateTicketRequest": {
+        "properties": {
+          "body": {
+            "maxLength": 10000,
+            "minLength": 1,
+            "type": "string"
+          },
+          "subject": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "subject"
+        ],
+        "type": "object"
+      },
+      "Customer": {
+        "properties": {
+          "balanceFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "emailVerifiedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inviteCode": {
+            "type": "string"
+          },
+          "invitedById": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastLoginAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "termsAcceptedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "termsVersion": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "balanceFen",
+          "createdAt",
+          "displayName",
+          "email",
+          "id",
+          "inviteCode",
+          "locale",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "CustomerDeleteResult": {
+        "properties": {
+          "deleted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failed": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "deleted",
+          "failed"
+        ],
+        "type": "object"
+      },
+      "CustomerLoginRequest": {
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "CustomerRegisterRequest": {
+        "properties": {
+          "acceptedTerms": {
+            "type": "boolean"
+          },
+          "code": {
+            "maxLength": 6,
+            "minLength": 6,
+            "type": "string"
+          },
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "inviteCode": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "termsVersion": {
+            "type": "string"
+          },
+          "turnstileToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "acceptedTerms",
+          "code",
+          "email",
+          "inviteCode",
+          "locale",
+          "password",
+          "termsVersion",
+          "turnstileToken"
+        ],
+        "type": "object"
+      },
+      "CustomerResetPasswordRequest": {
+        "properties": {
+          "code": {
+            "maxLength": 6,
+            "minLength": 6,
+            "type": "string"
+          },
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "password": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "email",
+          "password"
+        ],
+        "type": "object"
+      },
+      "CustomerSession": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ipHash": {
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "revokedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "userAgentHash": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "customerId",
+          "expiresAt",
+          "id",
+          "ipHash",
+          "lastSeenAt",
+          "userAgentHash"
+        ],
+        "type": "object"
+      },
+      "Dashboard": {
+        "properties": {
+          "balanceFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "emailVerifiedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "invitation": {
+            "$ref": "#/components/schemas/InvitationOverview"
+          },
+          "inviteCode": {
+            "type": "string"
+          },
+          "invitedById": {
+            "nullable": true,
+            "type": "string"
+          },
+          "lastLoginAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/LocalizedContent"
+            },
+            "type": "array"
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            },
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subscription": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SubscriptionOverview"
+              }
+            ],
+            "nullable": true
+          },
+          "termsAcceptedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "termsVersion": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "balanceFen",
+          "createdAt",
+          "displayName",
+          "email",
+          "id",
+          "invitation",
+          "inviteCode",
+          "locale",
+          "notices",
+          "orders",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "EmailVerification": {
+        "properties": {
+          "attempts": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "usedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempts",
+          "createdAt",
+          "email",
+          "expiresAt",
+          "id",
+          "purpose"
+        ],
+        "type": "object"
+      },
       "FallbackParentInfo": {
         "description": "FallbackParentInfo carries everything the frontend needs to rewrite a\nchild inbound's client link: where to connect (the master's address\nand port) and which path matched on the master's fallbacks array.\nThe frontend already has the master inbound in its dbInbounds list,\nso we only ship identifiers + the match path here.",
         "properties": {
@@ -1299,6 +2552,98 @@
         },
         "required": [
           "masterId"
+        ],
+        "type": "object"
+      },
+      "GiftCard": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "displayCode": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "redeemedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "redeemedBy": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "valueFen": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "createdAt",
+          "displayCode",
+          "id",
+          "status",
+          "valueFen"
+        ],
+        "type": "object"
+      },
+      "GuestBootstrap": {
+        "properties": {
+          "applications": {
+            "items": {
+              "$ref": "#/components/schemas/ClientApplication"
+            },
+            "type": "array"
+          },
+          "articles": {
+            "items": {
+              "$ref": "#/components/schemas/LocalizedContent"
+            },
+            "type": "array"
+          },
+          "notices": {
+            "items": {
+              "$ref": "#/components/schemas/LocalizedContent"
+            },
+            "type": "array"
+          },
+          "paymentMethods": {
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethod"
+            },
+            "type": "array"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/PlanCatalogItem"
+            },
+            "type": "array"
+          },
+          "site": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "applications",
+          "articles",
+          "notices",
+          "paymentMethods",
+          "plans",
+          "site"
         ],
         "type": "object"
       },
@@ -1417,6 +2762,7 @@
           "remark": {
             "example": "cdn-front",
             "maxLength": 256,
+            "minLength": 1,
             "type": "string"
           },
           "security": {
@@ -1593,6 +2939,7 @@
           },
           "remark": {
             "maxLength": 256,
+            "minLength": 1,
             "type": "string"
           },
           "security": {
@@ -1959,6 +3306,170 @@
         ],
         "type": "object"
       },
+      "InvitationCommission": {
+        "properties": {
+          "amountFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "inviteeId": {
+            "type": "string"
+          },
+          "inviterId": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "settledAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amountFen",
+          "createdAt",
+          "id",
+          "inviteeId",
+          "inviterId",
+          "orderId",
+          "status"
+        ],
+        "type": "object"
+      },
+      "InvitationOverview": {
+        "description": "InvitationOverview contains only the signed-in customer's own referral\ntotals and the public parts of the invitation policy. Administrative\nconfiguration and other customers' identities are intentionally excluded.",
+        "properties": {
+          "commissionFirstPaymentOnly": {
+            "type": "boolean"
+          },
+          "commissionPercent": {
+            "type": "integer"
+          },
+          "confirmedFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "directInviteCount": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "inviteCode": {
+            "type": "string"
+          },
+          "inviteCodesNeverExpire": {
+            "type": "boolean"
+          },
+          "pendingFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "settledFen": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "commissionFirstPaymentOnly",
+          "commissionPercent",
+          "confirmedFen",
+          "directInviteCount",
+          "enabled",
+          "inviteCode",
+          "inviteCodesNeverExpire",
+          "pendingFen",
+          "settledFen"
+        ],
+        "type": "object"
+      },
+      "KnowledgeArticle": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "contentI18n": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "titleI18n": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category",
+          "contentI18n",
+          "createdAt",
+          "id",
+          "published",
+          "slug",
+          "sortOrder",
+          "titleI18n",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "LocalizedContent": {
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "id",
+          "slug",
+          "title"
+        ],
+        "type": "object"
+      },
       "Msg": {
         "properties": {
           "msg": {
@@ -1985,6 +3496,7 @@
           },
           "address": {
             "example": "node1.example.com",
+            "minLength": 1,
             "type": "string"
           },
           "allowPrivateAddress": {
@@ -2074,6 +3586,7 @@
           },
           "name": {
             "example": "de-fra-1",
+            "minLength": 1,
             "type": "string"
           },
           "netDown": {
@@ -2203,6 +3716,157 @@
         ],
         "type": "object"
       },
+      "Notice": {
+        "properties": {
+          "contentI18n": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string"
+          },
+          "published": {
+            "type": "boolean"
+          },
+          "publishedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "titleI18n": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contentI18n",
+          "createdAt",
+          "id",
+          "level",
+          "published",
+          "slug",
+          "titleI18n",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "Order": {
+        "properties": {
+          "balancePaidFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "completedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "couponCode": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "discountFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "entitlementId": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "failureReason": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "orderKind": {
+            "type": "string"
+          },
+          "originalFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "outTradeNo": {
+            "type": "string"
+          },
+          "paidAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "paidFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payableFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "planPriceId": {
+            "type": "string"
+          },
+          "resultExpiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "balancePaidFen",
+          "couponCode",
+          "createdAt",
+          "currency",
+          "customerId",
+          "discountFen",
+          "expiresAt",
+          "failureReason",
+          "id",
+          "orderKind",
+          "originalFen",
+          "outTradeNo",
+          "paidFen",
+          "payableFen",
+          "planId",
+          "planPriceId",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "OutboundTraffics": {
         "description": "OutboundTraffics tracks traffic statistics for Xray outbound connections.",
         "properties": {
@@ -2234,6 +3898,103 @@
         ],
         "type": "object"
       },
+      "OutboxEvent": {
+        "properties": {
+          "aggregateId": {
+            "type": "string"
+          },
+          "aggregateType": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "type": "string"
+          },
+          "nextRunAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "processedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "aggregateId",
+          "aggregateType",
+          "attempts",
+          "createdAt",
+          "eventType",
+          "id",
+          "lastError",
+          "nextRunAt",
+          "payload",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "PaginatedCustomers": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminCustomerRow"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
+      "PaginatedOrders": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Order"
+            },
+            "type": "array"
+          },
+          "total": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "type": "object"
+      },
       "PanelUpdateStatus": {
         "description": "PanelUpdateStatus reports the outcome of the most recently launched panel\nself-update. RunID lets the caller confirm this status belongs to the\nupdate it started rather than a stale result left over from an earlier\nrun; State is one of \"pending\", \"success\", or \"failed\". RunID is a decimal\nstring, not a JSON number: it's a formatted UnixNano timestamp, and\nJavaScript's number type can't represent that precisely (it exceeds\nNumber.MAX_SAFE_INTEGER), which would let two different runs round to the\nsame value on the wire and defeat the whole point of this field.",
         "properties": {
@@ -2260,6 +4021,300 @@
           "finishedAt",
           "runId",
           "state"
+        ],
+        "type": "object"
+      },
+      "PaymentIntent": {
+        "properties": {
+          "amountFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "outTradeNo": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "providerTradeNo": {
+            "type": "string"
+          },
+          "qrCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amountFen",
+          "expiresAt",
+          "outTradeNo",
+          "provider",
+          "qrCode"
+        ],
+        "type": "object"
+      },
+      "PaymentMethod": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "name"
+        ],
+        "type": "object"
+      },
+      "PaymentTransaction": {
+        "properties": {
+          "amountFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "providerTradeNo": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "amountFen",
+          "createdAt",
+          "id",
+          "orderId",
+          "provider",
+          "providerTradeNo",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "Plan": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "deviceLimit": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nodeGroup": {
+            "type": "string"
+          },
+          "provisionInboundIds": {
+            "type": "string"
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "resetCycle": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "trafficBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upgradable": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "capacity",
+          "createdAt",
+          "description",
+          "deviceLimit",
+          "id",
+          "name",
+          "nodeGroup",
+          "provisionInboundIds",
+          "renewable",
+          "resetCycle",
+          "slug",
+          "sortOrder",
+          "trafficBytes",
+          "updatedAt",
+          "upgradable",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "PlanCatalogItem": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "deviceLimit": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nodeGroup": {
+            "type": "string"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/PlanPrice"
+            },
+            "type": "array"
+          },
+          "provisionInboundIds": {
+            "type": "string"
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "resetCycle": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "trafficBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upgradable": {
+            "type": "boolean"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "capacity",
+          "createdAt",
+          "description",
+          "deviceLimit",
+          "id",
+          "name",
+          "nodeGroup",
+          "prices",
+          "provisionInboundIds",
+          "renewable",
+          "resetCycle",
+          "slug",
+          "sortOrder",
+          "trafficBytes",
+          "updatedAt",
+          "upgradable",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "PlanPrice": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "amountFen": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "billingPeriod": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "months": {
+            "type": "integer"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "amountFen",
+          "billingPeriod",
+          "createdAt",
+          "id",
+          "months",
+          "planId",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -2316,6 +4371,57 @@
           "xrayError",
           "xrayState",
           "xrayVersion"
+        ],
+        "type": "object"
+      },
+      "ProvisioningJob": {
+        "properties": {
+          "attempts": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastError": {
+            "type": "string"
+          },
+          "lockedAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "nextRunAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempts",
+          "createdAt",
+          "customerId",
+          "id",
+          "lastError",
+          "nextRunAt",
+          "orderId",
+          "status",
+          "updatedAt"
         ],
         "type": "object"
       },
@@ -2417,6 +4523,31 @@
         ],
         "type": "object"
       },
+      "SendVerificationCodeRequest": {
+        "properties": {
+          "email": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "purpose": {
+            "enum": [
+              "register",
+              "reset"
+            ],
+            "minLength": 1,
+            "type": "string"
+          },
+          "turnstileToken": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "purpose",
+          "turnstileToken"
+        ],
+        "type": "object"
+      },
       "Setting": {
         "description": "Setting stores key-value configuration settings for the 3x-ui panel.",
         "properties": {
@@ -2434,6 +4565,259 @@
           "id",
           "key",
           "value"
+        ],
+        "type": "object"
+      },
+      "SubscriptionEntitlement": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "deviceLimit": {
+            "type": "integer"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "internalClientId": {
+            "type": "string"
+          },
+          "lastResetAt": {
+            "format": "date-time",
+            "nullable": true,
+            "type": "string"
+          },
+          "nodeGroup": {
+            "type": "string"
+          },
+          "orderId": {
+            "type": "string"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "startsAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "trafficQuota": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "trafficUsed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "customerId",
+          "deviceLimit",
+          "id",
+          "internalClientId",
+          "nodeGroup",
+          "orderId",
+          "planId",
+          "startsAt",
+          "status",
+          "trafficQuota",
+          "trafficUsed",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "SubscriptionLinks": {
+        "properties": {
+          "clash": {
+            "type": "string"
+          },
+          "json": {
+            "type": "string"
+          },
+          "raw": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clash",
+          "json",
+          "raw"
+        ],
+        "type": "object"
+      },
+      "SubscriptionOverview": {
+        "properties": {
+          "active": {
+            "type": "boolean"
+          },
+          "capacity": {
+            "type": "integer"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "deviceLimit": {
+            "type": "integer"
+          },
+          "entitlement": {
+            "$ref": "#/components/schemas/SubscriptionEntitlement"
+          },
+          "id": {
+            "type": "string"
+          },
+          "links": {
+            "$ref": "#/components/schemas/SubscriptionLinks"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nodeGroup": {
+            "type": "string"
+          },
+          "provisionInboundIds": {
+            "type": "string"
+          },
+          "renewable": {
+            "type": "boolean"
+          },
+          "resetCycle": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "integer"
+          },
+          "trafficBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "upgradable": {
+            "type": "boolean"
+          },
+          "usedBytes": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "visibility": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "capacity",
+          "createdAt",
+          "description",
+          "deviceLimit",
+          "entitlement",
+          "id",
+          "links",
+          "name",
+          "nodeGroup",
+          "provisionInboundIds",
+          "renewable",
+          "resetCycle",
+          "slug",
+          "sortOrder",
+          "trafficBytes",
+          "updatedAt",
+          "upgradable",
+          "usedBytes",
+          "visibility"
+        ],
+        "type": "object"
+      },
+      "Ticket": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "createdAt",
+          "customerId",
+          "id",
+          "priority",
+          "status",
+          "subject",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "TicketMessage": {
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "senderId": {
+            "type": "string"
+          },
+          "senderType": {
+            "type": "string"
+          },
+          "ticketId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "createdAt",
+          "id",
+          "senderId",
+          "senderType",
+          "ticketId"
         ],
         "type": "object"
       },
@@ -2468,6 +4852,14 @@
     }
   ],
   "tags": [
+    {
+      "name": "Commercial customer portal",
+      "description": "Gmail registration, subscriptions, Alipay payment, customer sessions, and support."
+    },
+    {
+      "name": "Commercial administration",
+      "description": "Role-protected commercial operations for the 3X-UI panel."
+    },
     {
       "name": "Authentication",
       "description": "Two authentication modes are supported. UI sessions use a cookie set by the login endpoint. Programmatic clients (bots, scripts, remote panels) authenticate with a Bearer token taken from Settings → Security → API Token. Both work for every endpoint under /panel/api/*."
@@ -2518,6 +4910,2301 @@
     }
   ],
   "paths": {
+    "/portal": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Open the commercial customer portal.",
+        "operationId": "get_portal",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portal/*path": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Serve portal routes.",
+        "operationId": "get_portal_path",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guest/bootstrap": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Return public plans, notices, guides, clients, and site settings.",
+        "operationId": "get_api_v1_guest_bootstrap",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guest/payments/alipay/notify": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Verify and process an Alipay RSA2 payment notification.",
+        "operationId": "post_api_v1_guest_payments_alipay_notify",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guest/payments/epay/notify": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Verify and process an Epay MD5 payment notification.",
+        "operationId": "get_api_v1_guest_payments_epay_notify",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Verify and process an Epay MD5 payment notification.",
+        "operationId": "post_api_v1_guest_payments_epay_notify",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/guest/payments/codepay/notify": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Verify and process a CodePay MD5 payment notification.",
+        "operationId": "get_api_v1_guest_payments_codepay_notify",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Verify and process a CodePay MD5 payment notification.",
+        "operationId": "post_api_v1_guest_payments_codepay_notify",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passport/csrf-token": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Create a customer CSRF token.",
+        "operationId": "get_api_v1_passport_csrf_token",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passport/send-code": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Send a Gmail verification code.",
+        "operationId": "post_api_v1_passport_send_code",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passport/register": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Register a customer.",
+        "operationId": "post_api_v1_passport_register",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passport/login": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Log in a customer.",
+        "operationId": "post_api_v1_passport_login",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passport/reset-password": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Reset a customer password.",
+        "operationId": "post_api_v1_passport_reset_password",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/passport/logout": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Revoke the active session.",
+        "operationId": "post_api_v1_passport_logout",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/dashboard": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Return subscription, usage, notices, and orders.",
+        "operationId": "get_api_v1_user_dashboard",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/orders": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "List customer orders.",
+        "operationId": "get_api_v1_user_orders",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Create a 15-minute plan order.",
+        "operationId": "post_api_v1_user_orders",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/orders/{id}/pay": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Create a payment using the enabled provider selected in the request body.",
+        "operationId": "post_api_v1_user_orders_id_pay",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/orders/{id}/demo-pay": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Confirm a development demo payment.",
+        "operationId": "post_api_v1_user_orders_id_demo_pay",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/subscription/rotate": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Rotate the native subscription identifier.",
+        "operationId": "post_api_v1_user_subscription_rotate",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/subscription/qr": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Return a subscription QR code.",
+        "operationId": "get_api_v1_user_subscription_qr",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/sessions": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "List active customer sessions.",
+        "operationId": "get_api_v1_user_sessions",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Revoke a customer session.",
+        "operationId": "delete_api_v1_user_sessions_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/account/password": {
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Change the authenticated customer password and rotate active sessions.",
+        "operationId": "post_api_v1_user_account_password",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/tickets": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "List support tickets.",
+        "operationId": "get_api_v1_user_tickets",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Create a support ticket.",
+        "operationId": "post_api_v1_user_tickets",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/overview": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Return commercial KPIs.",
+        "operationId": "get_panel_api_commercial_overview",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/customers": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Search customers.",
+        "operationId": "get_panel_api_commercial_customers",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Manually create a customer.",
+        "operationId": "post_panel_api_commercial_customers",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Permanently delete multiple customers and their related data.",
+        "operationId": "delete_panel_api_commercial_customers",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/customers/{id}": {
+      "patch": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Update a customer.",
+        "operationId": "patch_panel_api_commercial_customers_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Permanently delete a customer and their related data.",
+        "operationId": "delete_panel_api_commercial_customers_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/customers/{id}/subscription": {
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Manually create or replace a customer subscription.",
+        "operationId": "put_panel_api_commercial_customers_id_subscription",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Revoke a customer subscription and remove its 3X-UI client.",
+        "operationId": "delete_panel_api_commercial_customers_id_subscription",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/plans": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List plans and prices.",
+        "operationId": "get_panel_api_commercial_plans",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save a plan.",
+        "operationId": "post_panel_api_commercial_plans",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/plan-prices": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save a plan price.",
+        "operationId": "post_panel_api_commercial_plan_prices",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/orders": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Search orders.",
+        "operationId": "get_panel_api_commercial_orders",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/orders/{id}/retry": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Retry provisioning.",
+        "operationId": "post_panel_api_commercial_orders_id_retry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/notices": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List notices.",
+        "operationId": "get_panel_api_commercial_notices",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save a notice.",
+        "operationId": "post_panel_api_commercial_notices",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/articles": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List knowledge articles.",
+        "operationId": "get_panel_api_commercial_articles",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save a knowledge article.",
+        "operationId": "post_panel_api_commercial_articles",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/applications": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List official clients.",
+        "operationId": "get_panel_api_commercial_applications",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save an official client.",
+        "operationId": "post_panel_api_commercial_applications",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/tickets": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List customer tickets.",
+        "operationId": "get_panel_api_commercial_tickets",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/tickets/{id}/messages": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List ticket messages.",
+        "operationId": "get_panel_api_commercial_tickets_id_messages",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/tickets/{id}/reply": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Reply to a ticket.",
+        "operationId": "post_panel_api_commercial_tickets_id_reply",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/coupons": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List coupons.",
+        "operationId": "get_panel_api_commercial_coupons",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save a coupon.",
+        "operationId": "post_panel_api_commercial_coupons",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/gift-cards": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List gift cards.",
+        "operationId": "get_panel_api_commercial_gift_cards",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Issue gift cards.",
+        "operationId": "post_panel_api_commercial_gift_cards",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/commissions": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List invitation commissions.",
+        "operationId": "get_panel_api_commercial_commissions",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/commissions/{id}/settle": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Settle a commission.",
+        "operationId": "post_panel_api_commercial_commissions_id_settle",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/settings": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Return commercial settings.",
+        "operationId": "get_panel_api_commercial_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save a commercial setting.",
+        "operationId": "post_panel_api_commercial_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/payment-settings": {
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save independently enabled Epay, AlipayF2F, and CodePay settings.",
+        "operationId": "put_panel_api_commercial_payment_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/site-settings": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Return site identity, registration, subscription URL, and currency settings.",
+        "operationId": "get_panel_api_commercial_site_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save site identity, registration, subscription URL, and currency settings.",
+        "operationId": "put_panel_api_commercial_site_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/site-settings/logo": {
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Validate and immediately apply the public site logo.",
+        "operationId": "put_panel_api_commercial_site_settings_logo",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/security-settings": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Return registration and password security settings.",
+        "operationId": "get_panel_api_commercial_security_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save registration and password security settings.",
+        "operationId": "put_panel_api_commercial_security_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/subscription-settings": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Return customer self-service and subscription output settings.",
+        "operationId": "get_panel_api_commercial_subscription_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save customer self-service and subscription output settings.",
+        "operationId": "put_panel_api_commercial_subscription_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/invitation-settings": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Return invitation and non-withdrawable account-credit policy settings.",
+        "operationId": "get_panel_api_commercial_invitation_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Save invitation and non-withdrawable account-credit policy settings.",
+        "operationId": "put_panel_api_commercial_invitation_settings",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/email-templates": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List persistent customer email templates.",
+        "operationId": "get_panel_api_commercial_email_templates",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/email-templates/{key}": {
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Update a customer email template.",
+        "operationId": "put_panel_api_commercial_email_templates_key",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/emails/send": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Queue a personalized email for selected, active, or subscribed customers.",
+        "operationId": "post_panel_api_commercial_emails_send",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/audit": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Return audit events.",
+        "operationId": "get_panel_api_commercial_audit",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/role": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Return the current commercial role.",
+        "operationId": "get_panel_api_commercial_role",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/roles": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List panel administrators and commercial roles.",
+        "operationId": "get_panel_api_commercial_roles",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/roles/{userId}": {
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Assign an administrator role.",
+        "operationId": "put_panel_api_commercial_roles_userId",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/login": {
       "post": {
         "tags": [
@@ -4132,6 +8819,157 @@
         ],
         "summary": "Stream a cross-engine migration file as an attachment: a .dump (SQL text) on SQLite, or a .db SQLite database built from the live data on PostgreSQL.",
         "operationId": "get_panel_api_server_getMigration",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/server/migration/source": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Report whether this installation can run the Ubuntu server migration workflow and return its deployment context.",
+        "operationId": "get_panel_api_server_migration_source",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/server/migration/preflight": {
+      "post": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Verify SSH credentials, pin the target host key, and check Ubuntu version, architecture, disk, DNS, and existing installation state without modifying the target.",
+        "operationId": "post_panel_api_server_migration_preflight",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/server/migration/start": {
+      "post": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Start the confirmed migration after repeating preflight with the pinned SSH host key. Requires administrator reauthentication headers.",
+        "operationId": "post_panel_api_server_migration_start",
+        "parameters": [
+          {
+            "name": "X-Admin-Password",
+            "in": "header",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Admin-2FA",
+            "in": "header",
+            "required": false,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/server/migration/status/{id}": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Return the current migration step, progress, safe logs, result URLs, or failure reason for an in-memory migration job.",
+        "operationId": "get_panel_api_server_migration_status_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -8292,7 +13130,7 @@
                         ""
                       ],
                       "port": 0,
-                      "remark": "",
+                      "remark": "example",
                       "security": "same",
                       "serverDescription": "",
                       "shuffleHost": false,
@@ -8386,7 +13224,7 @@
                       ""
                     ],
                     "port": 0,
-                    "remark": "",
+                    "remark": "example",
                     "security": "same",
                     "serverDescription": "",
                     "shuffleHost": false,
@@ -8483,7 +13321,7 @@
                         ""
                       ],
                       "port": 0,
-                      "remark": "",
+                      "remark": "example",
                       "security": "same",
                       "serverDescription": "",
                       "shuffleHost": false,
@@ -9409,6 +14247,79 @@
                 "example": {
                   "success": true,
                   "msg": "Test message sent to Telegram"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/setting/configureTgWebhook": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Validate a public HTTPS Telegram webhook URL, register it for the enabled bot, and switch the bot to webhook delivery.",
+        "operationId": "post_panel_api_setting_configureTgWebhook",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {
+                "url": "https://vpn.example.com/telegram/webhook"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/setting/deleteTgWebhook": {
+      "post": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Remove the Telegram webhook and return the enabled bot to long-polling delivery.",
+        "operationId": "post_panel_api_setting_deleteTgWebhook",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
                 }
               }
             }

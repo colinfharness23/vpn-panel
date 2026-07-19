@@ -1,4 +1,4 @@
-name: Release 3X-UI for Docker
+name: Optional Docker image (manual only)
 
 permissions:
   contents: read
@@ -6,9 +6,6 @@ permissions:
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*.*.*"
 
 jobs:
   build:

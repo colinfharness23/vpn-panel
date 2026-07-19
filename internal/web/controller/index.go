@@ -8,6 +8,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/middleware"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
+	commercialservice "github.com/mhsanaei/3x-ui/v3/internal/web/service/commercial"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgbot"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
@@ -26,14 +27,15 @@ type LoginForm struct {
 type IndexController struct {
 	BaseController
 
-	settingService service.SettingService
-	userService    panel.UserService
-	tgbot          tgbot.Tgbot
+	settingService   service.SettingService
+	userService      panel.UserService
+	tgbot            tgbot.Tgbot
+	commercialConfig *commercialservice.ConfigStore
 }
 
 // NewIndexController creates a new IndexController and initializes its routes.
 func NewIndexController(g *gin.RouterGroup) *IndexController {
-	a := &IndexController{}
+	a := &IndexController{commercialConfig: commercialservice.NewConfigStore()}
 	a.initRouter(g)
 	return a
 }
@@ -76,6 +78,7 @@ func (a *IndexController) login(c *gin.Context) {
 	}
 
 	remoteIP := getRemoteIp(c)
+	a.configureLoginLimiter()
 	safeUser := template.HTMLEscapeString(form.Username)
 	timeStr := time.Now().Format("2006-01-02 15:04:05")
 	if blockedUntil, ok := defaultLoginLimiter.allow(remoteIP, form.Username); !ok {
@@ -128,6 +131,15 @@ func (a *IndexController) login(c *gin.Context) {
 
 	logger.Infof("%s logged in successfully", safeUser)
 	jsonMsg(c, I18nWeb(c, "pages.login.toasts.successLogin"), nil)
+}
+
+func (a *IndexController) configureLoginLimiter() {
+	if a.commercialConfig == nil {
+		return
+	}
+	policy := a.commercialConfig.SecurityPolicy()
+	window := time.Duration(policy.PasswordLockDurationMinutes) * time.Minute
+	defaultLoginLimiter.configure(policy.PasswordAttemptLimitEnabled, policy.MaxPasswordAttempts, window, window)
 }
 
 func loginFailureReason(err error) string {

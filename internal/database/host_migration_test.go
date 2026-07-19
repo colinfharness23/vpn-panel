@@ -14,6 +14,13 @@ func initMigrateDB(t *testing.T) {
 	if err := InitDB(filepath.Join(t.TempDir(), "x-ui.db")); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
+	// InitDB runs all seeders for a fresh database. These tests exercise the
+	// historical migration itself, so reset only this seeder marker and then
+	// create the legacy inbound fixture that the migration is expected to see.
+	if err := GetDB().Where("seeder_name = ?", "HostsFromExternalProxy").
+		Delete(&model.HistoryOfSeeders{}).Error; err != nil {
+		t.Fatalf("reset HostsFromExternalProxy seeder marker: %v", err)
+	}
 	t.Cleanup(func() { _ = CloseDB() })
 }
 

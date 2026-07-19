@@ -77,6 +77,29 @@ func allModels() []any {
 		&model.NodeClientIp{},
 		&model.ClientGlobalTraffic{},
 		&model.OutboundSubscription{},
+		&model.Customer{},
+		&model.CustomerSession{},
+		&model.EmailVerification{},
+		&model.Plan{},
+		&model.PlanPrice{},
+		&model.Order{},
+		&model.PaymentTransaction{},
+		&model.SubscriptionEntitlement{},
+		&model.ProvisioningJob{},
+		&model.OutboxEvent{},
+		&model.EmailTemplate{},
+		&model.Notice{},
+		&model.KnowledgeArticle{},
+		&model.ClientApplication{},
+		&model.Ticket{},
+		&model.TicketMessage{},
+		&model.Coupon{},
+		&model.CouponRedemption{},
+		&model.GiftCard{},
+		&model.InvitationCommission{},
+		&model.CommercialSetting{},
+		&model.AdminRoleBinding{},
+		&model.CommercialAuditLog{},
 	}
 }
 
@@ -1748,6 +1771,9 @@ func isTableEmpty(tableName string) (bool, error) {
 }
 
 func InitDB(dbPath string) error {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_COMMERCIAL_ENV")), "production") && config.GetDBKind() != DialectPostgres {
+		return errors.New("XUI_COMMERCIAL_ENV=production requires XUI_DB_TYPE=postgres")
+	}
 	var gormLogger logger.Interface
 	if config.IsDebug() {
 		gormLogger = logger.New(
@@ -1835,6 +1861,9 @@ func InitDB(dbPath string) error {
 	}
 
 	if err := initUser(); err != nil {
+		return err
+	}
+	if err := seedCommercialDefaults(); err != nil {
 		return err
 	}
 	return runSeeders(isUsersEmpty)

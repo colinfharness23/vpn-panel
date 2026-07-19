@@ -29,13 +29,17 @@ import TelegramTab from './TelegramTab';
 import EmailTab from './EmailTab';
 import SubscriptionGeneralTab from './SubscriptionGeneralTab';
 import SubscriptionFormatsTab from './SubscriptionFormatsTab';
+import SubscriptionTemplateTab from './SubscriptionTemplateTab';
+import { useSiteSettings } from './useSiteSettings';
+import { useSecuritySettings } from './useSecuritySettings';
+import { useSubscriptionSettings } from './useSubscriptionSettings';
 import './SettingsPage.css';
 
 interface ApiMsg {
   success?: boolean;
 }
 
-const tabSlugs = ['general', 'security', 'telegram', 'email', 'subscription', 'subscription-formats'];
+const tabSlugs = ['general', 'security', 'telegram', 'email', 'subscription', 'subscription-formats', 'subscription-template'];
 
 function isIp(h: string): boolean {
   if (typeof h !== 'string') return false;
@@ -71,13 +75,43 @@ export default function SettingsPage() {
   const {
     allSetting,
     updateSetting,
-    fetched,
-    spinning,
+    fetched: settingsFetched,
+    spinning: settingsSpinning,
     setSpinning,
-    saveDisabled,
+    saveDisabled: settingsSaveDisabled,
     saveAll,
     savePayload,
   } = useAllSettings();
+  const {
+    siteSettings,
+    trialPlans,
+    updateSiteSettings,
+    saveSiteSettings,
+    saveSiteLogo,
+    logoSaving,
+    saveDisabled: siteSettingsSaveDisabled,
+    fetched: siteSettingsFetched,
+    spinning: siteSettingsSpinning,
+    error: siteSettingsError,
+  } = useSiteSettings();
+  const {
+    securitySettings,
+    updateSecuritySettings,
+    saveSecuritySettings,
+    saveDisabled: securitySettingsSaveDisabled,
+    fetched: securitySettingsFetched,
+    spinning: securitySettingsSpinning,
+    error: securitySettingsError,
+  } = useSecuritySettings();
+  const {
+    subscriptionSettings,
+    updateSubscriptionSettings,
+    saveSubscriptionSettings,
+    saveDisabled: subscriptionSettingsSaveDisabled,
+    fetched: subscriptionSettingsFetched,
+    spinning: subscriptionSettingsSpinning,
+    error: subscriptionSettingsError,
+  } = useSubscriptionSettings();
 
   const [entryHost, setEntryHost] = useState('');
   const [entryPort, setEntryPort] = useState('');
@@ -123,15 +157,23 @@ export default function SettingsPage() {
   }
 
   async function onSave() {
-    const result = AllSettingSchema.safeParse(allSetting);
-    if (!result.success) {
-      const issue = result.error.issues[0];
-      const fieldPath = issue?.path.join('.') ?? 'value';
-      const msgKey = issue?.message ?? 'somethingWentWrong';
-      messageApi.error(`${fieldPath}: ${t(msgKey, { defaultValue: msgKey })}`);
-      return;
+    const saves: Promise<unknown>[] = [];
+    if (!settingsSaveDisabled) {
+      const result = AllSettingSchema.safeParse(allSetting);
+      if (!result.success) {
+        const issue = result.error.issues[0];
+        const fieldPath = issue?.path.join('.') ?? 'value';
+        const msgKey = issue?.message ?? 'somethingWentWrong';
+        messageApi.error(`${fieldPath}: ${t(msgKey, { defaultValue: msgKey })}`);
+        return;
+      }
+      saves.push(saveAll());
     }
-    await saveAll();
+    if (!siteSettingsSaveDisabled) saves.push(saveSiteSettings());
+    if (!securitySettingsSaveDisabled) saves.push(saveSecuritySettings());
+    if (!subscriptionSettingsSaveDisabled) saves.push(saveSubscriptionSettings());
+    await Promise.all(saves);
+    messageApi.success('设置已保存');
   }
 
   function restartPanel() {
@@ -197,14 +239,43 @@ export default function SettingsPage() {
 
   const categoryBody = useMemo(() => {
     switch (activeSlug) {
-      case 'security': return <SecurityTab allSetting={allSetting} updateSetting={updateSetting} saveSetting={savePayload} />;
+      case 'security': return (
+        <SecurityTab
+          allSetting={allSetting}
+          updateSetting={updateSetting}
+          saveSetting={savePayload}
+          securitySettings={securitySettings}
+          securitySettingsError={securitySettingsError}
+          updateSecuritySettings={updateSecuritySettings}
+        />
+      );
       case 'telegram': return <TelegramTab allSetting={allSetting} updateSetting={updateSetting} />;
       case 'email': return <EmailTab allSetting={allSetting} updateSetting={updateSetting} />;
-      case 'subscription': return <SubscriptionGeneralTab allSetting={allSetting} updateSetting={updateSetting} />;
+      case 'subscription': return (
+        <SubscriptionGeneralTab
+          allSetting={allSetting}
+          updateSetting={updateSetting}
+          subscriptionSettings={subscriptionSettings}
+          subscriptionSettingsError={subscriptionSettingsError}
+          updateSubscriptionSettings={updateSubscriptionSettings}
+        />
+      );
       case 'subscription-formats': return <SubscriptionFormatsTab allSetting={allSetting} updateSetting={updateSetting} />;
-      default: return <GeneralTab allSetting={allSetting} updateSetting={updateSetting} />;
+      case 'subscription-template': return <SubscriptionTemplateTab allSetting={allSetting} updateSetting={updateSetting} />;
+      default: return (
+        <GeneralTab
+          allSetting={allSetting}
+          updateSetting={updateSetting}
+          siteSettings={siteSettings}
+          trialPlans={trialPlans}
+          siteSettingsError={siteSettingsError}
+          updateSiteSettings={updateSiteSettings}
+          saveSiteLogo={saveSiteLogo}
+          logoSaving={logoSaving}
+        />
+      );
     }
-  }, [activeSlug, allSetting, updateSetting, savePayload]);
+  }, [activeSlug, allSetting, siteSettings, trialPlans, siteSettingsError, securitySettings, securitySettingsError, subscriptionSettings, subscriptionSettingsError, updateSetting, updateSiteSettings, updateSecuritySettings, updateSubscriptionSettings, savePayload, saveSiteLogo, logoSaving]);
 
   return (
     <ConfigProvider theme={antdThemeConfig}>
@@ -215,8 +286,8 @@ export default function SettingsPage() {
 
         <Layout className="content-shell">
           <Layout.Content id="content-layout" className="content-area">
-            <Spin spinning={spinning || !fetched} delay={200} description={t('loading')} size="large">
-              {!fetched ? (
+            <Spin spinning={settingsSpinning || siteSettingsSpinning || securitySettingsSpinning || subscriptionSettingsSpinning || !settingsFetched || !siteSettingsFetched || !securitySettingsFetched || !subscriptionSettingsFetched} delay={200} description={t('loading')} size="large">
+              {!settingsFetched || !siteSettingsFetched || !securitySettingsFetched || !subscriptionSettingsFetched ? (
                 <div className="loading-spacer" />
               ) : (
                 <>
@@ -244,10 +315,10 @@ export default function SettingsPage() {
                         <Row className="header-row">
                           <Col xs={24} sm={10} className="header-actions">
                             <Space>
-                              <Button type="primary" disabled={saveDisabled} onClick={onSave}>
+                              <Button type="primary" disabled={settingsSaveDisabled && siteSettingsSaveDisabled && securitySettingsSaveDisabled && subscriptionSettingsSaveDisabled} onClick={onSave}>
                                 {t('pages.settings.save')}
                               </Button>
-                              <Button type="primary" danger disabled={!saveDisabled} onClick={restartPanel}>
+                              <Button type="primary" danger disabled={!settingsSaveDisabled} onClick={restartPanel}>
                                 {t('pages.settings.restartPanel')}
                               </Button>
                             </Space>

@@ -1,69 +1,98 @@
-name: Deploy Smoke Tests
-
-# Container smoke test for the unattended (cloud-init) install path.
-# Runs when the install/deploy assets change on a branch push or PR, and
-# again after a release-tag build finishes uploading its assets — passing the
-# tag as an explicit version, so the green result verifies the release
-# actually being shipped. That job deliberately runs the script from the
-# default branch rather than checking out the tag: workflow_run executes in
-# main's cache scope, so executing checked-out code there is a cache-poisoning
-# surface (CodeQL actions/cache-poisoning/poisonable-step), and users pipe
-# main's install.sh anyway.
-# Tag pushes must NOT trigger the unpinned job directly: at that moment
-# releases/latest still points at the previous release (#5756), and a `paths`
-# filter alone cannot exclude them because a brand-new tag ref has no diff
-# base, so it runs on every tag push.
+name: Ubuntu Installer Contract
 
 on:
   push:
     branches:
       - "**"
     paths:
-      - "install.sh"
-      - "deploy/**"
+      - "deploy/ubuntu/**"
+      - ".github/workflows/release.yml"
       - ".github/workflows/smoke.yml"
   pull_request:
     paths:
-      - "install.sh"
-      - "deploy/**"
+      - "deploy/ubuntu/**"
+      - ".github/workflows/release.yml"
       - ".github/workflows/smoke.yml"
-  workflow_run:
-    workflows: ["Release 3X-UI"]
-    types: [completed]
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 jobs:
-  noninteractive-install:
-    if: github.event_name != 'workflow_run'
+  installer-contract:
+    if: github.event_name != 'release'
     strategy:
       fail-fast: false
       matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
+        runner: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - name: Non-interactive install smoke test
-        run: bash deploy/test/smoke-noninteractive.sh
 
-  release-tag-install:
+      - name: Validate shell scripts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq shellcheck
+          bash -n deploy/ubuntu/*.sh
+          shellcheck -S error -x deploy/ubuntu/*.sh
+
+      - name: Validate the interactive installer contract
+        run: |
+          install=deploy/ubuntu/install.sh
+          grep -Fq '管理员账号：' "$install"
+          grep -Fq '管理员密码（至少 12 位' "$install"
+          grep -Fq 'stty -echo' "$install"
+          grep -Fq '已解析到本机的域名：' "$install"
+          grep -Fq "Let's Encrypt 证书通知邮箱：" "$install"
+          grep -Fq 'generate_admin_path' "$install"
+          grep -Fq '^[0-9]{18}$' "$install"
+          grep -Fq 'certbot --nginx --non-interactive --agree-tos --redirect' "$install"
+          grep -Fq 'certbot renew' "$install"
+          grep -Fq '/portal/' "$install"
+          grep -Fq '/panel/' "$install"
+          grep -Fq '/sub/health-probe' "$install"
+          grep -Fq '安装和全部健康检查完成' "$install"
+
+      - name: Validate update, backup, rollback and rotation helpers
+        run: |
+          for helper in update rollback backup rotate-admin-path; do
+            test -s "deploy/ubuntu/${helper}.sh"
+          done
+          grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/update.sh
+          grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/backup.sh
+          grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/rollback.sh
+          grep -Fq 'generate_admin_path' deploy/ubuntu/rotate-admin-path.sh
+
+  release-assets:
     if: >-
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      startsWith(github.event.workflow_run.head_branch, 'v') &&
-      contains(github.event.workflow_run.head_branch, '.')
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-latest, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+      github.event_name == 'release' &&
+      github.event.action == 'published' &&
+      startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
-      - name: Pinned release install smoke test
+
+      - name: Download and verify published Ubuntu assets
         env:
-          XUI_SMOKE_VERSION: ${{ github.event.workflow_run.head_branch }}
-        run: bash deploy/test/smoke-noninteractive.sh "$XUI_SMOKE_VERSION"
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          mkdir -p /tmp/nova-release
+          gh release download "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --dir /tmp/nova-release \
+            --pattern 'x-ui-linux-*.tar.gz' \
+            --pattern 'x-ui-linux-*.tar.gz.sha256'
+          cd /tmp/nova-release
+          sha256sum --check *.sha256
+          test -f x-ui-linux-amd64.tar.gz
+          test -f x-ui-linux-arm64.tar.gz
+          for archive in x-ui-linux-amd64.tar.gz x-ui-linux-arm64.tar.gz; do
+            tar -tzf "$archive" | grep -Fxq 'x-ui/bin/config.json'
+            tar -tzf "$archive" | grep -Fxq 'x-ui/deploy/ubuntu/install.sh'
+          done

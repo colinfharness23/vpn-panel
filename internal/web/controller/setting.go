@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"strconv"
 	"time"
@@ -70,6 +71,8 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/apiTokens/setEnabled/:id", a.setApiTokenEnabled)
 	g.POST("/testSmtp", a.testSmtp)
 	g.POST("/testTgBot", a.testTgBot)
+	g.POST("/configureTgWebhook", a.configureTgWebhook)
+	g.POST("/deleteTgWebhook", a.deleteTgWebhook)
 }
 
 // getAllSetting retrieves all current settings as the browser-safe view:
@@ -106,6 +109,11 @@ func (a *SettingController) updateSetting(c *gin.Context) {
 	oldTgToken, _ := a.settingService.GetTgBotToken()
 	oldTgChatId, _ := a.settingService.GetTgBotChatId()
 	oldTgAPIServer, _ := a.settingService.GetTgBotAPIServer()
+	oldTgWebhookURL, _ := a.settingService.GetTgWebhookURL()
+	// The Webhook button performs the remote Telegram call and persists the
+	// resulting mode atomically. A regular settings save must not silently
+	// switch receiver modes just because an unsubmitted URL is in the form.
+	allSetting.TgWebhookURL = oldTgWebhookURL
 	if twoFactorErr == nil && oldTwoFactor && !allSetting.TwoFactorEnable {
 		if err := a.settingService.VerifyTwoFactorCode(form.TwoFactorCode); err != nil {
 			jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
@@ -288,6 +296,57 @@ func (a *SettingController) testTgBot(c *gin.Context) {
 	jsonMsg(c, I18nWeb(c, "pages.settings.tgBotNotRunning"), errors.New("bot not started"))
 }
 
+type telegramWebhookForm struct {
+	URL string `json:"url" form:"url"`
+}
+
+func (a *SettingController) configureTgWebhook(c *gin.Context) {
+	form := &telegramWebhookForm{}
+	if err := c.ShouldBind(form); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.tgWebhookConfigureFailed"), err)
+		return
+	}
+	clean, err := service.ValidateTelegramWebhookURL(form.URL)
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.tgWebhookConfigureFailed"), err)
+		return
+	}
+	enabled, enabledErr := a.settingService.GetTgbotEnabled()
+	if enabledErr != nil || !enabled {
+		jsonMsg(c, I18nWeb(c, "pages.settings.tgWebhookConfigureFailed"), errors.New("enable and save the Telegram bot before configuring its webhook"))
+		return
+	}
+	if configureTgWebhookFunc == nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.tgWebhookConfigureFailed"), errors.New("telegram webhook service is not available"))
+		return
+	}
+	status, err := configureTgWebhookFunc(c.Request.Context(), clean)
+	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.tgWebhookConfigureFailed"), err)
+		return
+	}
+	c.JSON(200, gin.H{
+		"success": true,
+		"msg":     I18nWeb(c, "pages.settings.tgWebhookConfigured"),
+		"obj":     status,
+	})
+}
+
+func (a *SettingController) deleteTgWebhook(c *gin.Context) {
+	if deleteTgWebhookFunc == nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.tgWebhookDeleteFailed"), errors.New("telegram webhook service is not available"))
+		return
+	}
+	if err := deleteTgWebhookFunc(c.Request.Context()); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.tgWebhookDeleteFailed"), err)
+		return
+	}
+	c.JSON(200, gin.H{
+		"success": true,
+		"msg":     I18nWeb(c, "pages.settings.tgWebhookDeleted"),
+	})
+}
+
 // testTgFunc is set from web layer to test Telegram sending without circular imports.
 var testTgFunc func() error
 
@@ -298,6 +357,18 @@ func SetTestTgFunc(fn func() error) { testTgFunc = fn }
 var reloadTgbotFunc func()
 
 func SetReloadTgbotFunc(fn func()) { reloadTgbotFunc = fn }
+
+var configureTgWebhookFunc func(context.Context, string) (any, error)
+
+func SetConfigureTgWebhookFunc(fn func(context.Context, string) (any, error)) {
+	configureTgWebhookFunc = fn
+}
+
+var deleteTgWebhookFunc func(context.Context) error
+
+func SetDeleteTgWebhookFunc(fn func(context.Context) error) {
+	deleteTgWebhookFunc = fn
+}
 
 // emailService is set from web layer.
 var emailService *email.EmailService

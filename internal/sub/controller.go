@@ -43,13 +43,14 @@ type cachedSubTemplate struct {
 
 // SUBController handles HTTP requests for subscription links and JSON configurations.
 type SUBController struct {
-	subTitle         string
-	subSupportUrl    string
-	subProfileUrl    string
-	subAnnounce      string
-	subEnableRouting bool
-	subRoutingRules  string
-	subHideSettings  bool
+	subTitle             string
+	subSupportUrl        string
+	subProfileUrl        string
+	subAnnounce          string
+	subEnableRouting     bool
+	subRoutingRules      string
+	subHideSettings      bool
+	showSubscriptionInfo bool
 
 	subIncyEnableRouting bool
 	subIncyRoutingRules  string
@@ -96,16 +97,20 @@ func NewSUBController(
 	subHideSettings bool,
 	subIncyEnableRouting bool,
 	subIncyRoutingRules string,
+	showSubscriptionInfo bool,
+	showProtocolInNodeName bool,
 ) *SUBController {
 	sub := NewSubService(remarkTemplate)
+	sub.showProtocolInName = showProtocolInNodeName
 	a := &SUBController{
-		subTitle:         subTitle,
-		subSupportUrl:    subSupportUrl,
-		subProfileUrl:    subProfileUrl,
-		subAnnounce:      subAnnounce,
-		subEnableRouting: subEnableRouting,
-		subRoutingRules:  subRoutingRules,
-		subHideSettings:  subHideSettings,
+		subTitle:             subTitle,
+		subSupportUrl:        subSupportUrl,
+		subProfileUrl:        subProfileUrl,
+		subAnnounce:          subAnnounce,
+		subEnableRouting:     subEnableRouting,
+		subRoutingRules:      subRoutingRules,
+		subHideSettings:      subHideSettings,
+		showSubscriptionInfo: showSubscriptionInfo,
 
 		subIncyEnableRouting: subIncyEnableRouting,
 		subIncyRoutingRules:  subIncyRoutingRules,
@@ -439,7 +444,9 @@ func (a *SUBController) ApplyCommonHeaders(
 	profileRoutingRules string,
 	profileHideSettings bool,
 ) {
-	c.Writer.Header().Set("Subscription-Userinfo", header)
+	if a.showSubscriptionInfo {
+		c.Writer.Header().Set("Subscription-Userinfo", header)
+	}
 	c.Writer.Header().Set("Profile-Update-Interval", updateInterval)
 
 	// Basics

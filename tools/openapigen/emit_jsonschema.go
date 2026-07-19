@@ -138,6 +138,12 @@ func applyConstraints(sch map[string]any, t TypeRef, rules []ValidateRule) {
 	str := base.Kind == KindString
 	for _, r := range rules {
 		switch r.Name {
+		case "required":
+			if str {
+				if current, ok := sch["minLength"].(int); !ok || current < 1 {
+					sch["minLength"] = 1
+				}
+			}
 		case "gte":
 			if numeric {
 				sch["minimum"] = coerceExample(r.Param, base)
@@ -169,6 +175,13 @@ func applyConstraints(sch map[string]any, t TypeRef, rules []ValidateRule) {
 				sch["maximum"] = coerceExample(r.Param, base)
 			} else if str {
 				if n, err := strconv.Atoi(r.Param); err == nil {
+					sch["maxLength"] = n
+				}
+			}
+		case "len":
+			if str {
+				if n, err := strconv.Atoi(r.Param); err == nil {
+					sch["minLength"] = n
 					sch["maxLength"] = n
 				}
 			}

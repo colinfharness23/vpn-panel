@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Button, Input, InputNumber, Select, Space, Switch, Tabs } from 'antd';
-import { MailOutlined, SendOutlined, SettingOutlined } from '@ant-design/icons';
+import { FileTextOutlined, NotificationOutlined, SendOutlined, SettingOutlined } from '@ant-design/icons';
 import { HttpUtil } from '@/utils';
 import type { AllSetting } from '@/models/setting';
 import { SettingListItem } from '@/components/ui';
@@ -9,6 +9,11 @@ import { EmailNotifications } from '@/components/ui/notifications/EmailNotificat
 import { useMediaQuery } from '@/hooks/useMediaQuery';
 import { catTabLabel } from './catTabLabel';
 import SecretInput from './SecretInput';
+import {
+  CustomerEmailSendPane,
+  EmailTemplatesPane,
+  useCustomerEmailTemplates,
+} from './CustomerEmailManager';
 
 interface EmailTabProps {
   allSetting: AllSetting;
@@ -21,11 +26,33 @@ interface SmtpTestResult {
   msg: string;
 }
 
+const smtpPortPresets = [
+  { port: 25, encryptionType: 'starttls', label: '25 / STARTTLS' },
+  { port: 465, encryptionType: 'tls', label: '465 / SSL/TLS' },
+  { port: 587, encryptionType: 'starttls', label: '587 / STARTTLS' },
+] as const;
+
+const smtpProviderPresets = [
+  { key: 'gmail', label: 'Gmail', host: 'smtp.gmail.com', port: 587, encryptionType: 'starttls' },
+  { key: 'outlook', label: 'Outlook.com', host: 'smtp-mail.outlook.com', port: 587, encryptionType: 'starttls' },
+  { key: 'microsoft365', label: 'Microsoft 365', host: 'smtp.office365.com', port: 587, encryptionType: 'starttls' },
+  { key: 'qq', label: 'QQ 邮箱', host: 'smtp.qq.com', port: 465, encryptionType: 'tls' },
+  { key: '163', label: '163 邮箱', host: 'smtp.163.com', port: 465, encryptionType: 'tls' },
+  { key: 'yahoo', label: 'Yahoo Mail', host: 'smtp.mail.yahoo.com', port: 465, encryptionType: 'tls' },
+  { key: 'icloud', label: 'iCloud Mail', host: 'smtp.mail.me.com', port: 587, encryptionType: 'starttls' },
+] as const;
+
 export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
   const { t } = useTranslation();
   const { isMobile } = useMediaQuery();
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<SmtpTestResult | null>(null);
+  const emailTemplates = useCustomerEmailTemplates();
+  const activeSmtpProvider = smtpProviderPresets.find(({ host, port, encryptionType }) => (
+    host === allSetting.smtpHost
+    && port === allSetting.smtpPort
+    && encryptionType === allSetting.smtpEncryptionType
+  ))?.key;
 
   const stageLabel: Record<string, string> = {
     connect: t('pages.settings.smtpStageConnect'),
@@ -58,17 +85,50 @@ export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
             </SettingListItem>
 
             <SettingListItem paddings="small" title={t('pages.settings.smtpHost')} description={t('pages.settings.smtpHostDesc')}>
-              <Input value={allSetting.smtpHost} placeholder="smtp.gmail.com"
-                onChange={(e) => updateSetting({ smtpHost: e.target.value })} />
+              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                <Input value={allSetting.smtpHost} placeholder="smtp.example.com"
+                  onChange={(e) => updateSetting({ smtpHost: e.target.value })} />
+                <Select
+                  aria-label={t('pages.settings.smtpProviderPreset')}
+                  value={activeSmtpProvider}
+                  placeholder={t('pages.settings.smtpProviderPresetPlaceholder')}
+                  options={smtpProviderPresets.map(({ key, label }) => ({ value: key, label }))}
+                  onChange={(key) => {
+                    const preset = smtpProviderPresets.find((item) => item.key === key);
+                    if (preset) {
+                      updateSetting({
+                        smtpHost: preset.host,
+                        smtpPort: preset.port,
+                        smtpEncryptionType: preset.encryptionType,
+                      });
+                    }
+                  }}
+                  style={{ width: '100%' }}
+                />
+              </Space>
             </SettingListItem>
 
             <SettingListItem paddings="small" title={t('pages.settings.smtpPort')} description={t('pages.settings.smtpPortDesc')}>
-              <InputNumber value={allSetting.smtpPort} min={1} max={65535} style={{ width: '100%' }}
-                onChange={(v) => updateSetting({ smtpPort: Number(v) || 587 })} />
+              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                <InputNumber value={allSetting.smtpPort} min={1} max={65535} style={{ width: '100%' }}
+                  onChange={(v) => updateSetting({ smtpPort: Number(v) || 587 })} />
+                <Space size={[8, 8]} wrap>
+                  {smtpPortPresets.map(({ port, encryptionType, label }) => (
+                    <Button
+                      key={port}
+                      size="small"
+                      type={allSetting.smtpPort === port ? 'primary' : 'default'}
+                      onClick={() => updateSetting({ smtpPort: port, smtpEncryptionType: encryptionType })}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </Space>
+              </Space>
             </SettingListItem>
 
             <SettingListItem paddings="small" title={t('pages.settings.smtpUsername')} description={t('pages.settings.smtpUsernameDesc')}>
-              <Input value={allSetting.smtpUsername} placeholder="user@gmail.com"
+              <Input value={allSetting.smtpUsername} placeholder="user@example.com"
                 onChange={(e) => updateSetting({ smtpUsername: e.target.value })} />
             </SettingListItem>
 
@@ -123,13 +183,40 @@ export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
       },
       {
         key: '2',
-        label: catTabLabel(<MailOutlined />, t('pages.settings.emailNotifications'), isMobile),
+        label: catTabLabel(<NotificationOutlined />, '系统告警', isMobile),
         children: (
-          <>
+          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+            <Alert
+              type="info"
+              showIcon
+              title="发送给管理员的运行告警"
+              description="节点离线、Xray 崩溃、资源过高等事件会发送到 SMTP 设置中的管理员收件人，不会发送给机场用户。"
+            />
             <SettingListItem paddings="small" title={t('pages.settings.smtpEventBusNotify')} description={t('pages.settings.smtpEventBusNotifyDesc')}>
               <EmailNotifications allSetting={allSetting} updateSetting={updateSetting} />
             </SettingListItem>
-          </>
+          </Space>
+        ),
+      },
+      {
+        key: '3',
+        label: catTabLabel(<FileTextOutlined />, '邮件模板', isMobile),
+        children: (
+          <EmailTemplatesPane
+            templates={emailTemplates.templates}
+            setTemplates={emailTemplates.setTemplates}
+            loading={emailTemplates.loading}
+          />
+        ),
+      },
+      {
+        key: '4',
+        label: catTabLabel(<SendOutlined />, '发送邮件', isMobile),
+        children: (
+          <CustomerEmailSendPane
+            templates={emailTemplates.templates}
+            templatesLoading={emailTemplates.loading}
+          />
         ),
       },
     ]} />

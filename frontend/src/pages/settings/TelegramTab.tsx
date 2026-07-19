@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, Button, Input, InputNumber, Select, Space, Switch, Tabs } from 'antd';
-import { BellOutlined, SendOutlined, SettingOutlined } from '@ant-design/icons';
+import { BellOutlined, CloudSyncOutlined, CustomerServiceOutlined, DeleteOutlined, LinkOutlined, SendOutlined, SettingOutlined } from '@ant-design/icons';
 import { LanguageManager } from '@/utils';
 import { HttpUtil } from '@/utils';
 import type { AllSetting } from '@/models/setting';
@@ -50,6 +50,18 @@ function composeRunTime(s: RunTime): string {
   if (s.mode === 'every') return `@every ${Math.max(1, s.num || 1)}${s.unit}`;
   if (s.mode === 'custom') return s.custom;
   return s.mode;
+}
+
+function normalizeTelegramSupportLink(raw: string): string {
+  try {
+    const url = new URL(raw.trim());
+    const host = url.hostname.toLowerCase();
+    const hasDestination = url.pathname.split('/').some(Boolean);
+    if (url.protocol !== 'https:' || (host !== 't.me' && host !== 'telegram.me') || !hasDestination) return '';
+    return url.toString();
+  } catch {
+    return '';
+  }
 }
 
 // The panel's cron runs with seconds enabled (cron.WithSeconds() in web.go), so
@@ -153,6 +165,15 @@ export default function TelegramTab({ allSetting, updateSetting }: TelegramTabPr
   const { isMobile } = useMediaQuery();
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; msg: string } | null>(null);
+  const [webhookLoading, setWebhookLoading] = useState(false);
+  const [webhookResult, setWebhookResult] = useState<{ success: boolean; msg: string } | null>(null);
+
+  const suggestedWebhookURL = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    const basePath = `/${(allSetting.webBasePath || '/').replace(/^\/+|\/+$/g, '')}`.replace(/^\/$/, '');
+    return `${window.location.origin}${basePath}/telegram/webhook`;
+  }, [allSetting.webBasePath]);
+  const telegramSupportLink = useMemo(() => normalizeTelegramSupportLink(allSetting.tgGroupLink), [allSetting.tgGroupLink]);
 
   async function handleTestTgBot() {
     setTestLoading(true);
@@ -164,6 +185,37 @@ export default function TelegramTab({ allSetting, updateSetting }: TelegramTabPr
       setTestResult({ success: false, msg: e instanceof Error ? e.message : t('pages.settings.requestFailed') });
     } finally {
       setTestLoading(false);
+    }
+  }
+
+  async function handleConfigureWebhook() {
+    const url = allSetting.tgWebhookURL.trim() || suggestedWebhookURL;
+    setWebhookLoading(true);
+    setWebhookResult(null);
+    try {
+      const res = await HttpUtil.post('/panel/api/setting/configureTgWebhook', { url }) as { success?: boolean; msg?: string };
+      const success = !!res.success;
+      setWebhookResult({ success, msg: res.msg || '' });
+      if (success) updateSetting({ tgWebhookURL: url });
+    } catch (e: unknown) {
+      setWebhookResult({ success: false, msg: e instanceof Error ? e.message : t('pages.settings.requestFailed') });
+    } finally {
+      setWebhookLoading(false);
+    }
+  }
+
+  async function handleDeleteWebhook() {
+    setWebhookLoading(true);
+    setWebhookResult(null);
+    try {
+      const res = await HttpUtil.post('/panel/api/setting/deleteTgWebhook') as { success?: boolean; msg?: string };
+      const success = !!res.success;
+      setWebhookResult({ success, msg: res.msg || '' });
+      if (success) updateSetting({ tgWebhookURL: '' });
+    } catch (e: unknown) {
+      setWebhookResult({ success: false, msg: e instanceof Error ? e.message : t('pages.settings.requestFailed') });
+    } finally {
+      setWebhookLoading(false);
     }
   }
 
@@ -181,10 +233,48 @@ export default function TelegramTab({ allSetting, updateSetting }: TelegramTabPr
   );
 
   return (
-    <Tabs defaultActiveKey="1" items={[
+    <Tabs defaultActiveKey="support" items={[
       {
-        key: '1',
-        label: catTabLabel(<SettingOutlined />, t('pages.settings.panelSettings'), isMobile),
+        key: 'support',
+        label: catTabLabel(<CustomerServiceOutlined />, t('pages.settings.telegramCustomerSupport'), isMobile),
+        children: (
+          <>
+            <Alert
+              type="info"
+              showIcon
+              title={t('pages.settings.telegramCustomerSupport')}
+              description={t('pages.settings.telegramCustomerSupportDesc')}
+              style={{ marginBottom: 16 }}
+            />
+            <SettingListItem paddings="small" title={t('pages.settings.telegramGroupLink')} description={t('pages.settings.telegramGroupLinkDesc')}>
+              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                <Input
+                  prefix={<LinkOutlined />}
+                  value={allSetting.tgGroupLink}
+                  placeholder="https://t.me/your_username"
+                  status={allSetting.tgGroupLink.trim() && !telegramSupportLink ? 'error' : undefined}
+                  onChange={(e) => updateSetting({ tgGroupLink: e.target.value })}
+                />
+                {allSetting.tgGroupLink.trim() && !telegramSupportLink && (
+                  <Alert type="error" showIcon title={t('pages.settings.telegramSupportLinkInvalid')} />
+                )}
+                <Button
+                  href={telegramSupportLink || undefined}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  icon={<SendOutlined />}
+                  disabled={!telegramSupportLink}
+                >
+                  {t('pages.settings.openTelegramSupport')}
+                </Button>
+              </Space>
+            </SettingListItem>
+          </>
+        ),
+      },
+      {
+        key: 'bot',
+        label: catTabLabel(<SettingOutlined />, t('pages.settings.telegramBotSettings'), isMobile),
         children: (
           <>
             <SettingListItem paddings="small" title={t('pages.settings.telegramBotEnable')} description={t('pages.settings.telegramBotEnableDesc')}>
@@ -224,6 +314,40 @@ export default function TelegramTab({ allSetting, updateSetting }: TelegramTabPr
                 onChange={(e) => updateSetting({ tgBotAPIServer: e.target.value })} />
             </SettingListItem>
 
+            <SettingListItem paddings="small" title={t('pages.settings.telegramWebhook')} description={t('pages.settings.telegramWebhookDesc')}>
+              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                <Input
+                  value={allSetting.tgWebhookURL}
+                  placeholder={suggestedWebhookURL}
+                  onChange={(e) => updateSetting({ tgWebhookURL: e.target.value })}
+                  aria-label={t('pages.settings.telegramWebhookURL')}
+                />
+                <Space wrap>
+                  <Button type="primary" icon={<CloudSyncOutlined />} loading={webhookLoading} onClick={handleConfigureWebhook}>
+                    {t('pages.settings.configureTelegramWebhook')}
+                  </Button>
+                  <Button
+                    danger
+                    icon={<DeleteOutlined />}
+                    loading={webhookLoading}
+                    disabled={!allSetting.tgWebhookURL.trim()}
+                    onClick={handleDeleteWebhook}
+                  >
+                    {t('pages.settings.deleteTelegramWebhook')}
+                  </Button>
+                </Space>
+                {webhookResult && (
+                  <Alert
+                    type={webhookResult.success ? 'success' : 'error'}
+                    title={webhookResult.msg}
+                    showIcon
+                    closable
+                    onClose={() => setWebhookResult(null)}
+                  />
+                )}
+              </Space>
+            </SettingListItem>
+
             <Space orientation="vertical" size={8} style={{ width: '100%', marginTop: 16 }}>
               <Button type="primary" icon={<SendOutlined />} loading={testLoading} onClick={handleTestTgBot}>
                 {t('pages.settings.testTgBot')}
@@ -242,7 +366,7 @@ export default function TelegramTab({ allSetting, updateSetting }: TelegramTabPr
         ),
       },
       {
-        key: '2',
+        key: 'notifications',
         label: catTabLabel(<BellOutlined />, t('pages.settings.notifications'), isMobile),
         children: (
           <>
