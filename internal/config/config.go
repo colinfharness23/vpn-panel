@@ -117,6 +117,14 @@ func IsBehindHTTPSProxy() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_BEHIND_HTTPS_PROXY")), "true")
 }
 
+// IsCommercialProduction reports whether the hardened commercial deployment
+// profile is active. Keep this check in one place so security-sensitive
+// behavior (cookies, branding and update policy) cannot drift between
+// packages.
+func IsCommercialProduction() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_COMMERCIAL_ENV")), "production")
+}
+
 func GetPortOverride() (port int, configured bool, err error) {
 	value, ok := os.LookupEnv("XUI_PORT")
 	if !ok || strings.TrimSpace(value) == "" {
@@ -141,7 +149,7 @@ func GetPortOverride() (port int, configured bool, err error) {
 func GetAdminBasePath(fallback string) (string, error) {
 	raw := strings.TrimSpace(os.Getenv("XUI_ADMIN_BASE_PATH"))
 	if raw == "" {
-		if strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_COMMERCIAL_ENV")), "production") {
+		if IsCommercialProduction() {
 			return "", fmt.Errorf("XUI_ADMIN_BASE_PATH is required in commercial production")
 		}
 		return normalizeURLBasePath(fallback), nil

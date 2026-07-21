@@ -51,6 +51,20 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
+func TestCommercialProductionDisablesWebUpdater(t *testing.T) {
+	t.Setenv("XUI_COMMERCIAL_ENV", "production")
+	info, err := (&PanelService{}).GetUpdateInfo()
+	if err != nil {
+		t.Fatalf("GetUpdateInfo: %v", err)
+	}
+	if info.Channel != "managed" || info.UpdateAvailable {
+		t.Fatalf("commercial update info = %+v", info)
+	}
+	if _, err := (&PanelService{}).StartUpdate(); err == nil {
+		t.Fatal("commercial production accepted web updater execution")
+	}
+}
+
 func TestExtractReleaseCommit(t *testing.T) {
 	full := "1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b"
 	cases := []struct {

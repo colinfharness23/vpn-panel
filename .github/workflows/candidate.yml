@@ -37,14 +37,14 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -104,7 +104,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Validate scripts and interactive contract
         run: |
           sudo apt-get update -qq
@@ -112,10 +112,12 @@ jobs:
           bash -n deploy/ubuntu/*.sh
           shellcheck -S error -x deploy/ubuntu/*.sh
           install=deploy/ubuntu/install.sh
-          grep -Fq '管理员账号：' "$install"
+          grep -Fq '需要绑定的域名（例如 vpn.example.com）' "$install"
+          grep -Fq '管理员登录账号' "$install"
           grep -Fq '管理员密码（至少 12 位' "$install"
           grep -Fq 'stty -echo' "$install"
-          grep -Fq '已解析到本机的域名：' "$install"
+          grep -Fq 'NOVA_DEFER_TLS' "$install"
+          grep -Fq 'nova-finalize-domain' "$install"
           ! grep -Fq "Let's Encrypt 证书通知邮箱" "$install"
           grep -Fq -- '--register-unsafely-without-email' "$install"
           grep -Fq 'generate_admin_path' "$install"
@@ -129,14 +131,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -155,7 +157,6 @@ jobs:
           cp x-ui.service.debian x-ui/
           cp x-ui.service.arch x-ui/
           cp x-ui.service.rhel x-ui/
-          cp x-ui.sh x-ui/
           cp deploy/ubuntu/*.sh x-ui/deploy/ubuntu/
           chmod +x x-ui/x-ui x-ui/deploy/ubuntu/*.sh
           cp internal/web/service/config.json x-ui/bin/config.json
@@ -189,7 +190,7 @@ jobs:
           grep -Fxq x-ui/bin/xray-linux-amd64 /tmp/candidate-files.txt
           grep -Fxq x-ui/deploy/ubuntu/install.sh /tmp/candidate-files.txt
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: nova-ubuntu-amd64-candidate
           path: |

@@ -3,8 +3,11 @@ package email
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
+	"mime"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
 	"time"
@@ -52,13 +55,17 @@ func (s *EmailService) SendTo(recipients []string, subject, body string) error {
 	password, _ := s.settingService.GetSmtpPassword()
 	encryptionType, _ := s.settingService.GetSmtpEncryptionType()
 
-	from := username
-	if from == "" {
+	from, err := normalizeSMTPAddress(username)
+	if err != nil {
 		return fmt.Errorf("smtp from not configured")
 	}
-
-	if len(recipients) == 0 {
+	recipients, err = normalizeSMTPRecipients(recipients)
+	if err != nil || len(recipients) == 0 {
 		return fmt.Errorf("no recipients configured")
+	}
+	subject, err = normalizeSMTPSubject(subject)
+	if err != nil {
+		return err
 	}
 
 	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
@@ -78,8 +85,10 @@ func (s *EmailService) SendTo(recipients []string, subject, body string) error {
 		switch encryptionType {
 		case "tls":
 			ch <- result{s.sendWithTLS(addr, auth, from, recipients, msg, host)}
-		case "starttls", "none":
-			ch <- result{smtp.SendMail(addr, auth, from, recipients, msg)}
+		case "starttls":
+			ch <- result{s.sendWithSMTP(addr, auth, from, recipients, msg, host, true)}
+		case "none":
+			ch <- result{s.sendWithSMTP(addr, auth, from, recipients, msg, host, false)}
 		default:
 			ch <- result{fmt.Errorf("unknown SMTP encryption type: %s", encryptionType)}
 		}
@@ -91,6 +100,54 @@ func (s *EmailService) SendTo(recipients []string, subject, body string) error {
 	case <-time.After(30 * time.Second):
 		return fmt.Errorf("smtp connection timed out after 30s")
 	}
+}
+
+func (s *EmailService) sendWithSMTP(addr string, auth smtp.Auth, from string, to []string, msg []byte, host string, startTLS bool) error {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	conn, err := dialer.Dial("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	if err = client.Hello("localhost"); err != nil {
+		return err
+	}
+	if startTLS {
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return fmt.Errorf("smtp server does not support STARTTLS")
+		}
+		if err = client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+			return err
+		}
+	}
+	if auth != nil {
+		if err = client.Auth(auth); err != nil {
+			return err
+		}
+	}
+	if err = client.Mail(from); err != nil {
+		return err
+	}
+	for _, recipient := range to {
+		if err = client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+	w, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err = w.Write(msg); err != nil {
+		return err
+	}
+	return w.Close()
 }
 
 // TestConnection tests SMTP connection stage by stage and sends a test email.
@@ -108,9 +165,14 @@ func (s *EmailService) TestConnection() SMTPTestResult {
 	toStr, _ := s.settingService.GetSmtpTo()
 	encryptionType, _ := s.settingService.GetSmtpEncryptionType()
 
-	from := username
-
-	recipients := parseRecipients(toStr)
+	from, fromErr := normalizeSMTPAddress(username)
+	if fromErr != nil {
+		return SMTPTestResult{false, "send", "smtpFromNotConfigured"}
+	}
+	recipients, recipientsErr := normalizeSMTPRecipients(parseRecipients(toStr))
+	if recipientsErr != nil {
+		return SMTPTestResult{false, "send", "smtpNoRecipients"}
+	}
 	if len(recipients) == 0 {
 		return SMTPTestResult{false, "send", "smtpNoRecipients"}
 	}
@@ -287,19 +349,61 @@ func parseRecipients(toStr string) []string {
 	return out
 }
 
+func normalizeSMTPAddress(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\r\n\x00") {
+		return "", fmt.Errorf("invalid email address")
+	}
+	address, err := mail.ParseAddress(value)
+	if err != nil || address.Address == "" || strings.ContainsAny(address.Address, "\r\n\x00") {
+		return "", fmt.Errorf("invalid email address")
+	}
+	return address.Address, nil
+}
+
+func normalizeSMTPRecipients(values []string) ([]string, error) {
+	if len(values) == 0 {
+		return nil, fmt.Errorf("no recipients")
+	}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		address, err := normalizeSMTPAddress(value)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, address)
+	}
+	return result, nil
+}
+
+func normalizeSMTPSubject(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\r\n\x00") {
+		return "", fmt.Errorf("invalid email subject")
+	}
+	return mime.QEncoding.Encode("UTF-8", value), nil
+}
+
 func buildMessage(from string, to []string, subject, body string) []byte {
 	headers := map[string]string{
-		"From":         from,
-		"To":           strings.Join(to, ","),
-		"Subject":      subject,
-		"MIME-Version": "1.0",
-		"Content-Type": "text/html; charset=utf-8",
+		"From":                      from,
+		"To":                        strings.Join(to, ","),
+		"Subject":                   subject,
+		"MIME-Version":              "1.0",
+		"Content-Type":              "text/html; charset=utf-8",
+		"Content-Transfer-Encoding": "base64",
 	}
 	var msg strings.Builder
 	for k, v := range headers {
 		fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
 	}
 	msg.WriteString("\r\n")
-	msg.WriteString(body)
+	encodedBody := base64.StdEncoding.EncodeToString([]byte(body))
+	for len(encodedBody) > 76 {
+		msg.WriteString(encodedBody[:76])
+		msg.WriteString("\r\n")
+		encodedBody = encodedBody[76:]
+	}
+	msg.WriteString(encodedBody)
 	return []byte(msg.String())
 }

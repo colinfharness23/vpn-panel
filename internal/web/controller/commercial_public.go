@@ -531,7 +531,7 @@ func (a *CommercialPublicController) setCustomerCookie(c *gin.Context, token str
 	if basePath == "" {
 		basePath = "/"
 	}
-	http.SetCookie(c.Writer, &http.Cookie{Name: customerSessionCookie, Value: token, Path: basePath, MaxAge: 30 * 24 * 60 * 60, Expires: time.Now().UTC().Add(30 * 24 * time.Hour), HttpOnly: true, Secure: commercialCookieSecure(c), SameSite: http.SameSiteLaxMode})
+	http.SetCookie(c.Writer, &http.Cookie{Name: customerSessionCookie, Value: token, Path: basePath, MaxAge: 30 * 24 * 60 * 60, Expires: time.Now().UTC().Add(30 * 24 * time.Hour), HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
 }
 
 func (a *CommercialPublicController) clearCustomerCookie(c *gin.Context) {
@@ -539,17 +539,7 @@ func (a *CommercialPublicController) clearCustomerCookie(c *gin.Context) {
 	if basePath == "" {
 		basePath = "/"
 	}
-	http.SetCookie(c.Writer, &http.Cookie{Name: customerSessionCookie, Value: "", Path: basePath, MaxAge: -1, Expires: time.Unix(0, 0), HttpOnly: true, Secure: commercialCookieSecure(c), SameSite: http.SameSiteLaxMode})
-}
-
-func commercialCookieSecure(c *gin.Context) bool {
-	if c.Request.TLS != nil {
-		return true
-	}
-	if !isTrustedForwardedRequest(c) {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(strings.Split(c.GetHeader("X-Forwarded-Proto"), ",")[0]), "https")
+	http.SetCookie(c.Writer, &http.Cookie{Name: customerSessionCookie, Value: "", Path: basePath, MaxAge: -1, Expires: time.Unix(0, 0), HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
 }
 
 func customerIdentity(c *gin.Context) *commercial.SessionIdentity {

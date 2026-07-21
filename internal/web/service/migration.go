@@ -66,16 +66,18 @@ type MigrationPreflight struct {
 }
 
 type MigrationJobSnapshot struct {
-	ID        string    `json:"id"`
-	Status    string    `json:"status"`
-	Progress  int       `json:"progress"`
-	Step      string    `json:"step"`
-	Logs      []string  `json:"logs"`
-	PortalURL string    `json:"portalUrl,omitempty"`
-	AdminURL  string    `json:"adminUrl,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	StartedAt time.Time `json:"startedAt"`
-	EndedAt   time.Time `json:"endedAt,omitempty"`
+	ID                 string    `json:"id"`
+	Status             string    `json:"status"`
+	Progress           int       `json:"progress"`
+	Step               string    `json:"step"`
+	Logs               []string  `json:"logs"`
+	PortalURL          string    `json:"portalUrl,omitempty"`
+	AdminURL           string    `json:"adminUrl,omitempty"`
+	DNSCutoverRequired bool      `json:"dnsCutoverRequired,omitempty"`
+	FinalizeCommand    string    `json:"finalizeCommand,omitempty"`
+	Error              string    `json:"error,omitempty"`
+	StartedAt          time.Time `json:"startedAt"`
+	EndedAt            time.Time `json:"endedAt,omitempty"`
 }
 
 type migrationJob struct {
@@ -101,6 +103,9 @@ type migrationDeployConfig struct {
 	WebBasePath            string
 	DBName                 string
 	DBUser                 string
+	DeferTLS               bool
+	ExpectedPublicIP       string
+	PreviousDNSIPs         string
 }
 
 type migrationRemoteInfo struct {
@@ -183,7 +188,11 @@ if [ -e /usr/local/x-ui ] || [ -e /etc/nova/deploy.env ]; then printf 'EXISTING_
 		checks = append(checks, MigrationCheck{Key: "dns", Label: "域名解析", Status: "warning", Detail: "当前未配置域名，迁移后将使用目标 IP 访问"})
 		dnsReady = true
 	} else {
-		checks = append(checks, migrationBoolCheck("dns", "域名解析", dnsReady, "域名已解析到目标服务器", "请先把域名解析到目标 IP，然后重新检测"))
+		if dnsReady {
+			checks = append(checks, MigrationCheck{Key: "dns", Label: "域名解析", Status: "success", Detail: "域名已经指向目标服务器，可直接完成 HTTPS"})
+		} else {
+			checks = append(checks, MigrationCheck{Key: "dns", Label: "域名解析", Status: "warning", Detail: "域名仍指向旧服务器，这是安全预部署的正常状态；数据迁移完成后再切换 DNS"})
+		}
 	}
 	if remote.ExistingInstall {
 		checks = append(checks, MigrationCheck{Key: "existing", Label: "目标端现有数据", Status: "warning", Detail: "检测到现有安装，执行时会先备份并由本机数据完整覆盖"})
@@ -275,6 +284,20 @@ func (m *MigrationManager) run(id string, req ServerMigrationRequest) {
 		fail(fmt.Errorf("生成目标端临时管理员凭据失败：%w", err))
 		return
 	}
+	targetIP, targetErr := validateMigrationRequest(req)
+	if targetErr != nil {
+		fail(targetErr)
+		return
+	}
+	dnsReady, resolvedDNS := migrationDNSReady(ctx, deploy.Domain, targetIP)
+	deploy.DeferTLS = deploy.Domain != "" && !dnsReady
+	deploy.ExpectedPublicIP = targetIP.String()
+	if deploy.DeferTLS {
+		deploy.PreviousDNSIPs = strings.Join(resolvedDNS, ",")
+		if deploy.PreviousDNSIPs == "" {
+			deploy.PreviousDNSIPs = "-"
+		}
+	}
 	installPath, err := migrationInstallScriptPath()
 	if err != nil {
 		fail(err)
@@ -340,7 +363,11 @@ func (m *MigrationManager) run(id string, req ServerMigrationRequest) {
 		return
 	}
 
-	m.update(id, 48, "安装目标服务", "正在安装运行依赖、应用程序、PostgreSQL、Nginx 与 TLS。", nil)
+	installDetail := "正在安装运行依赖、应用程序、PostgreSQL、Nginx 与 TLS。"
+	if deploy.DeferTLS {
+		installDetail = "正在通过 SSH 预部署应用、PostgreSQL 与 Nginx；域名继续服务旧服务器，暂不申请证书。"
+	}
+	m.update(id, 48, "安装目标服务", installDetail, nil)
 	installCommand := migrationInstallCommand(deploy, installRemote)
 	if _, err := runMigrationRootCommand(ctx, client, req, installCommand, migrationCommandTimeout); err != nil {
 		fail(fmt.Errorf("目标服务安装失败：%w", err))
@@ -377,10 +404,18 @@ pgrep -u nova -f '/usr/local/x-ui/bin/xray-linux-' >/dev/null`
 	}
 
 	portalURL, adminURL := migrationResultURLs(deploy, req.Host)
-	m.update(id, 100, "迁移完成", "目标服务器健康检查已通过；旧服务器仍保持运行，确认新站正常后再手动停用旧服务器。", func(job *migrationJob) {
+	completionMessage := "目标服务器健康检查已通过；旧服务器仍保持运行，确认新站正常后再手动停用旧服务器。"
+	if deploy.DeferTLS {
+		completionMessage = "目标服务器已完成预部署和数据恢复。请在新服务器运行 sudo nova-finalize-domain，再按提示把域名 DNS 切换到新 IP；不要同时保留新旧两个源站记录。"
+	}
+	m.update(id, 100, "迁移完成", completionMessage, func(job *migrationJob) {
 		job.Status = "completed"
 		job.PortalURL = portalURL
 		job.AdminURL = adminURL
+		job.DNSCutoverRequired = deploy.DeferTLS
+		if deploy.DeferTLS {
+			job.FinalizeCommand = "sudo nova-finalize-domain"
+		}
 		job.EndedAt = time.Now().UTC()
 	})
 }
@@ -638,6 +673,8 @@ func migrationInstallCommand(cfg migrationDeployConfig, remoteScript string) str
 		"NOVA_ACME_EMAIL": cfg.ACMEEmail, "NOVA_ADMIN_PATH": cfg.AdminPath, "NOVA_ADMIN_USERNAME": cfg.AdminUsername,
 		"NOVA_ADMIN_PASSWORD": cfg.BootstrapAdminPassword, "NOVA_WEB_BASE_PATH": cfg.WebBasePath,
 		"NOVA_DB_NAME": cfg.DBName, "NOVA_DB_USER": cfg.DBUser,
+		"NOVA_DEFER_TLS": strconv.FormatBool(cfg.DeferTLS), "NOVA_EXPECTED_PUBLIC_IP": cfg.ExpectedPublicIP,
+		"NOVA_PREVIOUS_DNS_IPS": cfg.PreviousDNSIPs,
 	}
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -655,13 +692,17 @@ func migrationInstallCommand(cfg migrationDeployConfig, remoteScript string) str
 func migrationRestoreCommand(backupPath string, postgresSource bool) string {
 	restoreTargetSettings := `PGPASSWORD="${NOVA_DB_PASSWORD}" psql --host 127.0.0.1 --username "${NOVA_DB_USER}" --dbname "${NOVA_DB_NAME}" -v ON_ERROR_STOP=1 <<SQL
 BEGIN;
-DELETE FROM settings WHERE key IN ('subEnable','subJsonEnable','subClashEnable','subListen','subPort','subPath','subJsonPath','subClashPath','subDomain','subURI','subJsonURI','subClashURI');
+DELETE FROM settings WHERE key IN ('webDomain','subEnable','subJsonEnable','subClashEnable','subListen','subPort','subPath','subJsonPath','subClashPath','subDomain','subURI','subJsonURI','subClashURI','subTitle','subProfileUrl','subSupportUrl');
 INSERT INTO settings (key,value) VALUES
+('webDomain','${NOVA_DOMAIN}'),
 ('subEnable','true'),('subJsonEnable','true'),('subClashEnable','true'),
 ('subListen','127.0.0.1'),('subPort','${NOVA_SUB_PORT}'),
 ('subPath','${NOVA_SUB_PATH}'),('subJsonPath','${NOVA_SUB_JSON_PATH}'),('subClashPath','${NOVA_SUB_CLASH_PATH}'),
-('subDomain','${NOVA_DOMAIN}'),('subURI','https://${NOVA_DOMAIN}'),('subJsonURI','https://${NOVA_DOMAIN}'),('subClashURI','https://${NOVA_DOMAIN}');
-INSERT INTO commercial_settings (key,value,encrypted,updated_at) VALUES ('site.url','https://${NOVA_DOMAIN}',false,NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, encrypted=false, updated_at=NOW();
+('subDomain','${NOVA_DOMAIN}'),('subURI','https://${NOVA_DOMAIN}'),('subJsonURI','https://${NOVA_DOMAIN}'),('subClashURI','https://${NOVA_DOMAIN}'),
+('subTitle','NOVA'),('subProfileUrl','https://${NOVA_DOMAIN}'),('subSupportUrl','https://${NOVA_DOMAIN}/tickets');
+INSERT INTO commercial_settings (key,value,encrypted,updated_at) VALUES
+('site.url','https://${NOVA_DOMAIN}',false,NOW()),('site.force_https','true',false,NOW()),('security.safe_mode','true',false,NOW())
+ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, encrypted=false, updated_at=NOW();
 COMMIT;
 SQL`
 	if postgresSource {
@@ -722,12 +763,16 @@ func migrationDNSReady(ctx context.Context, domain string, target net.IP) (bool,
 	if err != nil {
 		return false, nil
 	}
+	return migrationDNSAddressesReady(addresses, target)
+}
+
+func migrationDNSAddressesReady(addresses []net.IPAddr, target net.IP) (bool, []string) {
 	result := make([]string, 0, len(addresses))
-	ready := false
+	ready := len(addresses) > 0
 	for _, address := range addresses {
 		result = append(result, address.IP.String())
-		if address.IP.Equal(target) {
-			ready = true
+		if !address.IP.Equal(target) {
+			ready = false
 		}
 	}
 	sort.Strings(result)

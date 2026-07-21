@@ -137,7 +137,12 @@ func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
 		},
 	})
 	sniffing := `{"enabled":true,"destOverride":["http","tls","quic"],"metadataOnly":false,"routeOnly":false}`
-	inbound := &model.Inbound{UserId: 1, Remark: "托管线路 · " + node.Remark, SubSortIndex: 1, Enable: false, Listen: "", Port: port, Protocol: model.VLESS, Settings: string(settings), StreamSettings: string(stream), Tag: "commercial-in-" + strings.ReplaceAll(node.ID, "-", "")[:20], Sniffing: sniffing, ShareAddrStrategy: "custom", ShareAddr: parsed.Hostname()}
+	stableID := strings.ToUpper(strings.ReplaceAll(node.ID, "-", ""))
+	if len(stableID) > 6 {
+		stableID = stableID[:6]
+	}
+	siteName := NewConfigStore().GetDefault("site.name", "NOVA")
+	inbound := &model.Inbound{UserId: 1, Remark: fmt.Sprintf("%s 线路 %s", siteName, stableID), SubSortIndex: 1, Enable: false, Listen: "", Port: port, Protocol: model.VLESS, Settings: string(settings), StreamSettings: string(stream), Tag: "commercial-in-" + strings.ReplaceAll(node.ID, "-", "")[:20], Sniffing: sniffing, ShareAddrStrategy: "custom", ShareAddr: parsed.Hostname()}
 	created, _, err := w.inbounds.AddInbound(inbound)
 	if err != nil {
 		return err

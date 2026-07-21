@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/mail"
@@ -184,7 +185,7 @@ func (s *AuthService) SendCode(ctx context.Context, rawEmail, purpose, ip, turns
 	if s.mailer != nil {
 		siteName := s.config.GetDefault("site.name", "NOVA")
 		subject := fmt.Sprintf("[%s] 邮箱验证码", siteName)
-		body := fmt.Sprintf(`<html><body style="font-family:Arial,sans-serif;color:#17233d"><h2>%s</h2><p>你的验证码是：</p><p style="font-size:32px;font-weight:700;letter-spacing:8px">%s</p><p>验证码 10 分钟内有效，请勿转发给他人。</p></body></html>`, siteName, code)
+		body := fmt.Sprintf(`<html><body style="font-family:Arial,sans-serif;color:#17233d"><h2>%s</h2><p>你的验证码是：</p><p style="font-size:32px;font-weight:700;letter-spacing:8px">%s</p><p>验证码 10 分钟内有效，请勿转发给他人。</p></body></html>`, html.EscapeString(siteName), code)
 		if err := s.mailer.SendTo([]string{email}, subject, body); err != nil {
 			if !isDemoMode() {
 				return "", err
