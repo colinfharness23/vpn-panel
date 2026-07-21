@@ -39,7 +39,7 @@ import { useTheme } from '@/hooks/useTheme';
 import './AppSidebar.css';
 
 const SIDEBAR_COLLAPSED_KEY = 'isSidebarCollapsed';
-const REPO_URL = 'https://github.com/MHSanaei/3x-ui';
+const REPO_URL = 'https://github.com/colinfharness23/vpn-panel';
 const LOGOUT_KEY = '__logout__';
 const PORTAL_KEY = '__portal__';
 const INVITATION_COMMISSION_KEY = '__invitation_commission__';
