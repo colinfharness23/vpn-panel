@@ -112,10 +112,12 @@ jobs:
           bash -n deploy/ubuntu/*.sh
           shellcheck -S error -x deploy/ubuntu/*.sh
           install=deploy/ubuntu/install.sh
-          grep -Fq '管理员账号：' "$install"
+          grep -Fq '需要绑定的域名（例如 vpn.example.com）' "$install"
+          grep -Fq '管理员登录账号' "$install"
           grep -Fq '管理员密码（至少 12 位' "$install"
           grep -Fq 'stty -echo' "$install"
-          grep -Fq '已解析到本机的域名：' "$install"
+          grep -Fq 'NOVA_DEFER_TLS' "$install"
+          grep -Fq 'nova-finalize-domain' "$install"
           ! grep -Fq "Let's Encrypt 证书通知邮箱" "$install"
           grep -Fq -- '--register-unsafely-without-email' "$install"
           grep -Fq 'generate_admin_path' "$install"
