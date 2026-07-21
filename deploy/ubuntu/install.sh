@@ -61,11 +61,16 @@ existing_env_value() {
   fi
   printf '%s' "$value"
 }
-read_tty() {
-  local value
-  printf '%s' "$1" >/dev/tty
+read_tty_default() {
+  local prompt="$1" variable="$2" default_value="${3:-}" value
+  if [[ -n $default_value ]]; then
+    printf '%s [%s]：' "$prompt" "$default_value" >/dev/tty
+  else
+    printf '%s：' "$prompt" >/dev/tty
+  fi
   IFS= read -r value </dev/tty
-  printf -v "$2" '%s' "$value"
+  [[ -n $value ]] || value="$default_value"
+  printf -v "$variable" '%s' "$value"
 }
 read_secret_tty() {
   local value
@@ -155,8 +160,14 @@ systemctl enable --now nginx
 
 panel_port_explicit=0
 sub_port_explicit=0
+domain_explicit=0
+admin_username_explicit=0
+acme_email_explicit=0
 [[ -n ${NOVA_PANEL_PORT:-} ]] && panel_port_explicit=1
 [[ -n ${NOVA_SUB_PORT:-} ]] && sub_port_explicit=1
+[[ -n ${NOVA_DOMAIN:-} ]] && domain_explicit=1
+[[ -n ${NOVA_ADMIN_USERNAME:-} ]] && admin_username_explicit=1
+[[ -n ${NOVA_ACME_EMAIL:-} ]] && acme_email_explicit=1
 
 NOVA_GITHUB_REPO="${NOVA_GITHUB_REPO:-$(saved_value NOVA_GITHUB_REPO)}"
 NOVA_RELEASE_TAG="${NOVA_RELEASE_TAG:-latest}"
@@ -176,15 +187,21 @@ NOVA_ADMIN_USERNAME="${NOVA_ADMIN_USERNAME:-$(saved_value NOVA_ADMIN_USERNAME)}"
 NOVA_DB_NAME="${NOVA_DB_NAME:-nova}"
 NOVA_DB_USER="${NOVA_DB_USER:-nova}"
 
-[[ -n $NOVA_ADMIN_USERNAME ]] || read_tty "管理员账号：" NOVA_ADMIN_USERNAME
+if ((domain_explicit == 0)); then
+  read_tty_default "需要绑定的域名（例如 vpn.example.com）" NOVA_DOMAIN "$NOVA_DOMAIN"
+fi
+if ((admin_username_explicit == 0)); then
+  read_tty_default "管理员登录账号" NOVA_ADMIN_USERNAME "$NOVA_ADMIN_USERNAME"
+fi
 if [[ -z ${NOVA_ADMIN_PASSWORD:-} ]]; then
   read_secret_tty "管理员密码（至少 12 位，包含大小写字母和数字）：" NOVA_ADMIN_PASSWORD
   read_secret_tty "再次输入管理员密码：" NOVA_ADMIN_PASSWORD_CONFIRM
 else
   NOVA_ADMIN_PASSWORD_CONFIRM="$NOVA_ADMIN_PASSWORD"
 fi
-[[ -n $NOVA_DOMAIN ]] || read_tty "已解析到本机的域名：" NOVA_DOMAIN
-[[ -n $NOVA_ACME_EMAIL ]] || read_tty "Let's Encrypt 证书通知邮箱：" NOVA_ACME_EMAIL
+if ((acme_email_explicit == 0)); then
+  read_tty_default "Let's Encrypt 证书通知邮箱" NOVA_ACME_EMAIL "$NOVA_ACME_EMAIL"
+fi
 
 [[ $NOVA_GITHUB_REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "请设置 NOVA_GITHUB_REPO=用户名/仓库名。"
 [[ $NOVA_ADMIN_USERNAME =~ ^[A-Za-z0-9_.-]{4,64}$ ]] || die "管理员账号格式无效。"

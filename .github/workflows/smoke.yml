@@ -42,11 +42,18 @@ jobs:
       - name: Validate the interactive installer contract
         run: |
           install=deploy/ubuntu/install.sh
-          grep -Fq '管理员账号：' "$install"
+          grep -Fq '需要绑定的域名（例如 vpn.example.com）' "$install"
+          grep -Fq '管理员登录账号' "$install"
           grep -Fq '管理员密码（至少 12 位' "$install"
           grep -Fq 'stty -echo' "$install"
-          grep -Fq '已解析到本机的域名：' "$install"
-          grep -Fq "Let's Encrypt 证书通知邮箱：" "$install"
+          grep -Fq "Let's Encrypt 证书通知邮箱" "$install"
+          domain_line=$(grep -nF 'read_tty_default "需要绑定的域名' "$install" | cut -d: -f1)
+          admin_line=$(grep -nF 'read_tty_default "管理员登录账号"' "$install" | cut -d: -f1)
+          password_line=$(grep -nF 'read_secret_tty "管理员密码' "$install" | cut -d: -f1)
+          email_line=$(grep -nF 'read_tty_default "Let' "$install" | cut -d: -f1)
+          test "$domain_line" -lt "$admin_line"
+          test "$admin_line" -lt "$password_line"
+          test "$password_line" -lt "$email_line"
           grep -Fq 'generate_admin_path' "$install"
           grep -Fq '^[0-9]{18}$' "$install"
           grep -Fq 'NOVA_RELEASE_ASSET_DIR' "$install"
