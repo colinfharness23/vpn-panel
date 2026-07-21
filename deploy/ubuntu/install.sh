@@ -44,16 +44,8 @@ case "$(uname -m)" in
   *) die "仅支持 amd64 和 arm64。" ;;
 esac
 
-export DEBIAN_FRONTEND=noninteractive
-log "安装 Ubuntu 运行依赖…"
-apt-get update -y
-apt-get install -y --no-install-recommends ca-certificates curl jq tar openssl nginx postgresql postgresql-contrib postgresql-client certbot python3-certbot-nginx iproute2 sqlite3
-systemctl enable --now postgresql
-systemctl enable --now nginx
-
 saved_value() {
-  [[ -f $DEPLOY_FILE ]] || return 0
-  sed -n "s/^$1=//p" "$DEPLOY_FILE" | tail -n1
+  existing_env_value "$DEPLOY_FILE" "$1"
 }
 existing_env_value() {
   local file="$1" key="$2" value first last
@@ -106,6 +98,17 @@ generate_port() {
   done
   return 1
 }
+valid_internal_port() {
+  [[ ${1:-} =~ ^1[0-9]{4}$ ]]
+}
+reset_saved_internal_port() {
+  local explicit="$1" variable="$2" label="$3" excluded="${4:-}" value
+  value="${!variable:-}"
+  if ((explicit == 0)) && [[ -n $value ]] && { ! valid_internal_port "$value" || [[ -n $excluded && $value == "$excluded" ]]; }; then
+    log "检测到无效或冲突的旧版${label}端口 $value，正在重新随机生成。"
+    printf -v "$variable" '%s' ''
+  fi
+}
 assert_port_available() {
   local line
   line="$(ss -H -ltnp 2>/dev/null | awk -v suffix=":$1" '$4 ~ suffix"$" {print; exit}')"
@@ -121,6 +124,39 @@ wait_http() {
   done
   return 1
 }
+
+if [[ ${NOVA_INSTALL_PORT_SELF_TEST:-0} == 1 ]]; then
+  NOVA_PANEL_PORT=54321
+  reset_saved_internal_port 0 NOVA_PANEL_PORT "内部面板"
+  [[ -z $NOVA_PANEL_PORT ]] || die "旧版面板端口自检失败。"
+
+  NOVA_PANEL_PORT=15432
+  reset_saved_internal_port 0 NOVA_PANEL_PORT "内部面板"
+  [[ $NOVA_PANEL_PORT == 15432 ]] || die "有效面板端口自检失败。"
+
+  NOVA_SUB_PORT=15432
+  reset_saved_internal_port 0 NOVA_SUB_PORT "订阅服务" "$NOVA_PANEL_PORT"
+  [[ -z $NOVA_SUB_PORT ]] || die "冲突订阅端口自检失败。"
+
+  NOVA_PANEL_PORT=54321
+  reset_saved_internal_port 1 NOVA_PANEL_PORT "内部面板"
+  [[ $NOVA_PANEL_PORT == 54321 ]] || die "显式端口自检失败。"
+
+  log "内部端口兼容性自检通过。"
+  exit 0
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+log "安装 Ubuntu 运行依赖…"
+apt-get update -y
+apt-get install -y --no-install-recommends ca-certificates curl jq tar openssl nginx postgresql postgresql-contrib postgresql-client certbot python3-certbot-nginx iproute2 sqlite3
+systemctl enable --now postgresql
+systemctl enable --now nginx
+
+panel_port_explicit=0
+sub_port_explicit=0
+[[ -n ${NOVA_PANEL_PORT:-} ]] && panel_port_explicit=1
+[[ -n ${NOVA_SUB_PORT:-} ]] && sub_port_explicit=1
 
 NOVA_GITHUB_REPO="${NOVA_GITHUB_REPO:-$(saved_value NOVA_GITHUB_REPO)}"
 NOVA_RELEASE_TAG="${NOVA_RELEASE_TAG:-latest}"
@@ -167,10 +203,12 @@ password_length="$(printf '%s' "$NOVA_ADMIN_PASSWORD" | wc -c)"
 
 [[ -n $NOVA_ADMIN_PATH ]] || NOVA_ADMIN_PATH="$(generate_admin_path)"
 [[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]] || die "管理员入口必须为 18 位数字。"
+reset_saved_internal_port "$panel_port_explicit" NOVA_PANEL_PORT "内部面板"
 [[ -n $NOVA_PANEL_PORT ]] || NOVA_PANEL_PORT="$(generate_port 10000 19999)"
+reset_saved_internal_port "$sub_port_explicit" NOVA_SUB_PORT "订阅服务" "$NOVA_PANEL_PORT"
 [[ -n $NOVA_SUB_PORT ]] || NOVA_SUB_PORT="$(generate_port 10000 19999 "$NOVA_PANEL_PORT")"
-[[ $NOVA_PANEL_PORT =~ ^[0-9]+$ ]] && ((NOVA_PANEL_PORT >= 10000 && NOVA_PANEL_PORT <= 19999)) || die "内部面板端口必须位于 10000-19999。"
-[[ $NOVA_SUB_PORT =~ ^[0-9]+$ ]] && ((NOVA_SUB_PORT >= 10000 && NOVA_SUB_PORT <= 19999)) || die "订阅服务端口必须位于 10000-19999。"
+valid_internal_port "$NOVA_PANEL_PORT" || die "内部面板端口必须位于 10000-19999。"
+valid_internal_port "$NOVA_SUB_PORT" || die "订阅服务端口必须位于 10000-19999。"
 [[ $NOVA_SUB_PORT != "$NOVA_PANEL_PORT" ]] || die "订阅端口不能与面板端口相同。"
 [[ -n $NOVA_SUB_PATH ]] || NOVA_SUB_PATH="/s-$(openssl rand -hex 10)/"
 [[ -n $NOVA_SUB_JSON_PATH ]] || NOVA_SUB_JSON_PATH="/j-$(openssl rand -hex 10)/"
