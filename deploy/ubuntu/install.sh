@@ -162,18 +162,15 @@ panel_port_explicit=0
 sub_port_explicit=0
 domain_explicit=0
 admin_username_explicit=0
-acme_email_explicit=0
 [[ -n ${NOVA_PANEL_PORT:-} ]] && panel_port_explicit=1
 [[ -n ${NOVA_SUB_PORT:-} ]] && sub_port_explicit=1
 [[ -n ${NOVA_DOMAIN:-} ]] && domain_explicit=1
 [[ -n ${NOVA_ADMIN_USERNAME:-} ]] && admin_username_explicit=1
-[[ -n ${NOVA_ACME_EMAIL:-} ]] && acme_email_explicit=1
 
 NOVA_GITHUB_REPO="${NOVA_GITHUB_REPO:-$(saved_value NOVA_GITHUB_REPO)}"
 NOVA_RELEASE_TAG="${NOVA_RELEASE_TAG:-latest}"
 NOVA_RELEASE_ASSET_DIR="${NOVA_RELEASE_ASSET_DIR:-}"
 NOVA_DOMAIN="${NOVA_DOMAIN:-$(saved_value NOVA_DOMAIN)}"
-NOVA_ACME_EMAIL="${NOVA_ACME_EMAIL:-$(saved_value NOVA_ACME_EMAIL)}"
 NOVA_ADMIN_PATH="${NOVA_ADMIN_PATH:-$(saved_value NOVA_ADMIN_PATH)}"
 NOVA_PANEL_PORT="${NOVA_PANEL_PORT:-$(saved_value NOVA_PANEL_PORT)}"
 NOVA_SUB_PORT="${NOVA_SUB_PORT:-$(saved_value NOVA_SUB_PORT)}"
@@ -199,14 +196,9 @@ if [[ -z ${NOVA_ADMIN_PASSWORD:-} ]]; then
 else
   NOVA_ADMIN_PASSWORD_CONFIRM="$NOVA_ADMIN_PASSWORD"
 fi
-if ((acme_email_explicit == 0)); then
-  read_tty_default "Let's Encrypt 证书通知邮箱" NOVA_ACME_EMAIL "$NOVA_ACME_EMAIL"
-fi
-
 [[ $NOVA_GITHUB_REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "请设置 NOVA_GITHUB_REPO=用户名/仓库名。"
 [[ $NOVA_ADMIN_USERNAME =~ ^[A-Za-z0-9_.-]{4,64}$ ]] || die "管理员账号格式无效。"
 [[ $NOVA_DOMAIN =~ ^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$ ]] || die "域名格式无效。"
-[[ $NOVA_ACME_EMAIL =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || die "证书邮箱格式无效。"
 [[ $NOVA_DB_NAME =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || die "数据库名称格式无效。"
 [[ $NOVA_DB_USER =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || die "数据库用户名格式无效。"
 [[ $NOVA_DB_USER != postgres ]] || die "数据库用户不能使用 PostgreSQL 超级用户 postgres。"
@@ -479,7 +471,7 @@ wait_http "http://127.0.0.1:$NOVA_PANEL_PORT/" "$NOVA_DOMAIN" 200 || die "根门
 wait_http "http://127.0.0.1:$NOVA_PANEL_PORT/$NOVA_ADMIN_PATH/" "$NOVA_DOMAIN" 200 || die "隐藏管理员入口启动失败。"
 
 log "申请并验证 Let's Encrypt 证书…"
-certbot --nginx --non-interactive --agree-tos --redirect --email "$NOVA_ACME_EMAIL" -d "$NOVA_DOMAIN"
+certbot --nginx --non-interactive --agree-tos --redirect --register-unsafely-without-email -d "$NOVA_DOMAIN"
 systemctl enable --now certbot.timer
 certbot renew --cert-name "$NOVA_DOMAIN" --dry-run --no-random-sleep-on-renew
 
@@ -491,7 +483,6 @@ cat >"$DEPLOY_FILE" <<EOF
 NOVA_GITHUB_REPO=$NOVA_GITHUB_REPO
 NOVA_RELEASE_TAG=$NOVA_RELEASE_TAG
 NOVA_DOMAIN=$NOVA_DOMAIN
-NOVA_ACME_EMAIL=$NOVA_ACME_EMAIL
 NOVA_ADMIN_PATH=$NOVA_ADMIN_PATH
 NOVA_PANEL_PORT=$NOVA_PANEL_PORT
 NOVA_SUB_PORT=$NOVA_SUB_PORT

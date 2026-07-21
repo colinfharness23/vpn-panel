@@ -19,9 +19,9 @@
 curl -fsSL https://raw.githubusercontent.com/OWNER/REPOSITORY/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=OWNER/REPOSITORY bash
 ```
 
-将 `OWNER/REPOSITORY` 替换为实际 GitHub 仓库。向导会依次询问绑定域名、管理员登录账号、管理员密码及确认、Let's Encrypt 通知邮箱；密码输入不回显。重新安装时会把上次的域名、账号和邮箱显示为默认值，直接回车即可沿用，也可以输入新值。仅当调用者主动提供对应的 `NOVA_*` 环境变量时才跳过该项提问。
+将 `OWNER/REPOSITORY` 替换为实际 GitHub 仓库。向导只会依次询问绑定域名、管理员登录账号、管理员密码及确认；密码输入不回显。重新安装时会把上次的域名和账号显示为默认值，直接回车即可沿用，也可以输入新值。仅当调用者主动提供对应的 `NOVA_*` 环境变量时才跳过该项提问。
 
-脚本会安装 PostgreSQL、Nginx、Certbot 和运行依赖，创建最小权限用户，自动签发证书，并生成只保存于服务器的 18 位数字后台入口。只有数据库、门户、后台、Xray、订阅路由和证书续期检查全部通过时才会显示安装成功。
+脚本会安装 PostgreSQL、Nginx、Certbot 和运行依赖，创建最小权限用户，以无邮箱模式自动注册 Let's Encrypt、签发 HTTPS 证书、启用自动续期，并生成只保存于服务器的 18 位数字后台入口。只有数据库、门户、后台、Xray、订阅路由和证书续期检查全部通过时才会显示安装成功。
 
 安装结果仅写入 root 可读的 `/root/nova-install-result.txt`，权限为 `600`。其中不保存管理员密码。
 
