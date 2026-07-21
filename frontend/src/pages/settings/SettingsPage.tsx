@@ -33,6 +33,7 @@ import SubscriptionTemplateTab from './SubscriptionTemplateTab';
 import { useSiteSettings } from './useSiteSettings';
 import { useSecuritySettings } from './useSecuritySettings';
 import { useSubscriptionSettings } from './useSubscriptionSettings';
+import { buildPanelRestartURL } from './panelRestartUrl';
 import './SettingsPage.css';
 
 interface ApiMsg {
@@ -40,22 +41,6 @@ interface ApiMsg {
 }
 
 const tabSlugs = ['general', 'security', 'telegram', 'email', 'subscription', 'subscription-formats', 'subscription-template'];
-
-function isIp(h: string): boolean {
-  if (typeof h !== 'string') return false;
-  const v4 = h.split('.');
-  if (v4.length === 4 && v4.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255)) return true;
-  if (!h.includes(':') || h.includes(':::')) return false;
-  const parts = h.split('::');
-  if (parts.length > 2) return false;
-  const split = (s: string) => (s ? s.split(':').filter(Boolean) : []);
-  const head = split(parts[0]);
-  const tail = split(parts[1]);
-  const valid = (seg: string) => /^[0-9a-fA-F]{1,4}$/.test(seg);
-  if (![...head, ...tail].every(valid)) return false;
-  const groups = head.length + tail.length;
-  return parts.length === 2 ? groups < 8 : groups === 8;
-}
 
 function scrollTarget() {
   return document.getElementById('content-layout') as HTMLElement;
@@ -113,47 +98,13 @@ export default function SettingsPage() {
     error: subscriptionSettingsError,
   } = useSubscriptionSettings();
 
-  const [entryHost, setEntryHost] = useState('');
-  const [entryPort, setEntryPort] = useState('');
-  const [entryIsIP, setEntryIsIP] = useState(false);
-
-  useEffect(() => {
-     
-    const host = window.location.hostname;
-    setEntryHost(host);
-    setEntryPort(window.location.port);
-    setEntryIsIP(isIp(host));
-     
-  }, []);
-
   const [alertVisible, setAlertVisible] = useState(true);
   const location = useLocation();
   const slug = location.hash.replace(/^#/, '');
   const activeSlug = tabSlugs.includes(slug) ? slug : 'general';
 
   function rebuildUrlAfterRestart(): string {
-    const { webDomain, webPort, webBasePath, webCertFile, webKeyFile } = allSetting;
-    const newProtocol = (webCertFile || webKeyFile) ? 'https:' : 'http:';
-
-    let base = webBasePath ? webBasePath.replace(/^\//, '') : '';
-    if (base && !base.endsWith('/')) base += '/';
-
-    if (!entryIsIP) {
-      const url = new URL(window.location.href);
-      url.pathname = `/${base}panel/settings`;
-      url.protocol = newProtocol;
-      return url.toString();
-    }
-
-    let finalHost = entryHost;
-    let finalPort = entryPort || '';
-    if (webDomain && isIp(webDomain)) finalHost = webDomain;
-    if (webPort && Number(webPort) !== Number(entryPort)) finalPort = String(webPort);
-
-    const url = new URL(`${newProtocol}//${finalHost}`);
-    if (finalPort) url.port = finalPort;
-    url.pathname = `/${base}panel/settings`;
-    return url.toString();
+    return buildPanelRestartURL(window.location.href, allSetting);
   }
 
   async function onSave() {

@@ -44,6 +44,7 @@ nova-update v1.1.0          # 更新到指定标签
 nova-backup                 # 立即备份数据库和部署配置
 nova-rollback               # 回滚到最近的应用备份
 nova-rotate-admin-path      # 安全轮换 18 位后台入口
+nova-uninstall              # 备份后卸载面板，保留证书、系统软件包和历史备份
 systemctl status x-ui       # 查看服务状态
 journalctl -u x-ui -n 200   # 查看最近日志
 ```

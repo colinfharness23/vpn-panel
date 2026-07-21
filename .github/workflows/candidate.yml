@@ -119,6 +119,8 @@ jobs:
           grep -Fq "Let's Encrypt 证书通知邮箱：" "$install"
           grep -Fq 'generate_admin_path' "$install"
           grep -Fq 'NOVA_RELEASE_ASSET_DIR' "$install"
+          grep -Fq 'uninstall' "$install"
+          grep -Fq '请输入 UNINSTALL 确认' deploy/ubuntu/uninstall.sh
 
   build-amd64:
     name: Build amd64 candidate archive

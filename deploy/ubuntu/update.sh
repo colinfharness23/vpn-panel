@@ -103,7 +103,7 @@ if find /etc/x-ui /var/lib/x-ui -maxdepth 1 -type f -name '*.db' -print -quit 2>
 fi
 
 sed -i "s|^NOVA_RELEASE_TAG=.*$|NOVA_RELEASE_TAG=$requested_tag|" /etc/nova/deploy.env
-for script in update rollback backup rotate-admin-path; do
+for script in update rollback backup rotate-admin-path uninstall; do
   [[ -f /usr/local/x-ui/deploy/ubuntu/$script.sh ]] &&
     install -m 755 "/usr/local/x-ui/deploy/ubuntu/$script.sh" "/usr/local/sbin/nova-$script"
 done

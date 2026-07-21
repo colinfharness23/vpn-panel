@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -125,6 +125,26 @@ function healthColor(status: string): string {
   return "default";
 }
 
+function arrayOrEmpty<T>(value: T[] | null | undefined): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function normalizeSource(source: LineSource): LineSource {
+  return { ...source, groupIds: arrayOrEmpty(source.groupIds) };
+}
+
+function normalizeGroup(group: LineGroup): LineGroup {
+  return { ...group, planIds: arrayOrEmpty(group.planIds) };
+}
+
+function normalizeNode(node: LineNode): LineNode {
+  return {
+    ...node,
+    sourceIds: arrayOrEmpty(node.sourceIds),
+    groupIds: arrayOrEmpty(node.groupIds),
+  };
+}
+
 export default function LineCenterPane({ refreshToken }: { refreshToken: number }) {
   const [messageApi, contextHolder] = message.useMessage();
   const [modalApi, modalHolder] = Modal.useModal();
@@ -141,8 +161,10 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
   const [urlForm] = Form.useForm<URLSourceValues>();
   const [groupForm] = Form.useForm<GroupValues>();
   const [manualForm] = Form.useForm<ManualImportValues>();
+  const loadGeneration = useRef(0);
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setBusy(true);
     try {
       const [sourceResult, groupResult, nodeResult, planResult] =
@@ -168,18 +190,24 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
             { silent: true },
           ),
         ]);
-      if (sourceResult.success && sourceResult.obj)
-        setSources(sourceResult.obj);
-      if (groupResult.success && groupResult.obj) setGroups(groupResult.obj);
-      if (nodeResult.success && nodeResult.obj) setNodes(nodeResult.obj);
-      if (planResult.success && planResult.obj) setPlans(planResult.obj);
+      if (generation !== loadGeneration.current) return;
+      if (sourceResult.success)
+        setSources(arrayOrEmpty(sourceResult.obj).map(normalizeSource));
+      if (groupResult.success)
+        setGroups(arrayOrEmpty(groupResult.obj).map(normalizeGroup));
+      if (nodeResult.success)
+        setNodes(arrayOrEmpty(nodeResult.obj).map(normalizeNode));
+      if (planResult.success) setPlans(arrayOrEmpty(planResult.obj));
     } finally {
-      setBusy(false);
+      if (generation === loadGeneration.current) setBusy(false);
     }
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
+    return () => {
+      loadGeneration.current += 1;
+    };
   }, [load, refreshToken]);
 
   const saveGroup = async () => {
@@ -364,13 +392,23 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
       },
     );
 
-  const groupOptions = groups
-    .filter((group) => group.active)
-    .map((group) => ({ value: group.id, label: group.name }));
-  const planOptions = plans.map((item) => ({
-    value: item.plan.id,
-    label: `${item.plan.name}${item.plan.active ? "" : "（草稿）"}`,
-  }));
+  const groupById = useMemo(
+    () => new Map(groups.map((group) => [group.id, group])),
+    [groups],
+  );
+  const groupOptions = useMemo(
+    () => groups
+      .filter((group) => group.active)
+      .map((group) => ({ value: group.id, label: group.name })),
+    [groups],
+  );
+  const planOptions = useMemo(
+    () => plans.map((item) => ({
+      value: item.plan.id,
+      label: `${item.plan.name}${item.plan.active ? "" : "（草稿）"}`,
+    })),
+    [plans],
+  );
 
   return (
     <Space orientation="vertical" size="large" style={{ width: "100%" }}>
@@ -397,6 +435,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
         </Col>
       </Row>
       <Tabs
+        animated={false}
         items={[
           {
             key: "url",
@@ -418,7 +457,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                       <Form.Item name="enabled" label="自动刷新" valuePropName="checked"><Switch /></Form.Item>
                       <Space.Compact block>
                         <Button type="primary" icon={<CloudDownloadOutlined />} onClick={saveURLSource} loading={busy} block>{editingSourceId ? "验证并保存修改" : "导入并验证"}</Button>
-                        {editingSourceId && <Button onClick={() => { setEditingSourceId(""); urlForm.resetFields(); urlForm.setFieldsValue({ enabled: true, refreshInterval: 1800 }); }}>取消</Button>}
+                        {editingSourceId ? <Button onClick={() => { setEditingSourceId(""); urlForm.resetFields(); urlForm.setFieldsValue({ enabled: true, refreshInterval: 1800 }); }}>取消</Button> : null}
                       </Space.Compact>
                     </Form>
                   </Card>
@@ -437,7 +476,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                         { title: "健康/全部", render: (_, row) => `${row.healthyCount}/${row.nodeCount}` },
                         { title: "状态", dataIndex: "status", render: (value: string) => <Tag color={healthColor(value)}>{value}</Tag> },
                         { title: "错误", dataIndex: "lastError", ellipsis: true, render: (value?: string) => value || "—" },
-                        { title: "操作", render: (_, row) => <Space size={4}>{row.kind === "url" && <><Button size="small" icon={<EditOutlined />} onClick={() => editSource(row)}>编辑</Button><Button size="small" icon={<ReloadOutlined />} onClick={() => refreshSource(row.id)}>刷新</Button></>}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deleteSource(row)}>删除</Button></Space> },
+                        { title: "操作", render: (_, row) => <Space size={4}>{row.kind === "url" ? <Button size="small" icon={<EditOutlined />} onClick={() => editSource(row)}>编辑</Button> : null}{row.kind === "url" ? <Button size="small" icon={<ReloadOutlined />} onClick={() => refreshSource(row.id)}>刷新</Button> : null}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deleteSource(row)}>删除</Button></Space> },
                       ]}
                     />
                   </Card>
@@ -462,7 +501,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                     </Space>
                   </Form>
                 </Card>
-                {preview && (
+                {preview ? (
                   <Card title={`有效 ${preview.validCount} · 失败 ${preview.invalidCount} · 重复 ${preview.duplicateCount}`}>
                     <Table
                       rowKey="index"
@@ -477,7 +516,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                       ]}
                     />
                   </Card>
-                )}
+                ) : null}
               </Space>
             ),
           },
@@ -494,7 +533,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                       <Form.Item name="active" label="启用" valuePropName="checked"><Switch /></Form.Item>
                       <Space.Compact block>
                         <Button type="primary" icon={<PlusOutlined />} onClick={saveGroup} block>{editingGroupId ? "保存线路组" : "创建线路组"}</Button>
-                        {editingGroupId && <Button onClick={() => { setEditingGroupId(""); groupForm.resetFields(); groupForm.setFieldsValue({ active: true }); }}>取消</Button>}
+                        {editingGroupId ? <Button onClick={() => { setEditingGroupId(""); groupForm.resetFields(); groupForm.setFieldsValue({ active: true }); }}>取消</Button> : null}
                       </Space.Compact>
                     </Form>
                   </Card>
@@ -543,7 +582,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                     { title: "协议", dataIndex: "protocol", render: (value: string) => <Tag>{value}</Tag> },
                     { title: "公网端口", dataIndex: "publicPort", render: (value?: number) => value || "待分配" },
                     { title: "延迟", dataIndex: "latencyMs", render: (value: number) => value > 0 ? `${value} ms` : "—" },
-                    { title: "线路组", dataIndex: "groupIds", render: (values: string[]) => values.map((id) => <Tag key={id}>{groups.find((group) => group.id === id)?.name || id.slice(0, 8)}</Tag>) },
+                    { title: "线路组", dataIndex: "groupIds", render: (values: string[]) => arrayOrEmpty(values).map((id) => <Tag key={id}>{groupById.get(id)?.name || id.slice(0, 8)}</Tag>) },
                     { title: "状态", dataIndex: "status", render: (value: string) => <Tag color={healthColor(value)}>{value}</Tag> },
                     { title: "错误", dataIndex: "lastError", ellipsis: true, render: (value?: string) => value || "—" },
                     { title: "操作", fixed: "right", width: 100, render: (_, row) => <Button size="small" icon={<ThunderboltOutlined />} onClick={() => probeNode(row.id)}>探测</Button> },

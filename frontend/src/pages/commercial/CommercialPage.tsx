@@ -542,6 +542,10 @@ export default function CommercialPage() {
 
   const loadTab = useCallback(
     async (key: string) => {
+      // LineCenterPane owns its initial load. Incrementing its refresh token
+      // here caused a second concurrent mount-time request and an avoidable
+      // nested Tabs re-render while the first result was committing.
+      if (key === "lines") return;
       setLoading(true);
       try {
         if (key === "overview") {
@@ -572,8 +576,6 @@ export default function CommercialPage() {
             setCustomerTotal(customerResult.obj.total);
           }
           if (planResult.success && planResult.obj) setPlans(planResult.obj);
-        } else if (key === "lines") {
-          setLineReloadToken((current) => current + 1);
         } else if (key === "plans") {
           const [planResult, groupResult] = await Promise.all([
             HttpUtil.get<PlanItem[]>(
@@ -693,6 +695,14 @@ export default function CommercialPage() {
     },
     [navigate],
   );
+
+  const refreshActiveTab = useCallback(() => {
+    if (activeTab === "lines") {
+      setLineReloadToken((current) => current + 1);
+      return;
+    }
+    void loadTab(activeTab);
+  }, [activeTab, loadTab]);
 
   const openCustomer = (row: Customer) => {
     setEditingCustomer(row);
@@ -1718,6 +1728,7 @@ export default function CommercialPage() {
             <Card className="commercial-workspace">
               <Spin spinning={loading}>
                 <Tabs
+                  animated={false}
                   activeKey={activeTab}
                   onChange={setActiveTab}
                   items={tabItems}
@@ -1727,7 +1738,7 @@ export default function CommercialPage() {
                       loading={loading}
                       aria-label="刷新"
                       title="刷新"
-                      onClick={() => loadTab(activeTab)}
+                      onClick={refreshActiveTab}
                     />
                   }
                 />

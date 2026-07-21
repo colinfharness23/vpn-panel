@@ -483,7 +483,7 @@ certbot --nginx --non-interactive --agree-tos --redirect --email "$NOVA_ACME_EMA
 systemctl enable --now certbot.timer
 certbot renew --cert-name "$NOVA_DOMAIN" --dry-run --no-random-sleep-on-renew
 
-for script in update rollback backup rotate-admin-path; do
+for script in update rollback backup rotate-admin-path uninstall; do
   [[ -f $INSTALL_DIR/deploy/ubuntu/$script.sh ]] && install -m 755 "$INSTALL_DIR/deploy/ubuntu/$script.sh" "/usr/local/sbin/nova-$script"
 done
 
