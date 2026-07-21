@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"mime"
 	"net"
@@ -385,17 +386,24 @@ func normalizeSMTPSubject(value string) (string, error) {
 
 func buildMessage(from string, to []string, subject, body string) []byte {
 	headers := map[string]string{
-		"From":         from,
-		"To":           strings.Join(to, ","),
-		"Subject":      subject,
-		"MIME-Version": "1.0",
-		"Content-Type": "text/html; charset=utf-8",
+		"From":                      from,
+		"To":                        strings.Join(to, ","),
+		"Subject":                   subject,
+		"MIME-Version":              "1.0",
+		"Content-Type":              "text/html; charset=utf-8",
+		"Content-Transfer-Encoding": "base64",
 	}
 	var msg strings.Builder
 	for k, v := range headers {
 		fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
 	}
 	msg.WriteString("\r\n")
-	msg.WriteString(body)
+	encodedBody := base64.StdEncoding.EncodeToString([]byte(body))
+	for len(encodedBody) > 76 {
+		msg.WriteString(encodedBody[:76])
+		msg.WriteString("\r\n")
+		encodedBody = encodedBody[76:]
+	}
+	msg.WriteString(encodedBody)
 	return []byte(msg.String())
 }
