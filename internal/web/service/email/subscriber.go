@@ -2,6 +2,7 @@ package email
 
 import (
 	"fmt"
+	"html"
 	"os"
 	"strconv"
 	"strings"
@@ -74,24 +75,26 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 	ts := e.Timestamp.Format("2006-01-02 15:04:05")
 
 	wrap := func(title, content string) string {
-		// Strip newlines from title to prevent broken HTML
-		title = strings.ReplaceAll(title, "\r\n", "")
-		title = strings.ReplaceAll(title, "\n", "")
 		return fmt.Sprintf(`<html><body style="font-family:monospace;font-size:14px;color:#333">
 <h2 style="color:#555;border-bottom:1px solid #ddd;padding-bottom:8px">📡 %s %s</h2>
 %s
 <p style="color:#999;font-size:12px;margin-top:20px">%s</p>
-</body></html>`, host, title, content, i18n("tgbot.messages.time", "Time=="+ts))
+</body></html>`, html.EscapeString(host), html.EscapeString(title), content,
+			html.EscapeString(i18n("tgbot.messages.time", "Time=="+ts)))
 	}
 
 	kv := func(key, val string) string {
-		return fmt.Sprintf("<p><b>%s:</b> %s</p>", key, val)
+		return fmt.Sprintf("<p><b>%s:</b> %s</p>", html.EscapeString(key), html.EscapeString(val))
+	}
+	status := func(key, color, val string) string {
+		return fmt.Sprintf(`<p><b>%s:</b> <span style="color:%s">%s</span></p>`,
+			html.EscapeString(key), html.EscapeString(color), html.EscapeString(val))
 	}
 
 	switch e.Type {
 	case eventbus.EventOutboundDown:
 		subject = host + " " + i18n("tgbot.messages.eventOutboundDown", "Tag=="+e.Source)
-		content := kv(i18n("email.labelStatus"), `<span style="color:red">`+i18n("email.statusDown")+`</span>`)
+		content := status(i18n("email.labelStatus"), "red", i18n("email.statusDown"))
 		content += kv(i18n("email.labelOutbound"), e.Source)
 		if data, ok := e.Data.(*eventbus.OutboundHealthData); ok {
 			if data.Error != "" {
@@ -105,7 +108,7 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 
 	case eventbus.EventOutboundUp:
 		subject = host + " " + i18n("tgbot.messages.eventOutboundUp", "Tag=="+e.Source)
-		content := kv(i18n("email.labelStatus"), `<span style="color:green">`+i18n("email.statusUp")+`</span>`)
+		content := status(i18n("email.labelStatus"), "green", i18n("email.statusUp"))
 		content += kv(i18n("email.labelOutbound"), e.Source)
 		if data, ok := e.Data.(*eventbus.OutboundHealthData); ok && data.Delay > 0 {
 			content += kv(i18n("email.labelDelay"), fmt.Sprintf("%dms", data.Delay))
@@ -114,7 +117,7 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 
 	case eventbus.EventXrayCrash:
 		subject = host + " " + i18n("tgbot.messages.eventXrayCrash")
-		content := kv(i18n("email.labelStatus"), `<span style="color:red">`+i18n("email.statusCrashed")+`</span>`)
+		content := status(i18n("email.labelStatus"), "red", i18n("email.statusCrashed"))
 		if e.Data != nil {
 			content += kv(i18n("email.labelError"), fmt.Sprint(e.Data))
 		}
@@ -122,7 +125,7 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 
 	case eventbus.EventNodeDown:
 		subject = host + " " + i18n("tgbot.messages.eventNodeDown", "Name=="+e.Source)
-		content := kv(i18n("email.labelStatus"), `<span style="color:red">`+i18n("email.statusDown")+`</span>`)
+		content := status(i18n("email.labelStatus"), "red", i18n("email.statusDown"))
 		content += kv(i18n("email.labelNode"), e.Source)
 		if data, ok := e.Data.(*eventbus.NodeHealthData); ok && data.XrayError != "" {
 			content += kv(i18n("email.labelError"), data.XrayError)
@@ -131,7 +134,7 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 
 	case eventbus.EventNodeUp:
 		subject = host + " " + i18n("tgbot.messages.eventNodeUp", "Name=="+e.Source)
-		content := kv(i18n("email.labelStatus"), `<span style="color:green">`+i18n("email.statusUp")+`</span>`)
+		content := status(i18n("email.labelStatus"), "green", i18n("email.statusUp"))
 		content += kv(i18n("email.labelNode"), e.Source)
 		if data, ok := e.Data.(*eventbus.NodeHealthData); ok && data.LatencyMs > 0 {
 			content += kv(i18n("email.labelDelay"), fmt.Sprintf("%dms", data.LatencyMs))
@@ -147,7 +150,7 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 			subject = host + " " + i18n("tgbot.messages.cpuThreshold",
 				"Percent=="+strconv.FormatFloat(data.Percent, 'f', 2, 64),
 				"Threshold=="+fmt.Sprintf("%d", smtpCpu))
-			content := kv(i18n("email.labelStatus"), `<span style="color:orange">`+i18n("email.statusHigh")+`</span>`)
+			content := status(i18n("email.labelStatus"), "orange", i18n("email.statusHigh"))
 			body = wrap(subject, content)
 		}
 
@@ -160,7 +163,7 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 			subject = host + " " + i18n("tgbot.messages.memoryThreshold",
 				"Percent=="+strconv.FormatFloat(data.Percent, 'f', 2, 64),
 				"Threshold=="+fmt.Sprintf("%d", smtpMemory))
-			content := kv(i18n("email.labelStatus"), `<span style="color:orange">`+i18n("email.statusHigh")+`</span>`)
+			content := status(i18n("email.labelStatus"), "orange", i18n("email.statusHigh"))
 			body = wrap(subject, content)
 		}
 
@@ -168,13 +171,13 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 		if data, ok := e.Data.(*eventbus.LoginEventData); ok {
 			if data.Status == "success" {
 				subject = host + " " + i18n("tgbot.messages.loginSuccess")
-				content := kv(i18n("email.labelStatus"), `<span style="color:green">`+i18n("email.statusSuccess")+`</span>`)
+				content := status(i18n("email.labelStatus"), "green", i18n("email.statusSuccess"))
 				content += kv(i18n("email.labelUsername"), data.Username)
 				content += kv(i18n("email.labelIP"), data.IP)
 				body = wrap(i18n("tgbot.messages.loginSuccess"), content)
 			} else {
 				subject = host + " " + i18n("tgbot.messages.loginFailed")
-				content := kv(i18n("email.labelStatus"), `<span style="color:red">`+i18n("email.statusFailed")+`</span>`)
+				content := status(i18n("email.labelStatus"), "red", i18n("email.statusFailed"))
 				if data.Reason != "" {
 					content += kv(i18n("email.labelReason"), data.Reason)
 				}
@@ -184,7 +187,7 @@ func (s *Subscriber) formatMessage(e eventbus.Event) (subject, body string) {
 			}
 		} else {
 			subject = host + " " + i18n("tgbot.messages.loginFailed")
-			content := kv(i18n("email.labelStatus"), `<span style="color:red">`+i18n("email.statusFailed")+`</span>`)
+			content := status(i18n("email.labelStatus"), "red", i18n("email.statusFailed"))
 			content += kv(i18n("email.labelSource"), e.Source)
 			body = wrap(i18n("tgbot.messages.loginFailed"), content)
 		}

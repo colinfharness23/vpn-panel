@@ -1,6 +1,11 @@
 package service
 
 import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
@@ -159,6 +164,39 @@ func TestNodeService_Normalize_OverridesUnknownScheme(t *testing.T) {
 	}
 	if n.Scheme != "https" {
 		t.Fatalf("Scheme = %q, want https", n.Scheme)
+	}
+}
+
+func TestNodeService_NormalizeRejectsUnverifiedHTTPS(t *testing.T) {
+	s := &NodeService{}
+	n := &model.Node{Name: "n", Address: "example.com", Port: 443, Scheme: "https", TlsVerifyMode: "skip"}
+	if err := s.normalize(n); err == nil {
+		t.Fatal("unverified HTTPS node was accepted")
+	}
+}
+
+func TestFetchCertFingerprintRejectsSelfSignedFirstContact(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	host, portText, err := net.SplitHostPort(server.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := &model.Node{
+		Address:             host,
+		Port:                port,
+		Scheme:              "https",
+		AllowPrivateAddress: true,
+	}
+	if _, err := (&NodeService{}).FetchCertFingerprint(context.Background(), n); err == nil {
+		t.Fatal("self-signed certificate was trusted during first-contact fingerprint fetch")
 	}
 }
 

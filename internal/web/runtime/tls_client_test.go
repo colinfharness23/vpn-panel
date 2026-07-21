@@ -99,8 +99,8 @@ func leafPinBase64(srv *httptest.Server) string {
 	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
-// A self-signed node must be reachable by Remote ops under skip/pin and
-// rejected under verify — the split issue #5264 reported.
+// A self-signed node must be reachable only with an exact certificate pin and
+// rejected under both normal verification and the disabled legacy skip mode.
 func TestRemoteHonorsTLSVerifyMode(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -118,7 +118,7 @@ func TestRemoteHonorsTLSVerifyMode(t *testing.T) {
 		wantErr bool
 	}{
 		{"verify rejects self-signed", "verify", "", true},
-		{"skip accepts self-signed", "skip", "", false},
+		{"skip is disabled", "skip", "", true},
 		{"pin accepts matching cert", "pin", goodPin, false},
 		{"pin rejects mismatched cert", "pin", wrongPin, true},
 	}
@@ -139,7 +139,8 @@ func TestRemoteHonorsTLSVerifyMode(t *testing.T) {
 // The lazily-built client is cached for the Remote's lifetime so repeated
 // operations reuse one pooled transport rather than rebuilding TLS each call.
 func TestRemoteClientCached(t *testing.T) {
-	r := NewRemote(&model.Node{Scheme: "https", TlsVerifyMode: "skip"}, nil)
+	pin := base64.StdEncoding.EncodeToString(make([]byte, sha256.Size))
+	r := NewRemote(&model.Node{Scheme: "https", TlsVerifyMode: "pin", PinnedCertSha256: pin}, nil)
 	c1, err1 := r.httpClient()
 	c2, err2 := r.httpClient()
 	if err1 != nil || err2 != nil {
@@ -232,20 +233,12 @@ func TestHTTPClientForNode_ProxyVerifyNoPin(t *testing.T) {
 	}
 }
 
-// TestTLSConfigForNode_CurrentContract locks the pre-mTLS behavior of
-// tlsConfigForNode so the "mtls" branch added later cannot silently regress the
-// existing skip/pin modes (characterization — passes on unchanged code).
+// TestTLSConfigForNode_CurrentContract locks the fail-closed skip behavior and
+// exact-certificate pin contract.
 func TestTLSConfigForNode_CurrentContract(t *testing.T) {
-	t.Run("skip disables verification with no VerifyConnection", func(t *testing.T) {
-		cfg, err := tlsConfigForNode(&model.Node{TlsVerifyMode: "skip"})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !cfg.InsecureSkipVerify {
-			t.Fatal("skip mode must set InsecureSkipVerify")
-		}
-		if cfg.VerifyConnection != nil {
-			t.Fatal("skip mode must not install a VerifyConnection")
+	t.Run("skip is rejected", func(t *testing.T) {
+		if _, err := tlsConfigForNode(&model.Node{TlsVerifyMode: "skip"}); err == nil {
+			t.Fatal("skip mode must fail closed")
 		}
 	})
 	t.Run("pin installs a VerifyConnection", func(t *testing.T) {

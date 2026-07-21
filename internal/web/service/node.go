@@ -53,9 +53,10 @@ type HeartbeatPatch struct {
 
 type NodeService struct{}
 
-// FetchCertFingerprint connects to the node over HTTPS without verifying the
-// certificate and returns the leaf certificate's SHA-256 as base64, so the UI
-// can offer a "fetch and pin current certificate" action.
+// FetchCertFingerprint connects to a node with normal PKI verification and
+// returns the leaf certificate's SHA-256 as base64. Self-signed certificates
+// must be fingerprinted through a separate trusted channel before pinning; a
+// first-contact fetch must never silently trust an unauthenticated peer.
 func (s *NodeService) FetchCertFingerprint(ctx context.Context, n *model.Node) (string, error) {
 	addr, err := netsafe.NormalizeHost(n.Address)
 	if err != nil {
@@ -85,8 +86,9 @@ func (s *NodeService) FetchCertFingerprint(ctx context.Context, n *model.Node) (
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext:     netsafe.SSRFGuardedDialContext,
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // lgtm[go/disabled-certificate-check]
+			TLSClientConfig: &tls.Config{ServerName: addr, MinVersion: tls.VersionTLS12},
 		},
+		Timeout: 15 * time.Second,
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -383,6 +385,9 @@ func (s *NodeService) normalize(n *model.Node) error {
 	}
 	if n.TlsVerifyMode != "skip" && n.TlsVerifyMode != "pin" && n.TlsVerifyMode != "mtls" {
 		n.TlsVerifyMode = "verify"
+	}
+	if n.Scheme == "https" && n.TlsVerifyMode == "skip" {
+		return common.NewError("unverified HTTPS nodes are disabled; use verify, pin, or mtls")
 	}
 	if n.TlsVerifyMode == "mtls" && n.Scheme != "https" {
 		return common.NewError("mtls requires the node scheme to be https")

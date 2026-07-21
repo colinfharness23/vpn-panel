@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"fmt"
 	"net"
 	"slices"
@@ -112,20 +111,6 @@ func filterUsableSANs(dnsNames []string) []string {
 	return out
 }
 
-func firstUsableName(leaf *x509.Certificate) string {
-	cn := strings.TrimSpace(leaf.Subject.CommonName)
-	if cn != "" && !strings.HasPrefix(cn, "*.") {
-		return cn
-	}
-	for _, n := range leaf.DNSNames {
-		n = strings.TrimSpace(n)
-		if n != "" && !strings.HasPrefix(n, "*.") {
-			return n
-		}
-	}
-	return ""
-}
-
 func splitRealityTarget(target string) (string, int, error) {
 	target = strings.TrimSpace(target)
 	if target == "" {
@@ -183,6 +168,10 @@ func (s *ServerService) probeRealityAddr(dialHost string, port int, sni string, 
 		res.Host = dialHost
 		res.Target = addr
 	}
+	if strings.TrimSpace(sni) == "" {
+		res.Reason = "verified TLS scan requires a domain name (SNI); IP/CIDR discovery is disabled"
+		return res
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -197,14 +186,10 @@ func (s *ServerService) probeRealityAddr(dialHost string, port int, sni string, 
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 
 	cfg := &tls.Config{
-		ServerName: sni,
-		// The scanner intentionally inspects arbitrary public TLS endpoints and
-		// verifies the returned leaf against verifyHost immediately below. It
-		// never sends credentials or application data on this connection.
-		InsecureSkipVerify: true, // lgtm[go/disabled-certificate-check]
-		NextProtos:         []string{"h2", "http/1.1"},
-		CurvePreferences:   []tls.CurveID{tls.X25519, tls.X25519MLKEM768},
-		MinVersion:         tls.VersionTLS12,
+		ServerName:       sni,
+		NextProtos:       []string{"h2", "http/1.1"},
+		CurvePreferences: []tls.CurveID{tls.X25519, tls.X25519MLKEM768},
+		MinVersion:       tls.VersionTLS12,
 	}
 	tlsConn := tls.Client(conn, cfg)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
@@ -221,7 +206,6 @@ func (s *ServerService) probeRealityAddr(dialHost string, port int, sni string, 
 	res.CurveID = realityCurveName(st.CurveID)
 	res.X25519 = st.CurveID == tls.X25519 || st.CurveID == tls.X25519MLKEM768
 
-	verifyHost := sni
 	if len(st.PeerCertificates) > 0 {
 		leaf := st.PeerCertificates[0]
 		res.CertSubject = leaf.Subject.CommonName
@@ -235,28 +219,10 @@ func (s *ServerService) probeRealityAddr(dialHost string, port int, sni string, 
 		}
 		res.NotAfter = leaf.NotAfter.UTC().Format(time.RFC3339)
 		res.ServerNames = filterUsableSANs(leaf.DNSNames)
-
-		if sni == "" {
-			if discovered := firstUsableName(leaf); discovered != "" {
-				res.Host = discovered
-				res.Target = net.JoinHostPort(discovered, strconv.Itoa(port))
-				verifyHost = discovered
-			}
-		}
-
-		if verifyHost != "" {
-			opts := x509.VerifyOptions{DNSName: verifyHost, Intermediates: x509.NewCertPool()}
-			for _, c := range st.PeerCertificates[1:] {
-				opts.Intermediates.AddCert(c)
-			}
-			if _, verr := leaf.Verify(opts); verr == nil {
-				res.CertValid = true
-			} else {
-				res.Reason = "certificate not trusted: " + verr.Error()
-			}
-		} else {
-			res.Reason = "no usable domain in certificate"
-		}
+		// A successful handshake above already verified the chain and SNI using
+		// the system roots. Never promote an unauthenticated discovery handshake
+		// into a trusted REALITY target.
+		res.CertValid = true
 	} else {
 		res.Reason = "no certificate presented"
 	}
