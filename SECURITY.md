@@ -2,7 +2,7 @@
 
 ## 支持范围
 
-安全加固和商业功能仅保证在 `deploy/ubuntu/install.sh` 部署的 Ubuntu 22.04/24.04、PostgreSQL、Nginx 和稳定 Release 组合上生效。上游兼容脚本、Docker 示例和 SQLite 测试路径不属于 NOVA 商业生产部署。
+安全加固和商业功能仅保证在 `deploy/ubuntu/install.sh` 部署的 Ubuntu 22.04/24.04、PostgreSQL、Nginx 和稳定 Release 组合上生效。SQLite 代码只用于上游兼容测试，不属于 NOVA 商业生产部署。
 
 ## 报告漏洞
 

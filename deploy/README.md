@@ -1,31 +1,27 @@
-# Cloud deployment (unattended install)
+# NOVA Ubuntu deployment
 
-Tooling to ship the 3x-ui panel via unattended install, with **per-instance
-credentials generated on first boot** (never `admin/admin`, never a shared
-session secret). Works on amd64 and arm64.
+The supported production path is `deploy/ubuntu/install.sh` on Ubuntu 22.04 or
+24.04 (amd64 or arm64). It installs a verified stable GitHub Release with
+PostgreSQL, Nginx, Xray, automatic HTTPS, randomized internal ports and a
+randomized administrator path.
 
-| Path | What it is | Use when |
-| --- | --- | --- |
-| [`cloud-init/`](cloud-init/) | Generic cloud-init user-data (unattended `install.sh`) | Any cloud, no image build |
-| [`marketplace/hetzner/`](marketplace/hetzner/) | Hetzner Cloud notes | Hetzner deployments |
-| [`test/`](test/) | Container smoke test | Verifying the install path |
+Run as root:
 
-## How it works
+```bash
+curl -fsSL https://raw.githubusercontent.com/colinfharness23/vpn-panel/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=colinfharness23/vpn-panel bash
+```
 
-`install.sh` runs unattended when `XUI_NONINTERACTIVE=1` or stdin is not a TTY.
-Each instance installs and configures itself with random credentials. See
-[`cloud-init/README.md`](cloud-init/README.md).
+Operational helpers installed by the script:
 
-## Unattended install knobs
+- `nova-update`
+- `nova-backup`
+- `nova-rollback`
+- `nova-rotate-admin-path`
+- `nova-finalize-domain`
+- `nova-uninstall`
 
-`install.sh` reads these env vars in non-interactive mode (all optional; unset ⇒
-secure random / default):
+The installer does not modify UFW or cloud security groups. Allow TCP 80 and
+443 for the site and ACME challenge, plus TCP 20000-59999 for managed lines.
 
-`XUI_USERNAME`, `XUI_PASSWORD`, `XUI_PANEL_PORT`, `XUI_WEB_BASE_PATH`,
-`XUI_SSL_MODE` (`none`|`ip`|`domain`, default `none`), `XUI_DOMAIN`,
-`XUI_ACME_EMAIL`, `XUI_ACME_HTTP_PORT` (ACME HTTP-01 listener port, default `80`),
-`XUI_SSL_IPV6` (optional IPv6 address to add to an `ip`-mode cert),
-`XUI_SERVER_IP` (fallback IP for the displayed access URL when auto-detection fails),
-`XUI_DB_TYPE` (`sqlite`|`postgres`), `XUI_DB_DSN`.
-
-The resulting credentials are written to `/etc/x-ui/install-result.env` (mode 600).
+Legacy upstream Docker, cloud-init, root-level installers and prebuilt Windows
+utilities are intentionally not distributed by NOVA.
