@@ -56,23 +56,29 @@ type EmailVerification struct {
 func (EmailVerification) TableName() string { return "commercial_email_verifications" }
 
 type Plan struct {
-	ID                  string    `json:"id" gorm:"primaryKey;size:36"`
-	Slug                string    `json:"slug" gorm:"uniqueIndex;size:80;not null"`
-	Name                string    `json:"name" gorm:"size:120;not null"`
-	Description         string    `json:"description" gorm:"type:text"`
-	TrafficBytes        int64     `json:"trafficBytes" gorm:"not null"`
-	DeviceLimit         int       `json:"deviceLimit" gorm:"default:5"`
-	ResetCycle          string    `json:"resetCycle" gorm:"size:24;default:monthly"`
-	NodeGroup           string    `json:"nodeGroup" gorm:"size:80;index"`
-	Capacity            int       `json:"capacity" gorm:"default:0"`
-	Visibility          string    `json:"visibility" gorm:"size:24;index;default:public"`
-	Renewable           bool      `json:"renewable" gorm:"default:true"`
-	Upgradable          bool      `json:"upgradable" gorm:"default:true"`
-	Active              bool      `json:"active" gorm:"index;default:true"`
-	SortOrder           int       `json:"sortOrder" gorm:"default:0"`
-	ProvisionInboundIDs string    `json:"provisionInboundIds" gorm:"type:text"`
-	CreatedAt           time.Time `json:"createdAt"`
-	UpdatedAt           time.Time `json:"updatedAt"`
+	ID                        string            `json:"id" gorm:"primaryKey;size:36"`
+	Slug                      string            `json:"slug" gorm:"uniqueIndex;size:80;not null"`
+	Name                      string            `json:"name" gorm:"size:120;not null"`
+	Description               string            `json:"description" gorm:"type:text"`
+	TrafficBytes              int64             `json:"trafficBytes" gorm:"not null"`
+	DeviceLimit               int               `json:"deviceLimit" gorm:"default:5"`
+	TrafficMultiplierPermille int               `json:"trafficMultiplierPermille" gorm:"default:1000"`
+	UploadLimitMbps           int               `json:"uploadLimitMbps" gorm:"default:0"`
+	DownloadLimitMbps         int               `json:"downloadLimitMbps" gorm:"default:0"`
+	ResidentialRelayEnabled   bool              `json:"residentialRelayEnabled" gorm:"default:false"`
+	ResidentialRelayLimit     int               `json:"residentialRelayLimit" gorm:"default:0"`
+	ResetCycle                string            `json:"resetCycle" gorm:"size:24;default:monthly"`
+	NodeGroup                 string            `json:"nodeGroup" gorm:"size:80;index"`
+	Capacity                  int               `json:"capacity" gorm:"default:0"`
+	Visibility                string            `json:"visibility" gorm:"size:24;index;default:public"`
+	Renewable                 bool              `json:"renewable" gorm:"default:true"`
+	Upgradable                bool              `json:"upgradable" gorm:"default:true"`
+	Active                    bool              `json:"active" gorm:"index;default:true"`
+	SortOrder                 int               `json:"sortOrder" gorm:"default:0"`
+	ProvisionInboundIDs       string            `json:"provisionInboundIds" gorm:"type:text"`
+	DisplayBenefits           map[string]string `json:"displayBenefits" gorm:"serializer:json;type:text"`
+	CreatedAt                 time.Time         `json:"createdAt"`
+	UpdatedAt                 time.Time         `json:"updatedAt"`
 }
 
 func (Plan) TableName() string { return "commercial_plans" }
@@ -132,25 +138,137 @@ type PaymentTransaction struct {
 func (PaymentTransaction) TableName() string { return "commercial_payment_transactions" }
 
 type SubscriptionEntitlement struct {
-	ID               string     `json:"id" gorm:"primaryKey;size:36"`
-	CustomerID       string     `json:"customerId" gorm:"size:36;index;not null"`
-	PlanID           string     `json:"planId" gorm:"size:36;index;not null"`
-	OrderID          string     `json:"orderId" gorm:"size:36;uniqueIndex;not null"`
-	InternalClientID string     `json:"internalClientId" gorm:"size:80;uniqueIndex;not null"`
-	SubscriptionID   string     `json:"-" gorm:"size:80;uniqueIndex;not null"`
-	Status           string     `json:"status" gorm:"size:24;index;not null"`
-	TrafficQuota     int64      `json:"trafficQuota" gorm:"not null"`
-	TrafficUsed      int64      `json:"trafficUsed" gorm:"default:0"`
-	DeviceLimit      int        `json:"deviceLimit" gorm:"default:5"`
-	NodeGroup        string     `json:"nodeGroup" gorm:"size:80;index"`
-	StartsAt         time.Time  `json:"startsAt"`
-	ExpiresAt        *time.Time `json:"expiresAt,omitempty" gorm:"index"`
-	LastResetAt      *time.Time `json:"lastResetAt,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	UpdatedAt        time.Time  `json:"updatedAt"`
+	ID                        string     `json:"id" gorm:"primaryKey;size:36"`
+	CustomerID                string     `json:"customerId" gorm:"size:36;index;not null"`
+	PlanID                    string     `json:"planId" gorm:"size:36;index;not null"`
+	OrderID                   string     `json:"orderId" gorm:"size:36;uniqueIndex;not null"`
+	InternalClientID          string     `json:"internalClientId" gorm:"size:80;uniqueIndex;not null"`
+	SubscriptionID            string     `json:"-" gorm:"size:80;uniqueIndex;not null"`
+	Status                    string     `json:"status" gorm:"size:24;index;not null"`
+	TrafficQuota              int64      `json:"trafficQuota" gorm:"not null"`
+	TrafficUsed               int64      `json:"trafficUsed" gorm:"default:0"`
+	DeviceLimit               int        `json:"deviceLimit" gorm:"default:5"`
+	TrafficMultiplierPermille int        `json:"trafficMultiplierPermille" gorm:"default:1000"`
+	UploadLimitMbps           int        `json:"uploadLimitMbps" gorm:"default:0"`
+	DownloadLimitMbps         int        `json:"downloadLimitMbps" gorm:"default:0"`
+	ResidentialRelayEnabled   bool       `json:"residentialRelayEnabled" gorm:"default:false"`
+	ResidentialRelayLimit     int        `json:"residentialRelayLimit" gorm:"default:0"`
+	NodeGroup                 string     `json:"nodeGroup" gorm:"size:80;index"`
+	StartsAt                  time.Time  `json:"startsAt"`
+	ExpiresAt                 *time.Time `json:"expiresAt,omitempty" gorm:"index"`
+	LastResetAt               *time.Time `json:"lastResetAt,omitempty"`
+	CreatedAt                 time.Time  `json:"createdAt"`
+	UpdatedAt                 time.Time  `json:"updatedAt"`
 }
 
 func (SubscriptionEntitlement) TableName() string { return "commercial_subscription_entitlements" }
+
+type ResidentialRelay struct {
+	ID                 string    `json:"id" gorm:"primaryKey;size:36"`
+	CustomerID         string    `json:"customerId" gorm:"size:36;index;not null"`
+	EntitlementID      string    `json:"entitlementId" gorm:"size:36;uniqueIndex:idx_commercial_relay_line;not null"`
+	InboundID          int       `json:"inboundId" gorm:"uniqueIndex:idx_commercial_relay_line;index;not null"`
+	Name               string    `json:"name" gorm:"size:80;not null"`
+	OutboundTag        string    `json:"-" gorm:"size:96;uniqueIndex;not null"`
+	SOCKSHost          string    `json:"host" gorm:"size:253;not null"`
+	SOCKSPort          int       `json:"port" gorm:"not null"`
+	UsernameCiphertext string    `json:"-" gorm:"type:text"`
+	PasswordCiphertext string    `json:"-" gorm:"type:text"`
+	Status             string    `json:"status" gorm:"size:24;index;default:pending"`
+	LastError          string    `json:"-" gorm:"type:text"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
+}
+
+func (ResidentialRelay) TableName() string { return "commercial_residential_relays" }
+
+type LineSource struct {
+	ID                   string     `json:"id" gorm:"primaryKey;size:36"`
+	Name                 string     `json:"name" gorm:"size:120;not null"`
+	Kind                 string     `json:"kind" gorm:"size:16;index;not null"`
+	SecretCiphertext     string     `json:"-" gorm:"type:text"`
+	URLHost              string     `json:"urlHost,omitempty" gorm:"size:253"`
+	RefreshInterval      int        `json:"refreshInterval" gorm:"default:1800;not null"`
+	Enabled              bool       `json:"enabled" gorm:"index;default:true"`
+	Status               string     `json:"status" gorm:"size:24;index;default:pending"`
+	LastError            string     `json:"lastError,omitempty" gorm:"type:text"`
+	ConsecutiveSuccesses int        `json:"consecutiveSuccesses" gorm:"default:0"`
+	LastSuccessAt        *time.Time `json:"lastSuccessAt,omitempty"`
+	NextRefreshAt        *time.Time `json:"nextRefreshAt,omitempty" gorm:"index"`
+	LockedAt             *time.Time `json:"-" gorm:"index"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
+}
+
+func (LineSource) TableName() string { return "commercial_line_sources" }
+
+type LineNode struct {
+	ID                 string     `json:"id" gorm:"primaryKey;size:36"`
+	Fingerprint        string     `json:"fingerprint" gorm:"uniqueIndex;size:64;not null"`
+	Remark             string     `json:"remark" gorm:"size:160;not null"`
+	Protocol           string     `json:"protocol" gorm:"size:24;index;not null"`
+	OutboundTag        string     `json:"outboundTag" gorm:"uniqueIndex;size:96;not null"`
+	OutboundCiphertext string     `json:"-" gorm:"type:text;not null"`
+	PublicPort         *int       `json:"publicPort,omitempty" gorm:"uniqueIndex"`
+	InboundID          *int       `json:"inboundId,omitempty" gorm:"uniqueIndex;index"`
+	Status             string     `json:"status" gorm:"size:24;index:idx_commercial_line_health,priority:1;not null"`
+	HealthStatus       string     `json:"healthStatus" gorm:"size:24;index:idx_commercial_line_health,priority:2;not null"`
+	LatencyMS          int64      `json:"latencyMs" gorm:"default:0"`
+	ConsecutiveFails   int        `json:"consecutiveFails" gorm:"default:0"`
+	ConsecutivePasses  int        `json:"consecutivePasses" gorm:"default:0"`
+	ProvisionAttempts  int        `json:"provisionAttempts" gorm:"default:0"`
+	ProvisionLockedAt  *time.Time `json:"-" gorm:"index"`
+	NextProvisionAt    *time.Time `json:"-" gorm:"index"`
+	LastProbeAt        *time.Time `json:"lastProbeAt,omitempty"`
+	LastSeenAt         *time.Time `json:"lastSeenAt,omitempty"`
+	MissingSince       *time.Time `json:"missingSince,omitempty" gorm:"index"`
+	LastError          string     `json:"lastError,omitempty" gorm:"type:text"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	UpdatedAt          time.Time  `json:"updatedAt"`
+}
+
+func (LineNode) TableName() string { return "commercial_line_nodes" }
+
+type LineSourceNode struct {
+	SourceID     string     `json:"sourceId" gorm:"primaryKey;size:36"`
+	NodeID       string     `json:"nodeId" gorm:"primaryKey;size:36;index"`
+	LastSeenAt   time.Time  `json:"lastSeenAt"`
+	MissingSince *time.Time `json:"missingSince,omitempty" gorm:"index"`
+}
+
+func (LineSourceNode) TableName() string { return "commercial_line_source_nodes" }
+
+type LineGroup struct {
+	ID          string    `json:"id" gorm:"primaryKey;size:36"`
+	Name        string    `json:"name" gorm:"uniqueIndex;size:120;not null"`
+	Description string    `json:"description" gorm:"size:500"`
+	Active      bool      `json:"active" gorm:"index;default:true"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
+func (LineGroup) TableName() string { return "commercial_line_groups" }
+
+type LineSourceGroup struct {
+	SourceID string `json:"sourceId" gorm:"primaryKey;size:36"`
+	GroupID  string `json:"groupId" gorm:"primaryKey;size:36;index"`
+}
+
+func (LineSourceGroup) TableName() string { return "commercial_line_source_groups" }
+
+type LineGroupNode struct {
+	GroupID string `json:"groupId" gorm:"primaryKey;size:36"`
+	NodeID  string `json:"nodeId" gorm:"primaryKey;size:36;index"`
+}
+
+func (LineGroupNode) TableName() string { return "commercial_line_group_nodes" }
+
+type PlanLineGroup struct {
+	PlanID  string `json:"planId" gorm:"primaryKey;size:36"`
+	GroupID string `json:"groupId" gorm:"primaryKey;size:36;index"`
+}
+
+func (PlanLineGroup) TableName() string { return "commercial_plan_line_groups" }
 
 type ProvisioningJob struct {
 	ID         string     `json:"id" gorm:"primaryKey;size:36"`
@@ -227,29 +345,38 @@ type KnowledgeArticle struct {
 func (KnowledgeArticle) TableName() string { return "commercial_knowledge_articles" }
 
 type ClientApplication struct {
-	ID          string    `json:"id" gorm:"primaryKey;size:36"`
-	Slug        string    `json:"slug" gorm:"uniqueIndex;size:80;not null"`
-	Name        string    `json:"name" gorm:"size:120;not null"`
-	Platform    string    `json:"platform" gorm:"size:32;index"`
-	OfficialURL string    `json:"officialUrl" gorm:"size:1024;not null"`
-	SourceURL   string    `json:"sourceUrl" gorm:"size:1024"`
-	Description string    `json:"description" gorm:"type:text"`
-	Active      bool      `json:"active" gorm:"index;default:true"`
-	SortOrder   int       `json:"sortOrder" gorm:"default:0"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID                 string    `json:"id" gorm:"primaryKey;size:36"`
+	Slug               string    `json:"slug" gorm:"uniqueIndex;size:80;not null"`
+	Name               string    `json:"name" gorm:"size:120;not null"`
+	Platform           string    `json:"platform" gorm:"size:32;index"`
+	OfficialURL        string    `json:"officialUrl,omitempty" gorm:"size:1024;not null"`
+	SourceURL          string    `json:"sourceUrl,omitempty" gorm:"size:1024"`
+	Description        string    `json:"description" gorm:"type:text"`
+	PackageFileName    string    `json:"packageFileName,omitempty" gorm:"size:255"`
+	PackageStoredName  string    `json:"-" gorm:"size:255"`
+	PackageSize        int64     `json:"packageSize,omitempty" gorm:"default:0"`
+	PackageSHA256      string    `json:"packageSha256,omitempty" gorm:"size:64"`
+	PackageContentType string    `json:"packageContentType,omitempty" gorm:"size:120"`
+	DownloadURL        string    `json:"downloadUrl,omitempty" gorm:"-"`
+	Active             bool      `json:"active" gorm:"index;default:true"`
+	SortOrder          int       `json:"sortOrder" gorm:"default:0"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 func (ClientApplication) TableName() string { return "commercial_client_applications" }
 
 type Ticket struct {
-	ID         string    `json:"id" gorm:"primaryKey;size:36"`
-	CustomerID string    `json:"customerId" gorm:"size:36;index;not null"`
-	Subject    string    `json:"subject" gorm:"size:200;not null"`
-	Status     string    `json:"status" gorm:"size:24;index;not null"`
-	Priority   string    `json:"priority" gorm:"size:24;index;default:normal"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID            string    `json:"id" gorm:"primaryKey;size:36"`
+	CustomerID    string    `json:"customerId" gorm:"size:36;index;not null"`
+	EntitlementID string    `json:"entitlementId,omitempty" gorm:"size:36;index"`
+	PlanID        string    `json:"planId,omitempty" gorm:"size:36;index"`
+	PlanName      string    `json:"planName,omitempty" gorm:"size:160"`
+	Subject       string    `json:"subject" gorm:"size:200;not null"`
+	Status        string    `json:"status" gorm:"size:24;index;not null"`
+	Priority      string    `json:"priority" gorm:"size:24;index;default:normal"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
 }
 
 func (Ticket) TableName() string { return "commercial_tickets" }

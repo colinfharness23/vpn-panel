@@ -51,6 +51,8 @@ export interface AdminSubscriptionSummary {
   createdAt: string;
   description: string;
   deviceLimit: number;
+  displayBenefits: Record<string, string>;
+  downloadLimitMbps: number;
   entitlement: SubscriptionEntitlement;
   id: string;
   name: string;
@@ -58,11 +60,15 @@ export interface AdminSubscriptionSummary {
   provisionInboundIds: string;
   renewable: boolean;
   resetCycle: string;
+  residentialRelayEnabled: boolean;
+  residentialRelayLimit: number;
   slug: string;
   sortOrder: number;
   trafficBytes: number;
+  trafficMultiplierPermille: number;
   updatedAt: string;
   upgradable: boolean;
+  uploadLimitMbps: number;
   visibility: string;
 }
 
@@ -293,6 +299,7 @@ export interface Client {
   auth?: string;
   comment: string;
   created_at?: number;
+  downloadLimitMbps?: number;
   email: string;
   enable: boolean;
   expiryTime: number;
@@ -312,20 +319,27 @@ export interface Client {
   subId: string;
   tgId: number;
   totalGB: number;
+  trafficMultiplierPermille?: number;
   updated_at?: number;
+  uploadLimitMbps?: number;
 }
 
 export interface ClientApplication {
   active: boolean;
   createdAt: string;
   description: string;
+  downloadUrl?: string;
   id: string;
   name: string;
-  officialUrl: string;
+  officialUrl?: string;
+  packageContentType?: string;
+  packageFileName?: string;
+  packageSha256?: string;
+  packageSize?: number;
   platform: string;
   slug: string;
   sortOrder: number;
-  sourceUrl: string;
+  sourceUrl?: string;
   updatedAt: string;
 }
 
@@ -342,6 +356,7 @@ export interface ClientRecord {
   auth: string;
   comment: string;
   createdAt: number;
+  downloadLimitMbps: number;
   email: string;
   enable: boolean;
   expiryTime: number;
@@ -361,7 +376,9 @@ export interface ClientRecord {
   subId: string;
   tgId: number;
   totalGB: number;
+  trafficMultiplierPermille: number;
   updatedAt: number;
+  uploadLimitMbps: number;
   uuid: string;
 }
 
@@ -459,16 +476,23 @@ export interface CommercialPlanRequest {
   capacity: number;
   description: string;
   deviceLimit: number;
+  displayBenefits: Record<string, string>;
+  downloadLimitMbps: number;
   id: string;
+  lineGroupIds: string[];
   name: string;
   nodeGroup: string;
   provisionInboundIds: number[];
   renewable: boolean;
   resetCycle: string;
+  residentialRelayEnabled: boolean;
+  residentialRelayLimit: number;
   slug: string;
   sortOrder: number;
   trafficBytes: number;
+  trafficMultiplierPermille: number;
   upgradable: boolean;
+  uploadLimitMbps: number;
   visibility: string;
 }
 
@@ -491,10 +515,13 @@ export interface CommercialSettingRequest {
 
 export interface CommercialSubscriptionUpdateRequest {
   deviceLimit: number;
+  downloadLimitMbps?: number | null;
   expiresAt: string;
   planId: string;
   resetTraffic: boolean;
+  trafficMultiplierPermille?: number | null;
   trafficQuota: number;
+  uploadLimitMbps?: number | null;
 }
 
 export interface CommercialTicketReplyRequest {
@@ -531,6 +558,7 @@ export interface CreatePaymentRequest {
 
 export interface CreateTicketRequest {
   body: string;
+  entitlementId?: string;
   subject: string;
 }
 
@@ -987,17 +1015,23 @@ export interface Plan {
   createdAt: string;
   description: string;
   deviceLimit: number;
+  displayBenefits: Record<string, string>;
+  downloadLimitMbps: number;
   id: string;
   name: string;
   nodeGroup: string;
   provisionInboundIds: string;
   renewable: boolean;
   resetCycle: string;
+  residentialRelayEnabled: boolean;
+  residentialRelayLimit: number;
   slug: string;
   sortOrder: number;
   trafficBytes: number;
+  trafficMultiplierPermille: number;
   updatedAt: string;
   upgradable: boolean;
+  uploadLimitMbps: number;
   visibility: string;
 }
 
@@ -1007,18 +1041,25 @@ export interface PlanCatalogItem {
   createdAt: string;
   description: string;
   deviceLimit: number;
+  displayBenefits: Record<string, string>;
+  downloadLimitMbps: number;
   id: string;
+  lineGroupIds?: string[];
   name: string;
   nodeGroup: string;
   prices: PlanPrice[];
   provisionInboundIds: string;
   renewable: boolean;
   resetCycle: string;
+  residentialRelayEnabled: boolean;
+  residentialRelayLimit: number;
   slug: string;
   sortOrder: number;
   trafficBytes: number;
+  trafficMultiplierPermille: number;
   updatedAt: string;
   upgradable: boolean;
+  uploadLimitMbps: number;
   visibility: string;
 }
 
@@ -1096,6 +1137,7 @@ export interface SubscriptionEntitlement {
   createdAt: string;
   customerId: string;
   deviceLimit: number;
+  downloadLimitMbps: number;
   expiresAt?: string | null;
   id: string;
   internalClientId: string;
@@ -1103,11 +1145,15 @@ export interface SubscriptionEntitlement {
   nodeGroup: string;
   orderId: string;
   planId: string;
+  residentialRelayEnabled: boolean;
+  residentialRelayLimit: number;
   startsAt: string;
   status: string;
+  trafficMultiplierPermille: number;
   trafficQuota: number;
   trafficUsed: number;
   updatedAt: string;
+  uploadLimitMbps: number;
 }
 
 export interface SubscriptionLinks {
@@ -1122,6 +1168,8 @@ export interface SubscriptionOverview {
   createdAt: string;
   description: string;
   deviceLimit: number;
+  displayBenefits: Record<string, string>;
+  downloadLimitMbps: number;
   entitlement: SubscriptionEntitlement;
   id: string;
   links: SubscriptionLinks;
@@ -1130,11 +1178,15 @@ export interface SubscriptionOverview {
   provisionInboundIds: string;
   renewable: boolean;
   resetCycle: string;
+  residentialRelayEnabled: boolean;
+  residentialRelayLimit: number;
   slug: string;
   sortOrder: number;
   trafficBytes: number;
+  trafficMultiplierPermille: number;
   updatedAt: string;
   upgradable: boolean;
+  uploadLimitMbps: number;
   usedBytes: number;
   visibility: string;
 }
@@ -1142,7 +1194,10 @@ export interface SubscriptionOverview {
 export interface Ticket {
   createdAt: string;
   customerId: string;
+  entitlementId?: string;
   id: string;
+  planId?: string;
+  planName?: string;
   priority: string;
   status: string;
   subject: string;

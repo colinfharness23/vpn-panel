@@ -46,8 +46,9 @@ type CreatePaymentRequest struct {
 }
 
 type CreateTicketRequest struct {
-	Subject string `json:"subject" validate:"required,max=200"`
-	Body    string `json:"body" validate:"required,max=10000"`
+	EntitlementID string `json:"entitlementId,omitempty" validate:"omitempty,uuid"`
+	Subject       string `json:"subject" validate:"required,max=200"`
+	Body          string `json:"body" validate:"required,max=10000"`
 }
 
 type ReplyTicketRequest struct {
@@ -170,21 +171,55 @@ type CommercialEmailSendRequest struct {
 }
 
 type CommercialPlanRequest struct {
-	ID                  string `json:"id"`
-	Slug                string `json:"slug" validate:"required,max=80"`
-	Name                string `json:"name" validate:"required,max=120"`
-	Description         string `json:"description"`
-	TrafficBytes        int64  `json:"trafficBytes" validate:"gte=0"`
-	DeviceLimit         int    `json:"deviceLimit" validate:"gte=0,lte=1000"`
-	ResetCycle          string `json:"resetCycle" validate:"required,oneof=never daily weekly monthly quarterly"`
-	NodeGroup           string `json:"nodeGroup"`
-	Capacity            int    `json:"capacity" validate:"gte=0"`
-	Visibility          string `json:"visibility" validate:"required,oneof=public hidden invite"`
-	Renewable           bool   `json:"renewable"`
-	Upgradable          bool   `json:"upgradable"`
-	Active              bool   `json:"active"`
-	SortOrder           int    `json:"sortOrder"`
-	ProvisionInboundIDs []int  `json:"provisionInboundIds"`
+	ID                        string            `json:"id"`
+	Slug                      string            `json:"slug" validate:"required,max=80"`
+	Name                      string            `json:"name" validate:"required,max=120"`
+	Description               string            `json:"description"`
+	TrafficBytes              int64             `json:"trafficBytes" validate:"gte=0"`
+	DeviceLimit               int               `json:"deviceLimit" validate:"gte=0,lte=1000"`
+	TrafficMultiplierPermille int               `json:"trafficMultiplierPermille" validate:"omitempty,gte=100,lte=100000"`
+	UploadLimitMbps           int               `json:"uploadLimitMbps" validate:"gte=0,lte=100000"`
+	DownloadLimitMbps         int               `json:"downloadLimitMbps" validate:"gte=0,lte=100000"`
+	ResidentialRelayEnabled   bool              `json:"residentialRelayEnabled"`
+	ResidentialRelayLimit     int               `json:"residentialRelayLimit" validate:"gte=0,lte=20"`
+	ResetCycle                string            `json:"resetCycle" validate:"required,oneof=never daily weekly monthly quarterly"`
+	NodeGroup                 string            `json:"nodeGroup"`
+	Capacity                  int               `json:"capacity" validate:"gte=0"`
+	Visibility                string            `json:"visibility" validate:"required,oneof=public hidden invite"`
+	Renewable                 bool              `json:"renewable"`
+	Upgradable                bool              `json:"upgradable"`
+	Active                    bool              `json:"active"`
+	SortOrder                 int               `json:"sortOrder"`
+	ProvisionInboundIDs       []int             `json:"provisionInboundIds"`
+	LineGroupIDs              []string          `json:"lineGroupIds" validate:"max=100"`
+	DisplayBenefits           map[string]string `json:"displayBenefits"`
+}
+
+type CommercialLineGroupRequest struct {
+	ID          string `json:"id"`
+	Name        string `json:"name" validate:"required,max=120"`
+	Description string `json:"description" validate:"max=500"`
+	Active      bool   `json:"active"`
+}
+
+type CommercialLineSourceRequest struct {
+	ID              string   `json:"id"`
+	Name            string   `json:"name" validate:"required,max=120"`
+	URL             string   `json:"url" validate:"max=4096"`
+	RefreshInterval int      `json:"refreshInterval" validate:"gte=300,lte=86400"`
+	Enabled         bool     `json:"enabled"`
+	GroupIDs        []string `json:"groupIds" validate:"required,min=1,max=100"`
+	PlanIDs         []string `json:"planIds" validate:"max=100"`
+}
+
+type CommercialLineImportRequest struct {
+	Name  string `json:"name" validate:"max=120"`
+	Links string `json:"links" validate:"required,max=8388608"`
+}
+
+type CommercialLineNodeGroupsRequest struct {
+	NodeIDs  []string `json:"nodeIds" validate:"required,min=1,max=500"`
+	GroupIDs []string `json:"groupIds" validate:"max=100"`
 }
 
 type CommercialPlanPriceRequest struct {
@@ -214,11 +249,23 @@ type CommercialCustomerDeleteRequest struct {
 }
 
 type CommercialSubscriptionUpdateRequest struct {
-	PlanID       string `json:"planId" validate:"required"`
-	ExpiresAt    string `json:"expiresAt"`
-	TrafficQuota int64  `json:"trafficQuota" validate:"gte=0"`
-	DeviceLimit  int    `json:"deviceLimit" validate:"gte=0,lte=1000"`
-	ResetTraffic bool   `json:"resetTraffic"`
+	PlanID                    string `json:"planId" validate:"required"`
+	ExpiresAt                 string `json:"expiresAt"`
+	TrafficQuota              int64  `json:"trafficQuota" validate:"gte=0"`
+	DeviceLimit               int    `json:"deviceLimit" validate:"gte=0,lte=1000"`
+	TrafficMultiplierPermille *int   `json:"trafficMultiplierPermille" validate:"omitempty,gte=100,lte=100000"`
+	UploadLimitMbps           *int   `json:"uploadLimitMbps" validate:"omitempty,gte=0,lte=100000"`
+	DownloadLimitMbps         *int   `json:"downloadLimitMbps" validate:"omitempty,gte=0,lte=100000"`
+	ResetTraffic              bool   `json:"resetTraffic"`
+}
+
+type ResidentialRelayRequest struct {
+	InboundID int    `json:"inboundId" validate:"required,gt=0"`
+	Name      string `json:"name" validate:"max=80"`
+	Host      string `json:"host" validate:"required,max=253"`
+	Port      int    `json:"port" validate:"required,gte=1,lte=65535"`
+	Username  string `json:"username" validate:"max=256"`
+	Password  string `json:"password" validate:"max=1024"`
 }
 
 type CommercialTicketReplyRequest struct {

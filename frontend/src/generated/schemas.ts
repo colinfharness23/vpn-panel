@@ -168,6 +168,15 @@ export const SCHEMAS: Record<string, unknown> = {
       "deviceLimit": {
         "type": "integer"
       },
+      "displayBenefits": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "downloadLimitMbps": {
+        "type": "integer"
+      },
       "entitlement": {
         "$ref": "#/components/schemas/SubscriptionEntitlement"
       },
@@ -189,6 +198,12 @@ export const SCHEMAS: Record<string, unknown> = {
       "resetCycle": {
         "type": "string"
       },
+      "residentialRelayEnabled": {
+        "type": "boolean"
+      },
+      "residentialRelayLimit": {
+        "type": "integer"
+      },
       "slug": {
         "type": "string"
       },
@@ -199,12 +214,18 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
+      "trafficMultiplierPermille": {
+        "type": "integer"
+      },
       "updatedAt": {
         "format": "date-time",
         "type": "string"
       },
       "upgradable": {
         "type": "boolean"
+      },
+      "uploadLimitMbps": {
+        "type": "integer"
       },
       "visibility": {
         "type": "string"
@@ -216,6 +237,8 @@ export const SCHEMAS: Record<string, unknown> = {
       "createdAt",
       "description",
       "deviceLimit",
+      "displayBenefits",
+      "downloadLimitMbps",
       "entitlement",
       "id",
       "name",
@@ -223,11 +246,15 @@ export const SCHEMAS: Record<string, unknown> = {
       "provisionInboundIds",
       "renewable",
       "resetCycle",
+      "residentialRelayEnabled",
+      "residentialRelayLimit",
       "slug",
       "sortOrder",
       "trafficBytes",
+      "trafficMultiplierPermille",
       "updatedAt",
       "upgradable",
+      "uploadLimitMbps",
       "visibility"
     ],
     "type": "object"
@@ -1187,6 +1214,10 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
+      "downloadLimitMbps": {
+        "description": "0 = unlimited",
+        "type": "integer"
+      },
       "email": {
         "description": "Client email identifier",
         "type": "string"
@@ -1267,9 +1298,17 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
+      "trafficMultiplierPermille": {
+        "description": "1000 = 1x billed traffic",
+        "type": "integer"
+      },
       "updated_at": {
         "description": "Last update timestamp",
         "format": "int64",
+        "type": "integer"
+      },
+      "uploadLimitMbps": {
+        "description": "0 = unlimited",
         "type": "integer"
       }
     },
@@ -1299,6 +1338,9 @@ export const SCHEMAS: Record<string, unknown> = {
       "description": {
         "type": "string"
       },
+      "downloadUrl": {
+        "type": "string"
+      },
       "id": {
         "type": "string"
       },
@@ -1307,6 +1349,19 @@ export const SCHEMAS: Record<string, unknown> = {
       },
       "officialUrl": {
         "type": "string"
+      },
+      "packageContentType": {
+        "type": "string"
+      },
+      "packageFileName": {
+        "type": "string"
+      },
+      "packageSha256": {
+        "type": "string"
+      },
+      "packageSize": {
+        "format": "int64",
+        "type": "integer"
       },
       "platform": {
         "type": "string"
@@ -1331,11 +1386,9 @@ export const SCHEMAS: Record<string, unknown> = {
       "description",
       "id",
       "name",
-      "officialUrl",
       "platform",
       "slug",
       "sortOrder",
-      "sourceUrl",
       "updatedAt"
     ],
     "type": "object"
@@ -1380,6 +1433,9 @@ export const SCHEMAS: Record<string, unknown> = {
       },
       "createdAt": {
         "format": "int64",
+        "type": "integer"
+      },
+      "downloadLimitMbps": {
         "type": "integer"
       },
       "email": {
@@ -1440,8 +1496,14 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
+      "trafficMultiplierPermille": {
+        "type": "integer"
+      },
       "updatedAt": {
         "format": "int64",
+        "type": "integer"
+      },
+      "uploadLimitMbps": {
         "type": "integer"
       },
       "uuid": {
@@ -1454,6 +1516,7 @@ export const SCHEMAS: Record<string, unknown> = {
       "auth",
       "comment",
       "createdAt",
+      "downloadLimitMbps",
       "email",
       "enable",
       "expiryTime",
@@ -1473,7 +1536,9 @@ export const SCHEMAS: Record<string, unknown> = {
       "subId",
       "tgId",
       "totalGB",
+      "trafficMultiplierPermille",
       "updatedAt",
+      "uploadLimitMbps",
       "uuid"
     ],
     "type": "object"
@@ -1856,8 +1921,25 @@ export const SCHEMAS: Record<string, unknown> = {
         "minimum": 0,
         "type": "integer"
       },
+      "displayBenefits": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "downloadLimitMbps": {
+        "maximum": 100000,
+        "minimum": 0,
+        "type": "integer"
+      },
       "id": {
         "type": "string"
+      },
+      "lineGroupIds": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       },
       "name": {
         "maxLength": 120,
@@ -1887,6 +1969,14 @@ export const SCHEMAS: Record<string, unknown> = {
         "minLength": 1,
         "type": "string"
       },
+      "residentialRelayEnabled": {
+        "type": "boolean"
+      },
+      "residentialRelayLimit": {
+        "maximum": 20,
+        "minimum": 0,
+        "type": "integer"
+      },
       "slug": {
         "maxLength": 80,
         "minLength": 1,
@@ -1900,8 +1990,18 @@ export const SCHEMAS: Record<string, unknown> = {
         "minimum": 0,
         "type": "integer"
       },
+      "trafficMultiplierPermille": {
+        "maximum": 100000,
+        "minimum": 100,
+        "type": "integer"
+      },
       "upgradable": {
         "type": "boolean"
+      },
+      "uploadLimitMbps": {
+        "maximum": 100000,
+        "minimum": 0,
+        "type": "integer"
       },
       "visibility": {
         "enum": [
@@ -1918,16 +2018,23 @@ export const SCHEMAS: Record<string, unknown> = {
       "capacity",
       "description",
       "deviceLimit",
+      "displayBenefits",
+      "downloadLimitMbps",
       "id",
+      "lineGroupIds",
       "name",
       "nodeGroup",
       "provisionInboundIds",
       "renewable",
       "resetCycle",
+      "residentialRelayEnabled",
+      "residentialRelayLimit",
       "slug",
       "sortOrder",
       "trafficBytes",
+      "trafficMultiplierPermille",
       "upgradable",
+      "uploadLimitMbps",
       "visibility"
     ],
     "type": "object"
@@ -1996,6 +2103,12 @@ export const SCHEMAS: Record<string, unknown> = {
         "minimum": 0,
         "type": "integer"
       },
+      "downloadLimitMbps": {
+        "maximum": 100000,
+        "minimum": 0,
+        "nullable": true,
+        "type": "integer"
+      },
       "expiresAt": {
         "type": "string"
       },
@@ -2006,9 +2119,21 @@ export const SCHEMAS: Record<string, unknown> = {
       "resetTraffic": {
         "type": "boolean"
       },
+      "trafficMultiplierPermille": {
+        "maximum": 100000,
+        "minimum": 100,
+        "nullable": true,
+        "type": "integer"
+      },
       "trafficQuota": {
         "format": "int64",
         "minimum": 0,
+        "type": "integer"
+      },
+      "uploadLimitMbps": {
+        "maximum": 100000,
+        "minimum": 0,
+        "nullable": true,
         "type": "integer"
       }
     },
@@ -2153,6 +2278,9 @@ export const SCHEMAS: Record<string, unknown> = {
       "body": {
         "maxLength": 10000,
         "minLength": 1,
+        "type": "string"
+      },
+      "entitlementId": {
         "type": "string"
       },
       "subject": {
@@ -3462,7 +3590,6 @@ export const SCHEMAS: Record<string, unknown> = {
     "type": "object"
   },
   "Node": {
-    "description": "Node represents a remote 3x-ui panel registered with the central panel.\nThe central panel polls each node's existing /panel/api/server/status\nendpoint over HTTP using the per-node ApiToken to populate the runtime\nstatus fields below.",
     "properties": {
       "activeCount": {
         "example": 23,
@@ -4105,6 +4232,15 @@ export const SCHEMAS: Record<string, unknown> = {
       "deviceLimit": {
         "type": "integer"
       },
+      "displayBenefits": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "downloadLimitMbps": {
+        "type": "integer"
+      },
       "id": {
         "type": "string"
       },
@@ -4123,6 +4259,12 @@ export const SCHEMAS: Record<string, unknown> = {
       "resetCycle": {
         "type": "string"
       },
+      "residentialRelayEnabled": {
+        "type": "boolean"
+      },
+      "residentialRelayLimit": {
+        "type": "integer"
+      },
       "slug": {
         "type": "string"
       },
@@ -4133,12 +4275,18 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
+      "trafficMultiplierPermille": {
+        "type": "integer"
+      },
       "updatedAt": {
         "format": "date-time",
         "type": "string"
       },
       "upgradable": {
         "type": "boolean"
+      },
+      "uploadLimitMbps": {
+        "type": "integer"
       },
       "visibility": {
         "type": "string"
@@ -4150,17 +4298,23 @@ export const SCHEMAS: Record<string, unknown> = {
       "createdAt",
       "description",
       "deviceLimit",
+      "displayBenefits",
+      "downloadLimitMbps",
       "id",
       "name",
       "nodeGroup",
       "provisionInboundIds",
       "renewable",
       "resetCycle",
+      "residentialRelayEnabled",
+      "residentialRelayLimit",
       "slug",
       "sortOrder",
       "trafficBytes",
+      "trafficMultiplierPermille",
       "updatedAt",
       "upgradable",
+      "uploadLimitMbps",
       "visibility"
     ],
     "type": "object"
@@ -4183,8 +4337,23 @@ export const SCHEMAS: Record<string, unknown> = {
       "deviceLimit": {
         "type": "integer"
       },
+      "displayBenefits": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "downloadLimitMbps": {
+        "type": "integer"
+      },
       "id": {
         "type": "string"
+      },
+      "lineGroupIds": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       },
       "name": {
         "type": "string"
@@ -4207,6 +4376,12 @@ export const SCHEMAS: Record<string, unknown> = {
       "resetCycle": {
         "type": "string"
       },
+      "residentialRelayEnabled": {
+        "type": "boolean"
+      },
+      "residentialRelayLimit": {
+        "type": "integer"
+      },
       "slug": {
         "type": "string"
       },
@@ -4217,12 +4392,18 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
+      "trafficMultiplierPermille": {
+        "type": "integer"
+      },
       "updatedAt": {
         "format": "date-time",
         "type": "string"
       },
       "upgradable": {
         "type": "boolean"
+      },
+      "uploadLimitMbps": {
+        "type": "integer"
       },
       "visibility": {
         "type": "string"
@@ -4234,6 +4415,8 @@ export const SCHEMAS: Record<string, unknown> = {
       "createdAt",
       "description",
       "deviceLimit",
+      "displayBenefits",
+      "downloadLimitMbps",
       "id",
       "name",
       "nodeGroup",
@@ -4241,11 +4424,15 @@ export const SCHEMAS: Record<string, unknown> = {
       "provisionInboundIds",
       "renewable",
       "resetCycle",
+      "residentialRelayEnabled",
+      "residentialRelayLimit",
       "slug",
       "sortOrder",
       "trafficBytes",
+      "trafficMultiplierPermille",
       "updatedAt",
       "upgradable",
+      "uploadLimitMbps",
       "visibility"
     ],
     "type": "object"
@@ -4523,7 +4710,6 @@ export const SCHEMAS: Record<string, unknown> = {
     "type": "object"
   },
   "Setting": {
-    "description": "Setting stores key-value configuration settings for the 3x-ui panel.",
     "properties": {
       "id": {
         "type": "integer"
@@ -4554,6 +4740,9 @@ export const SCHEMAS: Record<string, unknown> = {
       "deviceLimit": {
         "type": "integer"
       },
+      "downloadLimitMbps": {
+        "type": "integer"
+      },
       "expiresAt": {
         "format": "date-time",
         "nullable": true,
@@ -4579,12 +4768,21 @@ export const SCHEMAS: Record<string, unknown> = {
       "planId": {
         "type": "string"
       },
+      "residentialRelayEnabled": {
+        "type": "boolean"
+      },
+      "residentialRelayLimit": {
+        "type": "integer"
+      },
       "startsAt": {
         "format": "date-time",
         "type": "string"
       },
       "status": {
         "type": "string"
+      },
+      "trafficMultiplierPermille": {
+        "type": "integer"
       },
       "trafficQuota": {
         "format": "int64",
@@ -4597,22 +4795,30 @@ export const SCHEMAS: Record<string, unknown> = {
       "updatedAt": {
         "format": "date-time",
         "type": "string"
+      },
+      "uploadLimitMbps": {
+        "type": "integer"
       }
     },
     "required": [
       "createdAt",
       "customerId",
       "deviceLimit",
+      "downloadLimitMbps",
       "id",
       "internalClientId",
       "nodeGroup",
       "orderId",
       "planId",
+      "residentialRelayEnabled",
+      "residentialRelayLimit",
       "startsAt",
       "status",
+      "trafficMultiplierPermille",
       "trafficQuota",
       "trafficUsed",
-      "updatedAt"
+      "updatedAt",
+      "uploadLimitMbps"
     ],
     "type": "object"
   },
@@ -4653,6 +4859,15 @@ export const SCHEMAS: Record<string, unknown> = {
       "deviceLimit": {
         "type": "integer"
       },
+      "displayBenefits": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "downloadLimitMbps": {
+        "type": "integer"
+      },
       "entitlement": {
         "$ref": "#/components/schemas/SubscriptionEntitlement"
       },
@@ -4677,6 +4892,12 @@ export const SCHEMAS: Record<string, unknown> = {
       "resetCycle": {
         "type": "string"
       },
+      "residentialRelayEnabled": {
+        "type": "boolean"
+      },
+      "residentialRelayLimit": {
+        "type": "integer"
+      },
       "slug": {
         "type": "string"
       },
@@ -4687,12 +4908,18 @@ export const SCHEMAS: Record<string, unknown> = {
         "format": "int64",
         "type": "integer"
       },
+      "trafficMultiplierPermille": {
+        "type": "integer"
+      },
       "updatedAt": {
         "format": "date-time",
         "type": "string"
       },
       "upgradable": {
         "type": "boolean"
+      },
+      "uploadLimitMbps": {
+        "type": "integer"
       },
       "usedBytes": {
         "format": "int64",
@@ -4708,6 +4935,8 @@ export const SCHEMAS: Record<string, unknown> = {
       "createdAt",
       "description",
       "deviceLimit",
+      "displayBenefits",
+      "downloadLimitMbps",
       "entitlement",
       "id",
       "links",
@@ -4716,11 +4945,15 @@ export const SCHEMAS: Record<string, unknown> = {
       "provisionInboundIds",
       "renewable",
       "resetCycle",
+      "residentialRelayEnabled",
+      "residentialRelayLimit",
       "slug",
       "sortOrder",
       "trafficBytes",
+      "trafficMultiplierPermille",
       "updatedAt",
       "upgradable",
+      "uploadLimitMbps",
       "usedBytes",
       "visibility"
     ],
@@ -4735,7 +4968,16 @@ export const SCHEMAS: Record<string, unknown> = {
       "customerId": {
         "type": "string"
       },
+      "entitlementId": {
+        "type": "string"
+      },
       "id": {
+        "type": "string"
+      },
+      "planId": {
+        "type": "string"
+      },
+      "planName": {
         "type": "string"
       },
       "priority": {
@@ -4796,7 +5038,6 @@ export const SCHEMAS: Record<string, unknown> = {
     "type": "object"
   },
   "User": {
-    "description": "User represents a user account in the 3x-ui panel.",
     "properties": {
       "id": {
         "type": "integer"

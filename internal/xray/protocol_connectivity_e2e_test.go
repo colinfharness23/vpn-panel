@@ -3,11 +3,13 @@ package xray
 import (
 	"bytes"
 	"context"
+	"crypto/ecdh"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -26,14 +28,6 @@ import (
 	"time"
 )
 
-// TestXrayProtocolConnectivity_E2E proves that the Xray binary shipped in the
-// Ubuntu archive can carry a real HTTP request through the non-VLESS protocols
-// exposed by this panel. It deliberately tests traffic, rather than only
-// asking Xray to parse a configuration file.
-//
-// The test is skipped during ordinary unit-test runs. Release/candidate builds
-// set XRAY_E2E_BINARY after downloading the exact Xray runtime that will be
-// packaged.
 func TestXrayProtocolConnectivity_E2E(t *testing.T) {
 	bin := os.Getenv("XRAY_E2E_BINARY")
 	if bin == "" {
@@ -43,13 +37,128 @@ func TestXrayProtocolConnectivity_E2E(t *testing.T) {
 		t.Fatalf("XRAY_E2E_BINARY: %v", err)
 	}
 
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("nova-protocol-e2e-ok"))
 	}))
+	origin.Listener = protocolTestListener(t)
+	origin.Start()
 	defer origin.Close()
+	originPort := origin.Listener.Addr().(*net.TCPAddr).Port
+	loopbackOriginURL := fmt.Sprintf("http://127.0.0.1:%d", originPort)
 
 	certFile, keyFile, certPin := writeProtocolTestCertificate(t)
+	decoy := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer decoy.Close()
+
+	t.Run("vmess", func(t *testing.T) {
+		id := "11111111-2222-4333-8444-555555555555"
+		serverPort := freePort(t)
+		proxyPort := freePort(t)
+		server := map[string]any{
+			"log": map[string]any{"loglevel": "warning"},
+			"inbounds": []any{map[string]any{
+				"listen": "127.0.0.1", "port": serverPort, "protocol": "vmess", "tag": "vmess-e2e-in",
+				"settings": map[string]any{"clients": []any{map[string]any{"id": id, "security": "auto"}}},
+			}},
+			"outbounds": protocolTestDirectOutbounds(),
+		}
+		client := protocolTestHTTPClientConfig(proxyPort, map[string]any{
+			"protocol": "vmess", "tag": "vmess-e2e-out",
+			"settings": map[string]any{"vnext": []any{map[string]any{
+				"address": "127.0.0.1", "port": serverPort,
+				"users": []any{map[string]any{"id": id, "security": "auto"}},
+			}}},
+		})
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
+	})
+
+	t.Run("vless", func(t *testing.T) {
+		id := "22222222-3333-4444-8555-666666666666"
+		serverPort := freePort(t)
+		proxyPort := freePort(t)
+		server := map[string]any{
+			"log": map[string]any{"loglevel": "warning"},
+			"inbounds": []any{map[string]any{
+				"listen": "127.0.0.1", "port": serverPort, "protocol": "vless", "tag": "vless-e2e-in",
+				"settings": map[string]any{"decryption": "none", "clients": []any{map[string]any{"id": id}}},
+			}},
+			"outbounds": protocolTestDirectOutbounds(),
+		}
+		client := protocolTestHTTPClientConfig(proxyPort, map[string]any{
+			"protocol": "vless", "tag": "vless-e2e-out",
+			"settings": map[string]any{"vnext": []any{map[string]any{
+				"address": "127.0.0.1", "port": serverPort,
+				"users": []any{map[string]any{"id": id, "encryption": "none"}},
+			}}},
+		})
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
+	})
+
+	t.Run("managed_vless_reality", func(t *testing.T) {
+		id := "33333333-4444-4555-8666-777777777777"
+		privateKey, publicKey := realityTestKeyPair(t)
+		shortID := "a1b2c3d4e5f60708"
+		serverPort := freePort(t)
+		proxyPort := freePort(t)
+		decoyURL, err := url.Parse(decoy.URL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := map[string]any{
+			"log": map[string]any{"loglevel": "warning"},
+			"inbounds": []any{map[string]any{
+				"listen": "127.0.0.1", "port": serverPort, "protocol": "vless", "tag": "managed-reality-e2e-in",
+				"settings": map[string]any{"decryption": "none", "clients": []any{map[string]any{"id": id}}},
+				"streamSettings": map[string]any{
+					"network": "tcp", "security": "reality",
+					"realitySettings": map[string]any{
+						"show": false, "target": decoyURL.Host, "serverNames": []string{"e2e.local"},
+						"privateKey": privateKey, "shortIds": []string{shortID},
+					},
+				},
+			}},
+			"outbounds": protocolTestDirectOutbounds(),
+		}
+		client := protocolTestHTTPClientConfig(proxyPort, map[string]any{
+			"protocol": "vless", "tag": "managed-reality-e2e-out",
+			"settings": map[string]any{"vnext": []any{map[string]any{
+				"address": "127.0.0.1", "port": serverPort,
+				"users": []any{map[string]any{"id": id, "encryption": "none"}},
+			}}},
+			"streamSettings": map[string]any{
+				"network": "tcp", "security": "reality",
+				"realitySettings": map[string]any{
+					"show": false, "fingerprint": "chrome", "serverName": "e2e.local",
+					"publicKey": publicKey, "shortId": shortID, "spiderX": "/",
+				},
+			},
+		})
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
+	})
+
+	t.Run("shadowsocks", func(t *testing.T) {
+		password := "shadowsocks-e2e-password"
+		serverPort := freePort(t)
+		proxyPort := freePort(t)
+		server := map[string]any{
+			"log": map[string]any{"loglevel": "warning"},
+			"inbounds": []any{map[string]any{
+				"listen": "127.0.0.1", "port": serverPort, "protocol": "shadowsocks", "tag": "shadowsocks-e2e-in",
+				"settings": map[string]any{"method": "aes-256-gcm", "password": password, "network": "tcp,udp"},
+			}},
+			"outbounds": protocolTestDirectOutbounds(),
+		}
+		client := protocolTestHTTPClientConfig(proxyPort, map[string]any{
+			"protocol": "shadowsocks", "tag": "shadowsocks-e2e-out",
+			"settings": map[string]any{"servers": []any{map[string]any{
+				"address": "127.0.0.1", "port": serverPort, "method": "aes-256-gcm", "password": password,
+			}}},
+		})
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
+	})
 
 	t.Run("trojan_tls", func(t *testing.T) {
 		password := "trojan-e2e-password"
@@ -79,7 +188,7 @@ func TestXrayProtocolConnectivity_E2E(t *testing.T) {
 			},
 		})
 
-		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, origin.URL, false)
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
 	})
 
 	t.Run("hysteria2_tls", func(t *testing.T) {
@@ -115,8 +224,76 @@ func TestXrayProtocolConnectivity_E2E(t *testing.T) {
 			},
 		})
 
-		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, origin.URL, true)
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, true)
 	})
+
+	t.Run("wireguard", func(t *testing.T) {
+		serverPrivate, serverPublic := wireguardTestKeyPair(t)
+		clientPrivate, clientPublic := wireguardTestKeyPair(t)
+		serverPort := freeUDPPort(t)
+		proxyPort := freePort(t)
+		server := map[string]any{
+			"log": map[string]any{"loglevel": "warning"},
+			"inbounds": []any{map[string]any{
+				"listen": "127.0.0.1", "port": serverPort, "protocol": "wireguard", "tag": "wireguard-e2e-in",
+				"settings": map[string]any{
+					"secretKey": serverPrivate,
+					"peers":     []any{map[string]any{"publicKey": clientPublic, "allowedIPs": []string{"10.77.0.2/32"}}},
+				},
+			}},
+			"outbounds": protocolTestDirectOutbounds(),
+		}
+		client := protocolTestHTTPClientConfig(proxyPort, map[string]any{
+			"protocol": "wireguard", "tag": "wireguard-e2e-out",
+			"settings": map[string]any{
+				"secretKey": clientPrivate, "address": []string{"10.77.0.2/32"}, "noKernelTun": true,
+				"peers": []any{map[string]any{"endpoint": fmt.Sprintf("127.0.0.1:%d", serverPort), "publicKey": serverPublic, "allowedIPs": []string{"0.0.0.0/0"}}},
+			},
+		})
+		wireguardOriginURL := fmt.Sprintf("http://%s:%d", protocolTestPrimaryIPv4(t), originPort)
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, wireguardOriginURL, true)
+	})
+}
+
+func protocolTestListener(t *testing.T) net.Listener {
+	t.Helper()
+	listener, err := net.Listen("tcp4", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return listener
+}
+
+func protocolTestPrimaryIPv4(t *testing.T) string {
+	t.Helper()
+	conn, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.ParseIP("8.8.8.8"), Port: 53})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	ip := conn.LocalAddr().(*net.UDPAddr).IP
+	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+		t.Fatalf("could not determine a non-loopback test address: %v", ip)
+	}
+	return ip.String()
+}
+
+func wireguardTestKeyPair(t *testing.T) (string, string) {
+	t.Helper()
+	privateKey, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.StdEncoding.EncodeToString(privateKey.Bytes()), base64.StdEncoding.EncodeToString(privateKey.PublicKey().Bytes())
+}
+
+func realityTestKeyPair(t *testing.T) (string, string) {
+	t.Helper()
+	privateKey, err := ecdh.X25519().GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(privateKey.Bytes()), base64.RawURLEncoding.EncodeToString(privateKey.PublicKey().Bytes())
 }
 
 func protocolTestDirectOutbounds() []any {
@@ -165,9 +342,6 @@ func runProtocolProxyCheck(
 	t.Helper()
 	server := startProtocolXray(t, bin, serverConfig, "server")
 	if udpServer {
-		// A Hysteria2 listener is UDP-only, so there is no TCP readiness socket.
-		// Keep the delay short; the actual proxied request below is the readiness
-		// and functionality assertion.
 		time.Sleep(500 * time.Millisecond)
 	} else {
 		waitForProtocolPort(t, serverPort, server)

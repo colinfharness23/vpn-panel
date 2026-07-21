@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -22,11 +23,12 @@ type CommercialAdminController struct {
 	BaseController
 	service      *commercial.AdminService
 	orderService *commercial.OrderService
+	lineService  *commercial.LineService
 	userService  panel.UserService
 }
 
 func NewCommercialAdminController(g *gin.RouterGroup) *CommercialAdminController {
-	controller := &CommercialAdminController{service: commercial.NewAdminService(), orderService: commercial.NewOrderService()}
+	controller := &CommercialAdminController{service: commercial.NewAdminService(), orderService: commercial.NewOrderService(), lineService: commercial.NewLineService()}
 	controller.initRouter(g)
 	return controller
 }
@@ -43,6 +45,18 @@ func (a *CommercialAdminController) initRouter(g *gin.RouterGroup) {
 	g.GET("/plans", a.require("plans.read"), a.plans)
 	g.POST("/plans", a.require("plans.manage"), a.savePlan)
 	g.POST("/plan-prices", a.require("plans.manage"), a.savePlanPrice)
+	g.GET("/line-sources", a.require("lines.read"), a.lineSources)
+	g.POST("/line-sources", a.require("lines.manage"), a.saveLineSource)
+	g.POST("/line-sources/:id/refresh", a.require("lines.manage"), a.refreshLineSource)
+	g.DELETE("/line-sources/:id", a.require("lines.manage"), a.requireReauth, a.deleteLineSource)
+	g.POST("/line-imports/preview", a.require("lines.read"), a.previewLineImport)
+	g.POST("/line-imports/commit", a.require("lines.manage"), a.commitLineImport)
+	g.GET("/line-nodes", a.require("lines.read"), a.lineNodes)
+	g.PUT("/line-nodes/groups", a.require("lines.manage"), a.assignLineNodeGroups)
+	g.POST("/line-nodes/:id/probe", a.require("lines.manage"), a.probeLineNode)
+	g.GET("/line-groups", a.require("lines.read"), a.lineGroups)
+	g.POST("/line-groups", a.require("lines.manage"), a.saveLineGroup)
+	g.DELETE("/line-groups/:id", a.require("lines.manage"), a.requireReauth, a.deleteLineGroup)
 	g.GET("/orders", a.require("orders.read"), a.orders)
 	g.POST("/orders/:id/retry", a.require("orders.manage"), a.retryOrder)
 	g.GET("/notices", a.require("content.read"), a.notices)
@@ -51,6 +65,7 @@ func (a *CommercialAdminController) initRouter(g *gin.RouterGroup) {
 	g.POST("/articles", a.require("content.manage"), a.saveArticle)
 	g.GET("/applications", a.require("content.read"), a.applications)
 	g.POST("/applications", a.require("content.manage"), a.saveApplication)
+	g.POST("/applications/:id/package", a.require("content.manage"), a.uploadApplicationPackage)
 	g.GET("/tickets", a.require("tickets.read"), a.tickets)
 	g.GET("/tickets/:id/messages", a.require("tickets.read"), a.ticketMessages)
 	g.POST("/tickets/:id/reply", a.require("tickets.manage"), a.replyTicket)
@@ -222,6 +237,115 @@ func (a *CommercialAdminController) savePlanPrice(c *gin.Context) {
 	commercialJSON(c, row, err)
 }
 
+func (a *CommercialAdminController) lineSources(c *gin.Context) {
+	rows, err := a.lineService.Sources()
+	commercialJSON(c, rows, err)
+}
+
+func (a *CommercialAdminController) saveLineSource(c *gin.Context) {
+	var request entity.CommercialLineSourceRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		commercialJSON(c, nil, errors.New("请求格式无效"))
+		return
+	}
+	row, err := a.lineService.SaveURLSource(c.Request.Context(), request)
+	if err == nil && row != nil {
+		a.audit(c, "line_source.save", "line_source", row.ID, gin.H{"name": row.Name, "groups": request.GroupIDs, "plans": request.PlanIDs})
+	}
+	commercialJSON(c, row, err)
+}
+
+func (a *CommercialAdminController) refreshLineSource(c *gin.Context) {
+	err := a.lineService.QueueRefresh(c.Param("id"))
+	if err == nil {
+		a.audit(c, "line_source.refresh", "line_source", c.Param("id"), nil)
+	}
+	commercialJSON(c, gin.H{"queued": err == nil}, err)
+}
+
+func (a *CommercialAdminController) deleteLineSource(c *gin.Context) {
+	err := a.lineService.DeleteSource(c.Param("id"))
+	if err == nil {
+		a.audit(c, "line_source.delete", "line_source", c.Param("id"), nil)
+	}
+	commercialJSON(c, gin.H{"deleted": err == nil}, err)
+}
+
+func (a *CommercialAdminController) previewLineImport(c *gin.Context) {
+	var request entity.CommercialLineImportRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		commercialJSON(c, nil, errors.New("请求格式无效"))
+		return
+	}
+	result, err := a.lineService.PreviewImport(request.Links)
+	commercialJSON(c, result, err)
+}
+
+func (a *CommercialAdminController) commitLineImport(c *gin.Context) {
+	var request entity.CommercialLineImportRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		commercialJSON(c, nil, errors.New("请求格式无效"))
+		return
+	}
+	row, err := a.lineService.CommitImport(request)
+	if err == nil && row != nil {
+		a.audit(c, "line_import.commit", "line_source", row.ID, gin.H{"name": row.Name, "nodes": row.NodeCount})
+	}
+	commercialJSON(c, row, err)
+}
+
+func (a *CommercialAdminController) lineNodes(c *gin.Context) {
+	rows, err := a.lineService.Nodes(c.Query("sourceId"), c.Query("groupId"), c.Query("status"))
+	commercialJSON(c, rows, err)
+}
+
+func (a *CommercialAdminController) assignLineNodeGroups(c *gin.Context) {
+	var request entity.CommercialLineNodeGroupsRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		commercialJSON(c, nil, errors.New("请求格式无效"))
+		return
+	}
+	err := a.lineService.AssignNodeGroups(request)
+	if err == nil {
+		a.audit(c, "line_node.assign_groups", "line_node", "batch", gin.H{"nodes": request.NodeIDs, "groups": request.GroupIDs})
+	}
+	commercialJSON(c, gin.H{"updated": err == nil}, err)
+}
+
+func (a *CommercialAdminController) probeLineNode(c *gin.Context) {
+	err := a.lineService.QueueProbe(c.Param("id"))
+	if err == nil {
+		a.audit(c, "line_node.probe", "line_node", c.Param("id"), nil)
+	}
+	commercialJSON(c, gin.H{"queued": err == nil}, err)
+}
+
+func (a *CommercialAdminController) lineGroups(c *gin.Context) {
+	rows, err := a.lineService.Groups()
+	commercialJSON(c, rows, err)
+}
+
+func (a *CommercialAdminController) saveLineGroup(c *gin.Context) {
+	var request entity.CommercialLineGroupRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		commercialJSON(c, nil, errors.New("请求格式无效"))
+		return
+	}
+	row, err := a.lineService.SaveGroup(request)
+	if err == nil && row != nil {
+		a.audit(c, "line_group.save", "line_group", row.ID, gin.H{"name": row.Name, "active": row.Active})
+	}
+	commercialJSON(c, row, err)
+}
+
+func (a *CommercialAdminController) deleteLineGroup(c *gin.Context) {
+	err := a.lineService.DeleteGroup(c.Param("id"))
+	if err == nil {
+		a.audit(c, "line_group.delete", "line_group", c.Param("id"), nil)
+	}
+	commercialJSON(c, gin.H{"deleted": err == nil}, err)
+}
+
 func (a *CommercialAdminController) orders(c *gin.Context) {
 	data, err := a.service.Orders(c.Query("search"), c.Query("status"), queryInt(c, "page"), queryInt(c, "pageSize"))
 	commercialJSON(c, data, err)
@@ -278,6 +402,27 @@ func (a *CommercialAdminController) saveApplication(c *gin.Context) {
 	}
 	err := a.service.SaveApplication(&row)
 	a.audit(c, "application.save", "client_application", row.ID, nil)
+	commercialJSON(c, row, err)
+}
+
+func (a *CommercialAdminController) uploadApplicationPackage(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, commercial.MaxClientPackageSize+(1<<20))
+	header, err := c.FormFile("package")
+	if err != nil {
+		commercialJSON(c, nil, errors.New("请选择要上传的安装包"))
+		return
+	}
+	file, err := header.Open()
+	if err != nil {
+		commercialJSON(c, nil, errors.New("读取安装包失败"))
+		return
+	}
+	defer file.Close()
+
+	row, err := a.service.SaveApplicationPackage(c.Param("id"), file, header)
+	if err == nil {
+		a.audit(c, "application.package.upload", "client_application", c.Param("id"), gin.H{"fileName": row.PackageFileName, "size": row.PackageSize})
+	}
 	commercialJSON(c, row, err)
 }
 
@@ -587,8 +732,8 @@ func roleAllows(role, permission string) bool {
 	permissions := map[string]map[string]bool{
 		"finance":           {"customers.read": true, "plans.read": true, "orders.read": true, "orders.manage": true, "finance.read": true, "finance.manage": true, "marketing.read": true, "marketing.manage": true, "audit.read": true},
 		"support":           {"customers.read": true, "customers.manage": true, "plans.read": true, "orders.read": true, "content.read": true, "tickets.read": true, "tickets.manage": true},
-		"node_operator":     {"customers.read": true, "plans.read": true, "orders.read": true, "audit.read": true},
-		"read_only_auditor": {"customers.read": true, "plans.read": true, "orders.read": true, "content.read": true, "tickets.read": true, "marketing.read": true, "finance.read": true, "settings.read": true, "audit.read": true},
+		"node_operator":     {"customers.read": true, "plans.read": true, "orders.read": true, "lines.read": true, "lines.manage": true, "audit.read": true},
+		"read_only_auditor": {"customers.read": true, "plans.read": true, "orders.read": true, "lines.read": true, "content.read": true, "tickets.read": true, "marketing.read": true, "finance.read": true, "settings.read": true, "audit.read": true},
 	}
 	return permissions[role][permission]
 }

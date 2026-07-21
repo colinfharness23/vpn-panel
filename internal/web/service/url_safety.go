@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -59,6 +60,50 @@ func SanitizePublicHTTPURL(raw string, allowPrivate bool) (string, error) {
 		return "", err
 	}
 	return clean, nil
+}
+
+func NewPublicHTTPClient(timeout time.Duration) *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = dialPublicContext
+	return &http.Client{Timeout: timeout, Transport: transport}
+}
+
+func dialPublicContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	addresses := []net.IP{}
+	if parsed := net.ParseIP(host); parsed != nil {
+		addresses = append(addresses, parsed)
+	} else {
+		resolved, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range resolved {
+			addresses = append(addresses, item.IP)
+		}
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("host %s has no IP addresses", host)
+	}
+	for _, ip := range addresses {
+		if isBlockedIP(ip) {
+			return nil, fmt.Errorf("host %s resolves to blocked private/internal address %s", host, ip.String())
+		}
+	}
+	dialer := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+	var lastErr error
+	for _, ip := range addresses {
+		conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 func rejectPrivateHost(ctx context.Context, hostname string) error {

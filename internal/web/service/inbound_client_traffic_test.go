@@ -87,6 +87,41 @@ func TestAddClientTraffic_MatchesByEmail(t *testing.T) {
 	}
 }
 
+func TestAddClientTraffic_AppliesCommercialMultiplier(t *testing.T) {
+	dbDir := t.TempDir()
+	t.Setenv("XUI_DB_FOLDER", dbDir)
+	if err := database.InitDB(filepath.Join(dbDir, "x-ui.db")); err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	t.Cleanup(func() { _ = database.CloseDB() })
+
+	db := database.GetDB()
+	const email = "metered-user"
+	if err := db.Create(&model.ClientRecord{
+		Email:                     email,
+		Enable:                    true,
+		TrafficMultiplierPermille: 1500,
+	}).Error; err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	if err := db.Create(&xray.ClientTraffic{InboundId: 1, Email: email, Enable: true}).Error; err != nil {
+		t.Fatalf("create traffic row: %v", err)
+	}
+
+	svc := InboundService{}
+	if err := svc.addClientTraffic(db, []*xray.ClientTraffic{{Email: email, Up: 100, Down: 201}}); err != nil {
+		t.Fatalf("addClientTraffic: %v", err)
+	}
+
+	var row xray.ClientTraffic
+	if err := db.Where("email = ?", email).First(&row).Error; err != nil {
+		t.Fatalf("reload traffic row: %v", err)
+	}
+	if row.Up != 150 || row.Down != 302 {
+		t.Fatalf("billed traffic = %d/%d, want 150/302", row.Up, row.Down)
+	}
+}
+
 // TestAdjustTraffics_DelayedStartConvertsDespiteStaleInboundId covers "Start After
 // First Use": a delayed-start client carries a negative expiry (the duration) that
 // must convert to an absolute deadline on its first traffic tick. When the client's

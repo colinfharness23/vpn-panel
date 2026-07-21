@@ -85,6 +85,14 @@ func allModels() []any {
 		&model.Order{},
 		&model.PaymentTransaction{},
 		&model.SubscriptionEntitlement{},
+		&model.ResidentialRelay{},
+		&model.LineSource{},
+		&model.LineNode{},
+		&model.LineSourceNode{},
+		&model.LineGroup{},
+		&model.LineSourceGroup{},
+		&model.LineGroupNode{},
+		&model.PlanLineGroup{},
 		&model.ProvisioningJob{},
 		&model.OutboxEvent{},
 		&model.EmailTemplate{},
@@ -154,9 +162,38 @@ func initModels() error {
 	if err := migrateVmessRemovedSecurities(); err != nil {
 		return err
 	}
+	if err := migrateCommercialLineConstraints(); err != nil {
+		return err
+	}
 	if IsPostgres() {
 		if err := resyncPostgresSequences(db, models); err != nil {
 			log.Printf("Error resyncing postgres sequences: %v", err)
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateCommercialLineConstraints() error {
+	if !IsPostgres() {
+		return nil
+	}
+	statements := []string{
+		`CREATE INDEX IF NOT EXISTS idx_commercial_line_sources_due ON commercial_line_sources (status, next_refresh_at) WHERE enabled = true`,
+		`CREATE INDEX IF NOT EXISTS idx_commercial_line_nodes_pending ON commercial_line_nodes (status, next_provision_at) WHERE status IN ('checking', 'retry')`,
+		`CREATE INDEX IF NOT EXISTS idx_commercial_line_nodes_missing ON commercial_line_nodes (missing_since) WHERE missing_since IS NOT NULL`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_line_source_nodes'::regclass AND conname = 'fk_commercial_line_source_nodes_source') THEN ALTER TABLE commercial_line_source_nodes ADD CONSTRAINT fk_commercial_line_source_nodes_source FOREIGN KEY (source_id) REFERENCES commercial_line_sources(id) ON DELETE CASCADE; END IF; END $$`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_line_source_nodes'::regclass AND conname = 'fk_commercial_line_source_nodes_node') THEN ALTER TABLE commercial_line_source_nodes ADD CONSTRAINT fk_commercial_line_source_nodes_node FOREIGN KEY (node_id) REFERENCES commercial_line_nodes(id) ON DELETE CASCADE; END IF; END $$`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_line_source_groups'::regclass AND conname = 'fk_commercial_line_source_groups_source') THEN ALTER TABLE commercial_line_source_groups ADD CONSTRAINT fk_commercial_line_source_groups_source FOREIGN KEY (source_id) REFERENCES commercial_line_sources(id) ON DELETE CASCADE; END IF; END $$`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_line_source_groups'::regclass AND conname = 'fk_commercial_line_source_groups_group') THEN ALTER TABLE commercial_line_source_groups ADD CONSTRAINT fk_commercial_line_source_groups_group FOREIGN KEY (group_id) REFERENCES commercial_line_groups(id) ON DELETE CASCADE; END IF; END $$`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_line_group_nodes'::regclass AND conname = 'fk_commercial_line_group_nodes_group') THEN ALTER TABLE commercial_line_group_nodes ADD CONSTRAINT fk_commercial_line_group_nodes_group FOREIGN KEY (group_id) REFERENCES commercial_line_groups(id) ON DELETE CASCADE; END IF; END $$`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_line_group_nodes'::regclass AND conname = 'fk_commercial_line_group_nodes_node') THEN ALTER TABLE commercial_line_group_nodes ADD CONSTRAINT fk_commercial_line_group_nodes_node FOREIGN KEY (node_id) REFERENCES commercial_line_nodes(id) ON DELETE CASCADE; END IF; END $$`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_plan_line_groups'::regclass AND conname = 'fk_commercial_plan_line_groups_plan') THEN ALTER TABLE commercial_plan_line_groups ADD CONSTRAINT fk_commercial_plan_line_groups_plan FOREIGN KEY (plan_id) REFERENCES commercial_plans(id) ON DELETE CASCADE; END IF; END $$`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_plan_line_groups'::regclass AND conname = 'fk_commercial_plan_line_groups_group') THEN ALTER TABLE commercial_plan_line_groups ADD CONSTRAINT fk_commercial_plan_line_groups_group FOREIGN KEY (group_id) REFERENCES commercial_line_groups(id) ON DELETE CASCADE; END IF; END $$`,
+		`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'commercial_line_nodes'::regclass AND conname = 'fk_commercial_line_nodes_inbound') THEN ALTER TABLE commercial_line_nodes ADD CONSTRAINT fk_commercial_line_nodes_inbound FOREIGN KEY (inbound_id) REFERENCES inbounds(id) ON DELETE SET NULL; END IF; END $$`,
+	}
+	for _, statement := range statements {
+		if err := db.Exec(statement).Error; err != nil {
 			return err
 		}
 	}

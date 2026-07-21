@@ -36,6 +36,10 @@ type GuestBootstrap struct {
 	Applications   []model.ClientApplication `json:"applications"`
 }
 
+type GuestAuthConfig struct {
+	Site map[string]string `json:"site"`
+}
+
 type SubscriptionLinks struct {
 	Raw   string `json:"raw"`
 	Clash string `json:"clash"`
@@ -84,6 +88,16 @@ func NewPortalService() *PortalService {
 	return &PortalService{db: database.GetDB(), config: NewConfigStore()}
 }
 
+func (s *PortalService) AuthConfig() *GuestAuthConfig {
+	public := s.config.Public()
+	keys := []string{"siteName", "siteUrl", "forceHttps", "logoUrl", "termsUrl", "termsTitle", "termsContent", "termsVersion", "privacyUrl", "registrationClosed", "emailVerification", "emailSuffixWhitelist", "allowedEmailSuffixes", "turnstileSiteKey", "forcedInvitation"}
+	site := make(map[string]string, len(keys))
+	for _, key := range keys {
+		site[key] = public[key]
+	}
+	return &GuestAuthConfig{Site: site}
+}
+
 func (s *PortalService) Bootstrap(locale string) (*GuestBootstrap, error) {
 	plans, err := NewOrderService().Catalog(true)
 	if err != nil {
@@ -98,9 +112,10 @@ func (s *PortalService) Bootstrap(locale string) (*GuestBootstrap, error) {
 		return nil, err
 	}
 	var applications []model.ClientApplication
-	if err := s.db.Where("active = ?", true).Order("sort_order asc").Find(&applications).Error; err != nil {
+	if err := s.db.Where("active = ? AND package_stored_name <> ''", true).Order("sort_order asc").Find(&applications).Error; err != nil {
 		return nil, err
 	}
+	populateApplicationDownloads(applications)
 	return &GuestBootstrap{Site: s.config.Public(), Plans: plans, PaymentMethods: EnabledPaymentMethods(s.config), Notices: notices, Articles: articles, Applications: applications}, nil
 }
 
@@ -208,13 +223,30 @@ func (s *PortalService) RotateSubscription(customerID, requestOrigin string) (*S
 	return &links, nil
 }
 
-func (s *PortalService) CreateTicket(customerID, subject, body string) (*model.Ticket, error) {
+func (s *PortalService) CreateTicket(customerID, entitlementID, subject, body string) (*model.Ticket, error) {
 	subject = strings.TrimSpace(subject)
 	body = strings.TrimSpace(body)
 	if subject == "" || len(subject) > 200 || body == "" || len(body) > 10000 {
 		return nil, errors.New("请填写有效的工单主题和内容")
 	}
 	ticket := &model.Ticket{ID: uuid.NewString(), CustomerID: customerID, Subject: subject, Status: "open", Priority: "normal"}
+	entitlementID = strings.TrimSpace(entitlementID)
+	if entitlementID != "" {
+		var entitlement model.SubscriptionEntitlement
+		if err := s.db.Where("id = ? AND customer_id = ?", entitlementID, customerID).First(&entitlement).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, errors.New("所选套餐不属于当前账户")
+			}
+			return nil, err
+		}
+		var plan model.Plan
+		if err := s.db.Where("id = ?", entitlement.PlanID).First(&plan).Error; err != nil {
+			return nil, err
+		}
+		ticket.EntitlementID = entitlement.ID
+		ticket.PlanID = plan.ID
+		ticket.PlanName = plan.Name
+	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(ticket).Error; err != nil {
 			return err

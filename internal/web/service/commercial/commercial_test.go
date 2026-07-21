@@ -1008,6 +1008,50 @@ func TestFirstAdminCustomerCanUsePanelCredentials(t *testing.T) {
 	}
 }
 
+func TestCreateTicketSnapshotsOwnedPlan(t *testing.T) {
+	initCommercialTestDB(t)
+	db := database.GetDB()
+	var plan model.Plan
+	if err := db.Where("active = ?", true).First(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	owner := model.Customer{ID: uuid.NewString(), Email: "ticket-owner@gmail.com", PasswordHash: "hash", Status: "active", InviteCode: "TICKET01"}
+	other := model.Customer{ID: uuid.NewString(), Email: "ticket-other@gmail.com", PasswordHash: "hash", Status: "active", InviteCode: "TICKET02"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&other).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	entitlement := model.SubscriptionEntitlement{
+		ID: uuid.NewString(), CustomerID: owner.ID, PlanID: plan.ID, OrderID: uuid.NewString(),
+		InternalClientID: "ticket-" + uuid.NewString(), SubscriptionID: uuid.NewString(),
+		Status: "active", TrafficQuota: plan.TrafficBytes, StartsAt: now,
+	}
+	if err := db.Create(&entitlement).Error; err != nil {
+		t.Fatal(err)
+	}
+	portal := NewPortalService()
+	ticket, err := portal.CreateTicket(owner.ID, entitlement.ID, "Connection issue", "Please check this plan.")
+	if err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+	if ticket.EntitlementID != entitlement.ID || ticket.PlanID != plan.ID || ticket.PlanName != plan.Name {
+		t.Fatalf("ticket plan snapshot = %+v", ticket)
+	}
+	if _, err := portal.CreateTicket(other.ID, entitlement.ID, "Invalid plan", "Must be rejected."); err == nil {
+		t.Fatal("ticket accepted an entitlement owned by another customer")
+	}
+	withoutPlan, err := portal.CreateTicket(other.ID, "", "Account issue", "This issue is not related to a plan.")
+	if err != nil {
+		t.Fatalf("create ticket without plan: %v", err)
+	}
+	if withoutPlan.PlanID != "" || withoutPlan.PlanName != "" || withoutPlan.EntitlementID != "" {
+		t.Fatalf("ticket without plan contains a plan snapshot: %+v", withoutPlan)
+	}
+}
+
 func TestAdminCreateAndCompletelyDeleteCustomer(t *testing.T) {
 	initCommercialTestDB(t)
 	db := database.GetDB()
@@ -1226,13 +1270,113 @@ func TestSubscribedAudienceOnlyQueuesActiveEntitlements(t *testing.T) {
 	}
 }
 
+func TestDefaultPlanCatalogMatchesEditablePortalPlans(t *testing.T) {
+	initCommercialTestDB(t)
+	const gb = int64(1024 * 1024 * 1024)
+	expected := map[string]struct {
+		name        string
+		traffic     int64
+		devices     int
+		speed       int
+		liveBenefit string
+	}{
+		"starter":  {"全球畅游版", 150 * gb, 3, 200, "不推荐"},
+		"pro":      {"跨境增长版", 500 * gb, 8, 500, "1080P直播"},
+		"ultimate": {"直播旗舰版", 1500 * gb, 15, 1000, "4K及长时间直播"},
+	}
+	for slug, want := range expected {
+		var plan model.Plan
+		if err := database.GetDB().Where("slug = ?", slug).First(&plan).Error; err != nil {
+			t.Fatalf("load %s plan: %v", slug, err)
+		}
+		if plan.Name != want.name || plan.TrafficBytes != want.traffic || plan.DeviceLimit != want.devices {
+			t.Fatalf("%s catalog mismatch: name=%q traffic=%d devices=%d", slug, plan.Name, plan.TrafficBytes, plan.DeviceLimit)
+		}
+		if plan.UploadLimitMbps != want.speed || plan.DownloadLimitMbps != want.speed {
+			t.Fatalf("%s speed mismatch: upload=%d download=%d", slug, plan.UploadLimitMbps, plan.DownloadLimitMbps)
+		}
+		if plan.DisplayBenefits["liveStreaming"] != want.liveBenefit || plan.DisplayBenefits["globalCoverage"] == "" {
+			t.Fatalf("%s display benefits were not seeded: %+v", slug, plan.DisplayBenefits)
+		}
+	}
+	var editable model.Plan
+	if err := database.GetDB().Where("slug = ?", "pro").First(&editable).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := NewAdminService().SavePlan(entity.CommercialPlanRequest{
+		ID: editable.ID, Slug: editable.Slug, Name: editable.Name,
+		Description: editable.Description, TrafficBytes: editable.TrafficBytes,
+		DeviceLimit: editable.DeviceLimit, TrafficMultiplierPermille: editable.TrafficMultiplierPermille,
+		UploadLimitMbps: editable.UploadLimitMbps, DownloadLimitMbps: editable.DownloadLimitMbps,
+		ResidentialRelayEnabled: editable.ResidentialRelayEnabled, ResidentialRelayLimit: editable.ResidentialRelayLimit,
+		ResetCycle: editable.ResetCycle, NodeGroup: editable.NodeGroup, Capacity: editable.Capacity,
+		Visibility: editable.Visibility, Renewable: editable.Renewable, Upgradable: editable.Upgradable,
+		Active: false, SortOrder: editable.SortOrder,
+		DisplayBenefits: map[string]string{"liveStreaming": "自定义直播权益", "support": "自定义客服权益"},
+	})
+	if err != nil {
+		t.Fatalf("save editable plan benefits: %v", err)
+	}
+	if err := database.GetDB().First(&editable, "id = ?", editable.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if editable.DisplayBenefits["liveStreaming"] != "自定义直播权益" || editable.DisplayBenefits["support"] != "自定义客服权益" {
+		t.Fatalf("custom display benefits were not persisted: %+v", editable.DisplayBenefits)
+	}
+}
+
+func TestCommercialDraftBooleansSurviveCreateDefaults(t *testing.T) {
+	t.Setenv("XUI_COMMERCIAL_ENV", "test")
+	if err := database.InitDB(filepath.Join(t.TempDir(), "commercial-drafts.db")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := database.GetDB().DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	var activeDefaults int64
+	if err := database.GetDB().Model(&model.Plan{}).Where("slug IN ? AND active = ?", []string{"starter", "pro", "ultimate"}, true).Count(&activeDefaults).Error; err != nil {
+		t.Fatal(err)
+	}
+	if activeDefaults != 0 {
+		t.Fatalf("%d default plans were published without healthy lines", activeDefaults)
+	}
+	plan, err := NewAdminService().SavePlan(entity.CommercialPlanRequest{Slug: "draft-check", Name: "Draft Check", TrafficBytes: 1, DeviceLimit: 1, TrafficMultiplierPermille: 1000, ResetCycle: "monthly", Visibility: "hidden", Active: false, Renewable: false, Upgradable: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Active || plan.Renewable || plan.Upgradable {
+		t.Fatalf("draft plan booleans changed during create: %+v", plan)
+	}
+	price, err := NewAdminService().SavePlanPrice(entity.CommercialPlanPriceRequest{PlanID: plan.ID, BillingPeriod: "monthly", Months: 1, AmountFen: 100, Active: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if price.Active {
+		t.Fatal("inactive draft price was published during create")
+	}
+	application := model.ClientApplication{Slug: "draft-client", Name: "Draft Client", Platform: "test", Active: false}
+	if err := NewAdminService().SaveApplication(&application); err != nil {
+		t.Fatal(err)
+	}
+	if application.Active {
+		t.Fatal("inactive client application was published during create")
+	}
+}
+
 func initCommercialTestDB(t *testing.T) {
 	t.Helper()
 	t.Setenv("XUI_COMMERCIAL_ENV", "test")
 	if err := database.InitDB(filepath.Join(t.TempDir(), "commercial-test.db")); err != nil {
 		t.Fatalf("InitDB: %v", err)
 	}
-	if err := database.GetDB().Model(&model.Plan{}).Where("active = ?", false).Update("active", true).Error; err != nil {
+	inbound := model.Inbound{Remark: "commercial-test-line", Enable: true, Port: 24443, Protocol: model.VLESS, Settings: `{"clients":[],"decryption":"none"}`, StreamSettings: `{}`, Tag: "commercial-test-line"}
+	if err := database.GetDB().Create(&inbound).Error; err != nil {
+		t.Fatalf("create test inbound: %v", err)
+	}
+	binding, _ := json.Marshal([]int{inbound.Id})
+	if err := database.GetDB().Model(&model.Plan{}).Where("1 = 1").Updates(map[string]any{"active": true, "provision_inbound_ids": string(binding)}).Error; err != nil {
 		t.Fatalf("activate test plans: %v", err)
 	}
 	t.Cleanup(func() {

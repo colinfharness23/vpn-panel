@@ -57,6 +57,11 @@ func (j *CheckClientIpJob) Run() {
 		logger.Debug("[LimitIP] online-stats API unavailable this run; skipping")
 		return
 	}
+	bandwidthCtx, cancelBandwidth := context.WithTimeout(context.Background(), 8*time.Second)
+	if err := (&service.ClientBandwidthService{}).Reconcile(bandwidthCtx, observed); err != nil {
+		logger.Warning("[Bandwidth] reconcile failed: ", err)
+	}
+	cancelBandwidth()
 
 	if !isFail2BanEnabled() {
 		return

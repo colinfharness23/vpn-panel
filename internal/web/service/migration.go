@@ -357,10 +357,19 @@ func (m *MigrationManager) run(id string, req ServerMigrationRequest) {
 	m.update(id, 90, "验证目标服务", "正在检查目标端前台、后台和服务进程。", nil)
 	healthCommand := `. /etc/nova/deploy.env
 systemctl is-active --quiet x-ui
-curl -fsS --max-time 8 "http://127.0.0.1:${NOVA_PANEL_PORT}/portal/" >/dev/null
-curl -fsS --max-time 8 "http://127.0.0.1:${NOVA_PANEL_PORT}/${NOVA_ADMIN_PATH}/" >/dev/null
-status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "http://127.0.0.1:${NOVA_PANEL_PORT}/panel/")"
-[ "$status" = 404 ]
+curl -fsS --max-time 8 -H "Host: ${NOVA_DOMAIN}" "http://127.0.0.1:${NOVA_PANEL_PORT}/" >/dev/null
+curl -fsS --max-time 8 -H "Host: ${NOVA_DOMAIN}" "http://127.0.0.1:${NOVA_PANEL_PORT}/${NOVA_ADMIN_PATH}/" >/dev/null
+curl -fsS --max-time 8 -H "Host: ${NOVA_DOMAIN}" "http://127.0.0.1:${NOVA_PANEL_PORT}/api/v1/guest/auth-config" | jq -e '.success == true' >/dev/null
+user_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -H "Host: ${NOVA_DOMAIN}" "http://127.0.0.1:${NOVA_PANEL_PORT}/api/v1/user/bootstrap")"
+portal_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -H "Host: ${NOVA_DOMAIN}" "http://127.0.0.1:${NOVA_PANEL_PORT}/portal/")"
+panel_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -H "Host: ${NOVA_DOMAIN}" "http://127.0.0.1:${NOVA_PANEL_PORT}/panel/")"
+subscription_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 -H "Host: ${NOVA_DOMAIN}" "http://127.0.0.1:${NOVA_SUB_PORT}${NOVA_SUB_PATH}health-probe")"
+[ "$user_status" = 401 ]
+[ "$portal_status" = 308 ]
+[ "$panel_status" = 404 ]
+[ "$subscription_status" != 000 ] && [ "$subscription_status" -lt 500 ]
+PGPASSWORD="${NOVA_DB_PASSWORD}" psql --host 127.0.0.1 --username "${NOVA_DB_USER}" --dbname "${NOVA_DB_NAME}" -tAc 'SELECT 1' | grep -qx 1
+! find /etc/x-ui /var/lib/x-ui -maxdepth 1 -type f -name '*.db' -print -quit 2>/dev/null | grep -q .
 pgrep -u nova -f '/usr/local/x-ui/bin/xray-linux-' >/dev/null`
 	if _, err := runMigrationRootCommand(ctx, client, req, healthCommand, 60*time.Second); err != nil {
 		fail(fmt.Errorf("目标服务健康检查失败：%w", err))
@@ -627,7 +636,7 @@ func migrationInstallCommand(cfg migrationDeployConfig, remoteScript string) str
 	values := map[string]string{
 		"NOVA_GITHUB_REPO": cfg.Repository, "NOVA_RELEASE_TAG": cfg.ReleaseTag, "NOVA_DOMAIN": cfg.Domain,
 		"NOVA_ACME_EMAIL": cfg.ACMEEmail, "NOVA_ADMIN_PATH": cfg.AdminPath, "NOVA_ADMIN_USERNAME": cfg.AdminUsername,
-		"NOVA_ADMIN_PASSWORD": cfg.BootstrapAdminPassword, "NOVA_PANEL_PORT": cfg.PanelPort, "NOVA_WEB_BASE_PATH": cfg.WebBasePath,
+		"NOVA_ADMIN_PASSWORD": cfg.BootstrapAdminPassword, "NOVA_WEB_BASE_PATH": cfg.WebBasePath,
 		"NOVA_DB_NAME": cfg.DBName, "NOVA_DB_USER": cfg.DBUser,
 	}
 	keys := make([]string, 0, len(values))
@@ -644,12 +653,24 @@ func migrationInstallCommand(cfg migrationDeployConfig, remoteScript string) str
 }
 
 func migrationRestoreCommand(backupPath string, postgresSource bool) string {
+	restoreTargetSettings := `PGPASSWORD="${NOVA_DB_PASSWORD}" psql --host 127.0.0.1 --username "${NOVA_DB_USER}" --dbname "${NOVA_DB_NAME}" -v ON_ERROR_STOP=1 <<SQL
+BEGIN;
+DELETE FROM settings WHERE key IN ('subEnable','subJsonEnable','subClashEnable','subListen','subPort','subPath','subJsonPath','subClashPath','subDomain','subURI','subJsonURI','subClashURI');
+INSERT INTO settings (key,value) VALUES
+('subEnable','true'),('subJsonEnable','true'),('subClashEnable','true'),
+('subListen','127.0.0.1'),('subPort','${NOVA_SUB_PORT}'),
+('subPath','${NOVA_SUB_PATH}'),('subJsonPath','${NOVA_SUB_JSON_PATH}'),('subClashPath','${NOVA_SUB_CLASH_PATH}'),
+('subDomain','${NOVA_DOMAIN}'),('subURI','https://${NOVA_DOMAIN}'),('subJsonURI','https://${NOVA_DOMAIN}'),('subClashURI','https://${NOVA_DOMAIN}');
+INSERT INTO commercial_settings (key,value,encrypted,updated_at) VALUES ('site.url','https://${NOVA_DOMAIN}',false,NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, encrypted=false, updated_at=NOW();
+COMMIT;
+SQL`
 	if postgresSource {
 		return `. /etc/nova/deploy.env
 systemctl stop x-ui
 restore_ok=0
 trap 'if [ "${restore_ok}" -eq 0 ]; then systemctl start x-ui || true; fi' EXIT
 PGPASSWORD="${NOVA_DB_PASSWORD}" pg_restore --host 127.0.0.1 --username "${NOVA_DB_USER}" --dbname "${NOVA_DB_NAME}" --clean --if-exists --no-owner --no-privileges --single-transaction ` + shellQuote(backupPath) + `
+` + restoreTargetSettings + `
 restore_ok=1
 systemctl start x-ui
 trap - EXIT`
@@ -660,6 +681,7 @@ restore_ok=0
 trap 'if [ "${restore_ok}" -eq 0 ]; then systemctl start x-ui || true; fi' EXIT
 dsn="postgres://${NOVA_DB_USER}:${NOVA_DB_PASSWORD}@127.0.0.1:5432/${NOVA_DB_NAME}?sslmode=disable"
 /usr/local/x-ui/x-ui migrate-db --src ` + shellQuote(backupPath) + ` --dsn "${dsn}"
+` + restoreTargetSettings + `
 restore_ok=1
 systemctl start x-ui
 trap - EXIT`
@@ -679,7 +701,7 @@ func migrationResultURLs(cfg migrationDeployConfig, targetHost string) (string, 
 	if base == "/" {
 		base = ""
 	}
-	return scheme + "://" + host + base + "/portal/", scheme + "://" + host + base + "/" + cfg.AdminPath + "/"
+	return scheme + "://" + host + base + "/", scheme + "://" + host + base + "/" + cfg.AdminPath + "/"
 }
 
 func generateMigrationBootstrapPassword() (string, error) {

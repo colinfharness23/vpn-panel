@@ -212,6 +212,13 @@ func (s *XrayMetricsService) applyObservatory(t time.Time, entries map[string]ra
 		}
 		next[tag] = snap
 		xrayMetrics.append(obsHistoryKey(tag), t, float64(e.Delay))
+		if eventBus != nil {
+			errorMessage := ""
+			if !e.Alive {
+				errorMessage = "probe failed"
+			}
+			eventBus.Publish(eventbus.Event{Type: eventbus.EventOutboundSample, Source: tag, Data: &eventbus.OutboundHealthData{Delay: e.Delay, Error: errorMessage, Alive: e.Alive, LastTryTime: e.LastTryTime}})
+		}
 	}
 
 	s.mu.Lock()

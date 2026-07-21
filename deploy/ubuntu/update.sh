@@ -22,7 +22,7 @@ restore_previous() {
     chown -R nova:nova /usr/local/x-ui
     sed -i "s|^NOVA_RELEASE_TAG=.*$|NOVA_RELEASE_TAG=$NOVA_RELEASE_TAG|" /etc/nova/deploy.env
     systemctl restart x-ui
-    curl -fsS --max-time 10 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/portal/" >/dev/null ||
+    curl -fsS --max-time 10 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/" >/dev/null ||
       journalctl -u x-ui -n 80 --no-pager >&2
   fi
   exit "$failed_status"
@@ -48,7 +48,10 @@ asset="x-ui-linux-$arch.tar.gz"
 asset_url="https://github.com/$NOVA_GITHUB_REPO/releases/download/$requested_tag/$asset"
 curl -fL --retry 5 --retry-delay 3 --max-time 600 -o "$tmp_dir/$asset" "$asset_url"
 curl -fL --retry 5 --retry-delay 3 --max-time 60 -o "$tmp_dir/$asset.sha256" "$asset_url.sha256"
-(cd "$tmp_dir" && sha256sum --check "$asset.sha256")
+expected_sha="$(awk -v name="$asset" '$2 == name || $2 == "*"name {print $1; exit}' "$tmp_dir/$asset.sha256")"
+[[ $expected_sha =~ ^[a-fA-F0-9]{64}$ ]] || { echo "Release SHA-256 文件格式无效。" >&2; exit 1; }
+actual_sha="$(sha256sum "$tmp_dir/$asset" | awk '{print $1}')"
+[[ ${actual_sha,,} == ${expected_sha,,} ]] || { echo "Release SHA-256 校验失败。" >&2; exit 1; }
 tar -tzf "$tmp_dir/$asset" | grep -Eq '(^/|(^|/)\.\.(/|$))' && { echo "安装包包含不安全路径。" >&2; exit 1; }
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 [[ -x $tmp_dir/x-ui/x-ui && -f $tmp_dir/x-ui/bin/config.json && -x $tmp_dir/x-ui/bin/xray-linux-$arch ]] ||
@@ -73,9 +76,14 @@ systemctl restart x-ui
 
 healthy=0
 for _ in $(seq 1 40); do
-  if curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/portal/" >/dev/null &&
+  user_bootstrap_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/user/bootstrap" || true)"
+  portal_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/portal/" || true)"
+  subscription_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_SUB_PORT${NOVA_SUB_PATH}health-probe" || true)"
+  if curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/" >/dev/null &&
      curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/$NOVA_ADMIN_PATH/" >/dev/null &&
-     curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/guest/bootstrap" | jq -e '.success == true' >/dev/null &&
+     curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/guest/auth-config" | jq -e '.success == true' >/dev/null &&
+     [[ $user_bootstrap_status == 401 && $portal_status == 308 && $subscription_status != 000 && $subscription_status -lt 500 ]] &&
+     PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -tAc 'SELECT 1' | grep -qx 1 &&
      pgrep -u nova -f "/usr/local/x-ui/bin/xray-linux-$arch" >/dev/null; then
     healthy=1
     break
@@ -89,6 +97,10 @@ fi
 
 status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/panel/")"
 [[ $status == 404 ]]
+if find /etc/x-ui /var/lib/x-ui -maxdepth 1 -type f -name '*.db' -print -quit 2>/dev/null | grep -q .; then
+  echo "更新后检测到 SQLite 文件。" >&2
+  false
+fi
 
 sed -i "s|^NOVA_RELEASE_TAG=.*$|NOVA_RELEASE_TAG=$requested_tag|" /etc/nova/deploy.env
 for script in update rollback backup rotate-admin-path; do

@@ -133,6 +133,21 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		return err
 	}
 
+	multiplierByEmail := make(map[string]int, len(emails))
+	var billingRows []struct {
+		Email                     string
+		TrafficMultiplierPermille int
+	}
+	if err = tx.Model(&model.ClientRecord{}).
+		Select("email, traffic_multiplier_permille").
+		Where("email IN ?", emails).
+		Find(&billingRows).Error; err != nil {
+		return err
+	}
+	for _, row := range billingRows {
+		multiplierByEmail[row.Email] = model.NormalizeTrafficMultiplierPermille(row.TrafficMultiplierPermille)
+	}
+
 	// Index by email for O(N) merge.
 	trafficByEmail := make(map[string]*xray.ClientTraffic, len(traffics))
 	for i := range traffics {
@@ -151,6 +166,8 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		if !ok || (t.Up == 0 && t.Down == 0) {
 			continue
 		}
+		billedUp := model.ApplyTrafficMultiplier(t.Up, multiplierByEmail[ct.Email])
+		billedDown := model.ApplyTrafficMultiplier(t.Down, multiplierByEmail[ct.Email])
 		if err = tx.Exec(
 			fmt.Sprintf(
 				`UPDATE client_traffics SET up = %s, down = %s, last_online = %s WHERE email = ?`,
@@ -158,7 +175,7 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 				database.ClampedAddExpr("down"),
 				database.GreatestExpr("last_online", "?"),
 			),
-			t.Up, t.Down, now, ct.Email,
+			billedUp, billedDown, now, ct.Email,
 		).Error; err != nil {
 			logger.Warning("AddClientTraffic update data ", err)
 		}

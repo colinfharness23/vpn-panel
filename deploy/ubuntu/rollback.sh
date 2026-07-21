@@ -20,7 +20,7 @@ recover_current() {
     chown -R nova:nova /usr/local/x-ui
     sed -i "s|^NOVA_RELEASE_TAG=.*$|NOVA_RELEASE_TAG=$NOVA_RELEASE_TAG|" /etc/nova/deploy.env
     systemctl restart x-ui
-    curl -fsS --max-time 10 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/portal/" >/dev/null ||
+    curl -fsS --max-time 10 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/" >/dev/null ||
       journalctl -u x-ui -n 80 --no-pager >&2
   fi
   exit "$failed_status"
@@ -48,9 +48,14 @@ chown -R nova:nova /usr/local/x-ui
 systemctl restart x-ui
 
 for _ in $(seq 1 40); do
-  if curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/portal/" >/dev/null &&
+  user_bootstrap_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/user/bootstrap" || true)"
+  portal_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/portal/" || true)"
+  subscription_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_SUB_PORT${NOVA_SUB_PATH}health-probe" || true)"
+  if curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/" >/dev/null &&
      curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/$NOVA_ADMIN_PATH/" >/dev/null &&
-     curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/guest/bootstrap" | jq -e '.success == true' >/dev/null &&
+     curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/guest/auth-config" | jq -e '.success == true' >/dev/null &&
+     [[ $user_bootstrap_status == 401 && $portal_status == 308 && $subscription_status != 000 && $subscription_status -lt 500 ]] &&
+     PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -tAc 'SELECT 1' | grep -qx 1 &&
      pgrep -u nova -f '/usr/local/x-ui/bin/xray-linux-' >/dev/null; then
     if [[ -f $backup.tag ]]; then
       rollback_tag="$(tr -d '\r\n' <"$backup.tag")"
@@ -59,6 +64,10 @@ for _ in $(seq 1 40); do
     fi
     status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/panel/")"
     [[ $status == 404 ]]
+    if find /etc/x-ui /var/lib/x-ui -maxdepth 1 -type f -name '*.db' -print -quit 2>/dev/null | grep -q .; then
+      echo "回滚后检测到 SQLite 文件。" >&2
+      false
+    fi
     recovery_armed=0
     echo "回滚完成：$backup"
     exit 0

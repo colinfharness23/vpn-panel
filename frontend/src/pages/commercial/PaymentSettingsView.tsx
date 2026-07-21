@@ -133,7 +133,7 @@ export default function PaymentSettingsView({ settings, onSave }: PaymentSetting
             <Col xs={24} md={12}><Form.Item name="epayMerchantKey" label={<Space>商户密钥{configuredTag(epayKeyConfigured)}</Space>} rules={epayEnabled && !epayKeyConfigured ? [{ required: true }] : []}><Input.Password placeholder={epayKeyConfigured ? '留空表示不修改' : '请输入 Epay 商户密钥'} /></Form.Item></Col>
             <Col xs={24} md={12}><Form.Item name="epayPaymentType" label="支付通道" rules={epayEnabled ? [{ required: true }] : []}><Select options={epayTypeOptions} /></Form.Item></Col>
             <Col xs={24} md={12}><Form.Item name="epayNotifyUrl" label="异步通知地址" rules={epayEnabled ? [{ required: true }, { type: 'url' }] : [{ type: 'url', warningOnly: true }]}><Input placeholder="https://你的域名/api/v1/guest/payments/epay/notify" /></Form.Item></Col>
-            <Col xs={24} md={12}><Form.Item name="epayReturnUrl" label="支付后跳转地址" rules={epayEnabled ? [{ required: true }, { type: 'url' }] : [{ type: 'url', warningOnly: true }]}><Input placeholder="https://你的域名/portal/" /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="epayReturnUrl" label="支付后跳转地址" rules={epayEnabled ? [{ required: true }, { type: 'url' }] : [{ type: 'url', warningOnly: true }]}><Input placeholder="https://你的域名/" /></Form.Item></Col>
           </Row>
         </>}
 
@@ -157,7 +157,7 @@ export default function PaymentSettingsView({ settings, onSave }: PaymentSetting
             <Col xs={24} md={12}><Form.Item name="codepayKey" label={<Space>通信密钥{configuredTag(codepayKeyConfigured)}</Space>} rules={codepayEnabled && !codepayKeyConfigured ? [{ required: true }] : []}><Input.Password placeholder={codepayKeyConfigured ? '留空表示不修改' : '请输入码支付通信密钥'} /></Form.Item></Col>
             <Col xs={24} md={12}><Form.Item name="codepayPaymentType" label="支付通道" rules={codepayEnabled ? [{ required: true }] : []}><Select options={codepayTypeOptions} /></Form.Item></Col>
             <Col xs={24} md={12}><Form.Item name="codepayNotifyUrl" label="异步通知地址" rules={codepayEnabled ? [{ required: true }, { type: 'url' }] : [{ type: 'url', warningOnly: true }]}><Input placeholder="https://你的域名/api/v1/guest/payments/codepay/notify" /></Form.Item></Col>
-            <Col xs={24} md={12}><Form.Item name="codepayReturnUrl" label="支付后跳转地址" rules={codepayEnabled ? [{ required: true }, { type: 'url' }] : [{ type: 'url', warningOnly: true }]}><Input placeholder="https://你的域名/portal/" /></Form.Item></Col>
+            <Col xs={24} md={12}><Form.Item name="codepayReturnUrl" label="支付后跳转地址" rules={codepayEnabled ? [{ required: true }, { type: 'url' }] : [{ type: 'url', warningOnly: true }]}><Input placeholder="https://你的域名/" /></Form.Item></Col>
           </Row>
         </>}
       </Card>

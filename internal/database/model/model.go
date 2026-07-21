@@ -34,7 +34,6 @@ const (
 	MTProto     Protocol = "mtproto"
 )
 
-// User represents a user account in the 3x-ui panel.
 type User struct {
 	Id         int    `json:"id" gorm:"primaryKey;autoIncrement"`
 	Username   string `json:"username"`
@@ -687,17 +686,12 @@ func HealMtprotoClientSecrets(settings string) (string, bool) {
 	return string(out), true
 }
 
-// Setting stores key-value configuration settings for the 3x-ui panel.
 type Setting struct {
 	Id    int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	Key   string `json:"key" form:"key" gorm:"index:idx_settings_key"`
 	Value string `json:"value" form:"value"`
 }
 
-// Node represents a remote 3x-ui panel registered with the central panel.
-// The central panel polls each node's existing /panel/api/server/status
-// endpoint over HTTP using the per-node ApiToken to populate the runtime
-// status fields below.
 type Node struct {
 	Id                  int      `json:"id" form:"id" gorm:"primaryKey;autoIncrement" example:"1"`
 	Name                string   `json:"name" form:"name" gorm:"uniqueIndex" validate:"required" example:"de-fra-1"`
@@ -796,63 +790,97 @@ type ClientReverse struct {
 
 // Client represents a client configuration for Xray inbounds with traffic limits and settings.
 type Client struct {
-	ID           string         `json:"id,omitempty"`       // Unique client identifier
-	Security     string         `json:"security"`           // Security method (e.g., "auto", "aes-128-gcm")
-	Password     string         `json:"password,omitempty"` // Client password
-	Flow         string         `json:"flow,omitempty"`     // Flow control (XTLS)
-	Reverse      *ClientReverse `json:"reverse,omitempty"`  // VLESS simple reverse proxy settings
-	Auth         string         `json:"auth,omitempty"`     // Auth password (Hysteria)
-	PrivateKey   string         `json:"privateKey,omitempty"`
-	PublicKey    string         `json:"publicKey,omitempty"`
-	AllowedIPs   []string       `json:"allowedIPs,omitempty"`
-	PreSharedKey string         `json:"preSharedKey,omitempty"`
-	KeepAlive    int            `json:"keepAlive,omitempty"`
-	Secret       string         `json:"secret,omitempty" example:"ee1234567890abcdef1234567890abcd7777772e636c6f7564666c6172652e636f6d"`
-	AdTag        string         `json:"adTag,omitempty" example:"0123456789abcdef0123456789abcdef"`
-	Email        string         `json:"email"`                        // Client email identifier
-	LimitIP      int            `json:"limitIp"`                      // IP limit for this client
-	TotalGB      int64          `json:"totalGB" form:"totalGB"`       // Total traffic limit in GB
-	ExpiryTime   int64          `json:"expiryTime" form:"expiryTime"` // Expiration timestamp
-	Enable       bool           `json:"enable" form:"enable"`         // Whether the client is enabled
-	TgID         int64          `json:"tgId" form:"tgId"`             // Telegram user ID for notifications
-	SubID        string         `json:"subId" form:"subId"`           // Subscription identifier
-	Group        string         `json:"group,omitempty" form:"group"` // Logical grouping label
-	Comment      string         `json:"comment" form:"comment"`       // Client comment
-	Reset        int            `json:"reset" form:"reset"`           // Reset period in days
-	CreatedAt    int64          `json:"created_at,omitempty"`         // Creation timestamp
-	UpdatedAt    int64          `json:"updated_at,omitempty"`         // Last update timestamp
+	ID                        string         `json:"id,omitempty"`       // Unique client identifier
+	Security                  string         `json:"security"`           // Security method (e.g., "auto", "aes-128-gcm")
+	Password                  string         `json:"password,omitempty"` // Client password
+	Flow                      string         `json:"flow,omitempty"`     // Flow control (XTLS)
+	Reverse                   *ClientReverse `json:"reverse,omitempty"`  // VLESS simple reverse proxy settings
+	Auth                      string         `json:"auth,omitempty"`     // Auth password (Hysteria)
+	PrivateKey                string         `json:"privateKey,omitempty"`
+	PublicKey                 string         `json:"publicKey,omitempty"`
+	AllowedIPs                []string       `json:"allowedIPs,omitempty"`
+	PreSharedKey              string         `json:"preSharedKey,omitempty"`
+	KeepAlive                 int            `json:"keepAlive,omitempty"`
+	Secret                    string         `json:"secret,omitempty" example:"ee1234567890abcdef1234567890abcd7777772e636c6f7564666c6172652e636f6d"`
+	AdTag                     string         `json:"adTag,omitempty" example:"0123456789abcdef0123456789abcdef"`
+	Email                     string         `json:"email"`                                                                // Client email identifier
+	LimitIP                   int            `json:"limitIp"`                                                              // IP limit for this client
+	TotalGB                   int64          `json:"totalGB" form:"totalGB"`                                               // Total traffic limit in GB
+	TrafficMultiplierPermille int            `json:"trafficMultiplierPermille,omitempty" form:"trafficMultiplierPermille"` // 1000 = 1x billed traffic
+	UploadLimitMbps           int            `json:"uploadLimitMbps,omitempty" form:"uploadLimitMbps"`                     // 0 = unlimited
+	DownloadLimitMbps         int            `json:"downloadLimitMbps,omitempty" form:"downloadLimitMbps"`                 // 0 = unlimited
+	ExpiryTime                int64          `json:"expiryTime" form:"expiryTime"`                                         // Expiration timestamp
+	Enable                    bool           `json:"enable" form:"enable"`                                                 // Whether the client is enabled
+	TgID                      int64          `json:"tgId" form:"tgId"`                                                     // Telegram user ID for notifications
+	SubID                     string         `json:"subId" form:"subId"`                                                   // Subscription identifier
+	Group                     string         `json:"group,omitempty" form:"group"`                                         // Logical grouping label
+	Comment                   string         `json:"comment" form:"comment"`                                               // Client comment
+	Reset                     int            `json:"reset" form:"reset"`                                                   // Reset period in days
+	CreatedAt                 int64          `json:"created_at,omitempty"`                                                 // Creation timestamp
+	UpdatedAt                 int64          `json:"updated_at,omitempty"`                                                 // Last update timestamp
 }
 
 type ClientRecord struct {
-	Id           int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	Email        string `json:"email" gorm:"uniqueIndex;not null"`
-	SubID        string `json:"subId" gorm:"index;column:sub_id"`
-	UUID         string `json:"uuid" gorm:"column:uuid"`
-	Password     string `json:"password"`
-	Auth         string `json:"auth"`
-	Flow         string `json:"flow"`
-	Security     string `json:"security"`
-	Reverse      string `json:"reverse" gorm:"column:reverse"`
-	PrivateKey   string `json:"privateKey" gorm:"column:wg_private_key"`
-	PublicKey    string `json:"publicKey" gorm:"column:wg_public_key"`
-	AllowedIPs   string `json:"allowedIPs" gorm:"column:wg_allowed_ips"`
-	PreSharedKey string `json:"preSharedKey" gorm:"column:wg_pre_shared_key"`
-	KeepAlive    int    `json:"keepAlive" gorm:"column:wg_keep_alive;default:0"`
-	Secret       string `json:"secret" gorm:"column:secret"`
-	AdTag        string `json:"adTag" gorm:"column:ad_tag;default:''"`
-	LimitIP      int    `json:"limitIp" gorm:"column:limit_ip"`
-	TotalGB      int64  `json:"totalGB" gorm:"column:total_gb"`
-	ExpiryTime   int64  `json:"expiryTime" gorm:"column:expiry_time"`
-	Enable       bool   `json:"enable" gorm:"default:true"`
-	TgID         int64  `json:"tgId" gorm:"column:tg_id"`
-	Group        string `json:"group" gorm:"column:group_name;default:'';index:idx_client_record_group"`
-	Comment      string `json:"comment"`
-	Reset        int    `json:"reset" gorm:"default:0"`
-	CreatedAt    int64  `json:"createdAt" gorm:"autoCreateTime:milli"`
-	UpdatedAt    int64  `json:"updatedAt" gorm:"autoUpdateTime:milli"`
+	Id                        int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	Email                     string `json:"email" gorm:"uniqueIndex;not null"`
+	SubID                     string `json:"subId" gorm:"index;column:sub_id"`
+	UUID                      string `json:"uuid" gorm:"column:uuid"`
+	Password                  string `json:"password"`
+	Auth                      string `json:"auth"`
+	Flow                      string `json:"flow"`
+	Security                  string `json:"security"`
+	Reverse                   string `json:"reverse" gorm:"column:reverse"`
+	PrivateKey                string `json:"privateKey" gorm:"column:wg_private_key"`
+	PublicKey                 string `json:"publicKey" gorm:"column:wg_public_key"`
+	AllowedIPs                string `json:"allowedIPs" gorm:"column:wg_allowed_ips"`
+	PreSharedKey              string `json:"preSharedKey" gorm:"column:wg_pre_shared_key"`
+	KeepAlive                 int    `json:"keepAlive" gorm:"column:wg_keep_alive;default:0"`
+	Secret                    string `json:"secret" gorm:"column:secret"`
+	AdTag                     string `json:"adTag" gorm:"column:ad_tag;default:''"`
+	LimitIP                   int    `json:"limitIp" gorm:"column:limit_ip"`
+	TotalGB                   int64  `json:"totalGB" gorm:"column:total_gb"`
+	TrafficMultiplierPermille int    `json:"trafficMultiplierPermille" gorm:"column:traffic_multiplier_permille;default:1000"`
+	UploadLimitMbps           int    `json:"uploadLimitMbps" gorm:"column:upload_limit_mbps;default:0"`
+	DownloadLimitMbps         int    `json:"downloadLimitMbps" gorm:"column:download_limit_mbps;default:0"`
+	ExpiryTime                int64  `json:"expiryTime" gorm:"column:expiry_time"`
+	Enable                    bool   `json:"enable" gorm:"default:true"`
+	TgID                      int64  `json:"tgId" gorm:"column:tg_id"`
+	Group                     string `json:"group" gorm:"column:group_name;default:'';index:idx_client_record_group"`
+	Comment                   string `json:"comment"`
+	Reset                     int    `json:"reset" gorm:"default:0"`
+	CreatedAt                 int64  `json:"createdAt" gorm:"autoCreateTime:milli"`
+	UpdatedAt                 int64  `json:"updatedAt" gorm:"autoUpdateTime:milli"`
 }
 
 func (ClientRecord) TableName() string { return "clients" }
+
+const DefaultTrafficMultiplierPermille = 1000
+
+func NormalizeTrafficMultiplierPermille(value int) int {
+	if value <= 0 {
+		return DefaultTrafficMultiplierPermille
+	}
+	return value
+}
+
+func ApplyTrafficMultiplier(bytes int64, permille int) int64 {
+	if bytes <= 0 {
+		return 0
+	}
+	multiplier := int64(NormalizeTrafficMultiplierPermille(permille))
+	whole := bytes / 1000
+	remainder := bytes % 1000
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if whole > maxInt64/multiplier {
+		return maxInt64
+	}
+	result := whole * multiplier
+	fraction := (remainder*multiplier + 999) / 1000
+	if result > maxInt64-fraction {
+		return maxInt64
+	}
+	return result + fraction
+}
 
 type ClientGroup struct {
 	Id        int    `json:"id" gorm:"primaryKey;autoIncrement"`
@@ -997,23 +1025,26 @@ func (Host) TableName() string { return "hosts" }
 
 func (c *Client) ToRecord() *ClientRecord {
 	rec := &ClientRecord{
-		Email:      c.Email,
-		SubID:      c.SubID,
-		UUID:       c.ID,
-		Password:   c.Password,
-		Auth:       c.Auth,
-		Flow:       c.Flow,
-		Security:   c.Security,
-		LimitIP:    c.LimitIP,
-		TotalGB:    c.TotalGB,
-		ExpiryTime: c.ExpiryTime,
-		Enable:     c.Enable,
-		TgID:       c.TgID,
-		Group:      c.Group,
-		Comment:    c.Comment,
-		Reset:      c.Reset,
-		CreatedAt:  c.CreatedAt,
-		UpdatedAt:  c.UpdatedAt,
+		Email:                     c.Email,
+		SubID:                     c.SubID,
+		UUID:                      c.ID,
+		Password:                  c.Password,
+		Auth:                      c.Auth,
+		Flow:                      c.Flow,
+		Security:                  c.Security,
+		LimitIP:                   c.LimitIP,
+		TotalGB:                   c.TotalGB,
+		TrafficMultiplierPermille: c.TrafficMultiplierPermille,
+		UploadLimitMbps:           c.UploadLimitMbps,
+		DownloadLimitMbps:         c.DownloadLimitMbps,
+		ExpiryTime:                c.ExpiryTime,
+		Enable:                    c.Enable,
+		TgID:                      c.TgID,
+		Group:                     c.Group,
+		Comment:                   c.Comment,
+		Reset:                     c.Reset,
+		CreatedAt:                 c.CreatedAt,
+		UpdatedAt:                 c.UpdatedAt,
 
 		PrivateKey:   c.PrivateKey,
 		PublicKey:    c.PublicKey,
@@ -1050,23 +1081,26 @@ func splitWireguardAllowedIPs(csv string) []string {
 
 func (r *ClientRecord) ToClient() *Client {
 	c := &Client{
-		ID:         r.UUID,
-		Email:      r.Email,
-		SubID:      r.SubID,
-		Password:   r.Password,
-		Auth:       r.Auth,
-		Flow:       r.Flow,
-		Security:   r.Security,
-		LimitIP:    r.LimitIP,
-		TotalGB:    r.TotalGB,
-		ExpiryTime: r.ExpiryTime,
-		Enable:     r.Enable,
-		TgID:       r.TgID,
-		Group:      r.Group,
-		Comment:    r.Comment,
-		Reset:      r.Reset,
-		CreatedAt:  r.CreatedAt,
-		UpdatedAt:  r.UpdatedAt,
+		ID:                        r.UUID,
+		Email:                     r.Email,
+		SubID:                     r.SubID,
+		Password:                  r.Password,
+		Auth:                      r.Auth,
+		Flow:                      r.Flow,
+		Security:                  r.Security,
+		LimitIP:                   r.LimitIP,
+		TotalGB:                   r.TotalGB,
+		TrafficMultiplierPermille: r.TrafficMultiplierPermille,
+		UploadLimitMbps:           r.UploadLimitMbps,
+		DownloadLimitMbps:         r.DownloadLimitMbps,
+		ExpiryTime:                r.ExpiryTime,
+		Enable:                    r.Enable,
+		TgID:                      r.TgID,
+		Group:                     r.Group,
+		Comment:                   r.Comment,
+		Reset:                     r.Reset,
+		CreatedAt:                 r.CreatedAt,
+		UpdatedAt:                 r.UpdatedAt,
 
 		PrivateKey:   r.PrivateKey,
 		PublicKey:    r.PublicKey,
@@ -1189,6 +1223,20 @@ func MergeClientRecord(existing *ClientRecord, incoming *ClientRecord) []ClientM
 			keep("limitIp", existing.LimitIP, incoming.LimitIP, picked)
 			existing.LimitIP = picked
 		}
+	}
+	if existing.TrafficMultiplierPermille != incoming.TrafficMultiplierPermille && incoming.TrafficMultiplierPermille > 0 {
+		if incomingNewer || existing.TrafficMultiplierPermille <= 0 {
+			keep("trafficMultiplierPermille", existing.TrafficMultiplierPermille, incoming.TrafficMultiplierPermille, incoming.TrafficMultiplierPermille)
+			existing.TrafficMultiplierPermille = incoming.TrafficMultiplierPermille
+		}
+	}
+	if existing.UploadLimitMbps != incoming.UploadLimitMbps && incomingNewer {
+		keep("uploadLimitMbps", existing.UploadLimitMbps, incoming.UploadLimitMbps, incoming.UploadLimitMbps)
+		existing.UploadLimitMbps = incoming.UploadLimitMbps
+	}
+	if existing.DownloadLimitMbps != incoming.DownloadLimitMbps && incomingNewer {
+		keep("downloadLimitMbps", existing.DownloadLimitMbps, incoming.DownloadLimitMbps, incoming.DownloadLimitMbps)
+		existing.DownloadLimitMbps = incoming.DownloadLimitMbps
 	}
 	if existing.TgID != incoming.TgID && incoming.TgID != 0 {
 		if incomingNewer || existing.TgID == 0 {

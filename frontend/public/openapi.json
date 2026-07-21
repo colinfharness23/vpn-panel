@@ -194,6 +194,15 @@
           "deviceLimit": {
             "type": "integer"
           },
+          "displayBenefits": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "downloadLimitMbps": {
+            "type": "integer"
+          },
           "entitlement": {
             "$ref": "#/components/schemas/SubscriptionEntitlement"
           },
@@ -215,6 +224,12 @@
           "resetCycle": {
             "type": "string"
           },
+          "residentialRelayEnabled": {
+            "type": "boolean"
+          },
+          "residentialRelayLimit": {
+            "type": "integer"
+          },
           "slug": {
             "type": "string"
           },
@@ -225,12 +240,18 @@
             "format": "int64",
             "type": "integer"
           },
+          "trafficMultiplierPermille": {
+            "type": "integer"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
           },
           "upgradable": {
             "type": "boolean"
+          },
+          "uploadLimitMbps": {
+            "type": "integer"
           },
           "visibility": {
             "type": "string"
@@ -242,6 +263,8 @@
           "createdAt",
           "description",
           "deviceLimit",
+          "displayBenefits",
+          "downloadLimitMbps",
           "entitlement",
           "id",
           "name",
@@ -249,11 +272,15 @@
           "provisionInboundIds",
           "renewable",
           "resetCycle",
+          "residentialRelayEnabled",
+          "residentialRelayLimit",
           "slug",
           "sortOrder",
           "trafficBytes",
+          "trafficMultiplierPermille",
           "updatedAt",
           "upgradable",
+          "uploadLimitMbps",
           "visibility"
         ],
         "type": "object"
@@ -1213,6 +1240,10 @@
             "format": "int64",
             "type": "integer"
           },
+          "downloadLimitMbps": {
+            "description": "0 = unlimited",
+            "type": "integer"
+          },
           "email": {
             "description": "Client email identifier",
             "type": "string"
@@ -1293,9 +1324,17 @@
             "format": "int64",
             "type": "integer"
           },
+          "trafficMultiplierPermille": {
+            "description": "1000 = 1x billed traffic",
+            "type": "integer"
+          },
           "updated_at": {
             "description": "Last update timestamp",
             "format": "int64",
+            "type": "integer"
+          },
+          "uploadLimitMbps": {
+            "description": "0 = unlimited",
             "type": "integer"
           }
         },
@@ -1325,6 +1364,9 @@
           "description": {
             "type": "string"
           },
+          "downloadUrl": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -1333,6 +1375,19 @@
           },
           "officialUrl": {
             "type": "string"
+          },
+          "packageContentType": {
+            "type": "string"
+          },
+          "packageFileName": {
+            "type": "string"
+          },
+          "packageSha256": {
+            "type": "string"
+          },
+          "packageSize": {
+            "format": "int64",
+            "type": "integer"
           },
           "platform": {
             "type": "string"
@@ -1357,11 +1412,9 @@
           "description",
           "id",
           "name",
-          "officialUrl",
           "platform",
           "slug",
           "sortOrder",
-          "sourceUrl",
           "updatedAt"
         ],
         "type": "object"
@@ -1406,6 +1459,9 @@
           },
           "createdAt": {
             "format": "int64",
+            "type": "integer"
+          },
+          "downloadLimitMbps": {
             "type": "integer"
           },
           "email": {
@@ -1466,8 +1522,14 @@
             "format": "int64",
             "type": "integer"
           },
+          "trafficMultiplierPermille": {
+            "type": "integer"
+          },
           "updatedAt": {
             "format": "int64",
+            "type": "integer"
+          },
+          "uploadLimitMbps": {
             "type": "integer"
           },
           "uuid": {
@@ -1480,6 +1542,7 @@
           "auth",
           "comment",
           "createdAt",
+          "downloadLimitMbps",
           "email",
           "enable",
           "expiryTime",
@@ -1499,7 +1562,9 @@
           "subId",
           "tgId",
           "totalGB",
+          "trafficMultiplierPermille",
           "updatedAt",
+          "uploadLimitMbps",
           "uuid"
         ],
         "type": "object"
@@ -1882,8 +1947,25 @@
             "minimum": 0,
             "type": "integer"
           },
+          "displayBenefits": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "downloadLimitMbps": {
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
+          },
           "id": {
             "type": "string"
+          },
+          "lineGroupIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "name": {
             "maxLength": 120,
@@ -1913,6 +1995,14 @@
             "minLength": 1,
             "type": "string"
           },
+          "residentialRelayEnabled": {
+            "type": "boolean"
+          },
+          "residentialRelayLimit": {
+            "maximum": 20,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slug": {
             "maxLength": 80,
             "minLength": 1,
@@ -1926,8 +2016,18 @@
             "minimum": 0,
             "type": "integer"
           },
+          "trafficMultiplierPermille": {
+            "maximum": 100000,
+            "minimum": 100,
+            "type": "integer"
+          },
           "upgradable": {
             "type": "boolean"
+          },
+          "uploadLimitMbps": {
+            "maximum": 100000,
+            "minimum": 0,
+            "type": "integer"
           },
           "visibility": {
             "enum": [
@@ -1944,16 +2044,23 @@
           "capacity",
           "description",
           "deviceLimit",
+          "displayBenefits",
+          "downloadLimitMbps",
           "id",
+          "lineGroupIds",
           "name",
           "nodeGroup",
           "provisionInboundIds",
           "renewable",
           "resetCycle",
+          "residentialRelayEnabled",
+          "residentialRelayLimit",
           "slug",
           "sortOrder",
           "trafficBytes",
+          "trafficMultiplierPermille",
           "upgradable",
+          "uploadLimitMbps",
           "visibility"
         ],
         "type": "object"
@@ -2022,6 +2129,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "downloadLimitMbps": {
+            "maximum": 100000,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "expiresAt": {
             "type": "string"
           },
@@ -2032,9 +2145,21 @@
           "resetTraffic": {
             "type": "boolean"
           },
+          "trafficMultiplierPermille": {
+            "maximum": 100000,
+            "minimum": 100,
+            "nullable": true,
+            "type": "integer"
+          },
           "trafficQuota": {
             "format": "int64",
             "minimum": 0,
+            "type": "integer"
+          },
+          "uploadLimitMbps": {
+            "maximum": 100000,
+            "minimum": 0,
+            "nullable": true,
             "type": "integer"
           }
         },
@@ -2179,6 +2304,9 @@
           "body": {
             "maxLength": 10000,
             "minLength": 1,
+            "type": "string"
+          },
+          "entitlementId": {
             "type": "string"
           },
           "subject": {
@@ -3488,7 +3616,6 @@
         "type": "object"
       },
       "Node": {
-        "description": "Node represents a remote 3x-ui panel registered with the central panel.\nThe central panel polls each node's existing /panel/api/server/status\nendpoint over HTTP using the per-node ApiToken to populate the runtime\nstatus fields below.",
         "properties": {
           "activeCount": {
             "example": 23,
@@ -4131,6 +4258,15 @@
           "deviceLimit": {
             "type": "integer"
           },
+          "displayBenefits": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "downloadLimitMbps": {
+            "type": "integer"
+          },
           "id": {
             "type": "string"
           },
@@ -4149,6 +4285,12 @@
           "resetCycle": {
             "type": "string"
           },
+          "residentialRelayEnabled": {
+            "type": "boolean"
+          },
+          "residentialRelayLimit": {
+            "type": "integer"
+          },
           "slug": {
             "type": "string"
           },
@@ -4159,12 +4301,18 @@
             "format": "int64",
             "type": "integer"
           },
+          "trafficMultiplierPermille": {
+            "type": "integer"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
           },
           "upgradable": {
             "type": "boolean"
+          },
+          "uploadLimitMbps": {
+            "type": "integer"
           },
           "visibility": {
             "type": "string"
@@ -4176,17 +4324,23 @@
           "createdAt",
           "description",
           "deviceLimit",
+          "displayBenefits",
+          "downloadLimitMbps",
           "id",
           "name",
           "nodeGroup",
           "provisionInboundIds",
           "renewable",
           "resetCycle",
+          "residentialRelayEnabled",
+          "residentialRelayLimit",
           "slug",
           "sortOrder",
           "trafficBytes",
+          "trafficMultiplierPermille",
           "updatedAt",
           "upgradable",
+          "uploadLimitMbps",
           "visibility"
         ],
         "type": "object"
@@ -4209,8 +4363,23 @@
           "deviceLimit": {
             "type": "integer"
           },
+          "displayBenefits": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "downloadLimitMbps": {
+            "type": "integer"
+          },
           "id": {
             "type": "string"
+          },
+          "lineGroupIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "name": {
             "type": "string"
@@ -4233,6 +4402,12 @@
           "resetCycle": {
             "type": "string"
           },
+          "residentialRelayEnabled": {
+            "type": "boolean"
+          },
+          "residentialRelayLimit": {
+            "type": "integer"
+          },
           "slug": {
             "type": "string"
           },
@@ -4243,12 +4418,18 @@
             "format": "int64",
             "type": "integer"
           },
+          "trafficMultiplierPermille": {
+            "type": "integer"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
           },
           "upgradable": {
             "type": "boolean"
+          },
+          "uploadLimitMbps": {
+            "type": "integer"
           },
           "visibility": {
             "type": "string"
@@ -4260,6 +4441,8 @@
           "createdAt",
           "description",
           "deviceLimit",
+          "displayBenefits",
+          "downloadLimitMbps",
           "id",
           "name",
           "nodeGroup",
@@ -4267,11 +4450,15 @@
           "provisionInboundIds",
           "renewable",
           "resetCycle",
+          "residentialRelayEnabled",
+          "residentialRelayLimit",
           "slug",
           "sortOrder",
           "trafficBytes",
+          "trafficMultiplierPermille",
           "updatedAt",
           "upgradable",
+          "uploadLimitMbps",
           "visibility"
         ],
         "type": "object"
@@ -4549,7 +4736,6 @@
         "type": "object"
       },
       "Setting": {
-        "description": "Setting stores key-value configuration settings for the 3x-ui panel.",
         "properties": {
           "id": {
             "type": "integer"
@@ -4580,6 +4766,9 @@
           "deviceLimit": {
             "type": "integer"
           },
+          "downloadLimitMbps": {
+            "type": "integer"
+          },
           "expiresAt": {
             "format": "date-time",
             "nullable": true,
@@ -4605,12 +4794,21 @@
           "planId": {
             "type": "string"
           },
+          "residentialRelayEnabled": {
+            "type": "boolean"
+          },
+          "residentialRelayLimit": {
+            "type": "integer"
+          },
           "startsAt": {
             "format": "date-time",
             "type": "string"
           },
           "status": {
             "type": "string"
+          },
+          "trafficMultiplierPermille": {
+            "type": "integer"
           },
           "trafficQuota": {
             "format": "int64",
@@ -4623,22 +4821,30 @@
           "updatedAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "uploadLimitMbps": {
+            "type": "integer"
           }
         },
         "required": [
           "createdAt",
           "customerId",
           "deviceLimit",
+          "downloadLimitMbps",
           "id",
           "internalClientId",
           "nodeGroup",
           "orderId",
           "planId",
+          "residentialRelayEnabled",
+          "residentialRelayLimit",
           "startsAt",
           "status",
+          "trafficMultiplierPermille",
           "trafficQuota",
           "trafficUsed",
-          "updatedAt"
+          "updatedAt",
+          "uploadLimitMbps"
         ],
         "type": "object"
       },
@@ -4679,6 +4885,15 @@
           "deviceLimit": {
             "type": "integer"
           },
+          "displayBenefits": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "downloadLimitMbps": {
+            "type": "integer"
+          },
           "entitlement": {
             "$ref": "#/components/schemas/SubscriptionEntitlement"
           },
@@ -4703,6 +4918,12 @@
           "resetCycle": {
             "type": "string"
           },
+          "residentialRelayEnabled": {
+            "type": "boolean"
+          },
+          "residentialRelayLimit": {
+            "type": "integer"
+          },
           "slug": {
             "type": "string"
           },
@@ -4713,12 +4934,18 @@
             "format": "int64",
             "type": "integer"
           },
+          "trafficMultiplierPermille": {
+            "type": "integer"
+          },
           "updatedAt": {
             "format": "date-time",
             "type": "string"
           },
           "upgradable": {
             "type": "boolean"
+          },
+          "uploadLimitMbps": {
+            "type": "integer"
           },
           "usedBytes": {
             "format": "int64",
@@ -4734,6 +4961,8 @@
           "createdAt",
           "description",
           "deviceLimit",
+          "displayBenefits",
+          "downloadLimitMbps",
           "entitlement",
           "id",
           "links",
@@ -4742,11 +4971,15 @@
           "provisionInboundIds",
           "renewable",
           "resetCycle",
+          "residentialRelayEnabled",
+          "residentialRelayLimit",
           "slug",
           "sortOrder",
           "trafficBytes",
+          "trafficMultiplierPermille",
           "updatedAt",
           "upgradable",
+          "uploadLimitMbps",
           "usedBytes",
           "visibility"
         ],
@@ -4761,7 +4994,16 @@
           "customerId": {
             "type": "string"
           },
+          "entitlementId": {
+            "type": "string"
+          },
           "id": {
+            "type": "string"
+          },
+          "planId": {
+            "type": "string"
+          },
+          "planName": {
             "type": "string"
           },
           "priority": {
@@ -4822,7 +5064,6 @@
         "type": "object"
       },
       "User": {
-        "description": "User represents a user account in the 3x-ui panel.",
         "properties": {
           "id": {
             "type": "integer"
@@ -4854,11 +5095,11 @@
   "tags": [
     {
       "name": "Commercial customer portal",
-      "description": "Gmail registration, subscriptions, Alipay payment, customer sessions, and support."
+      "description": "Email registration, subscriptions, payments, customer sessions, residential relay, and support."
     },
     {
       "name": "Commercial administration",
-      "description": "Role-protected commercial operations for the 3X-UI panel."
+      "description": "Role-protected commercial operations for the NOVA panel."
     },
     {
       "name": "Authentication",
@@ -4878,7 +5119,7 @@
     },
     {
       "name": "Nodes",
-      "description": "Manage remote 3x-ui panels acting as nodes for a central panel. All endpoints under /panel/api/nodes."
+      "description": "Manage remote NOVA panels acting as nodes for a central panel. All endpoints under /panel/api/nodes."
     },
     {
       "name": "Hosts",
@@ -4910,12 +5151,42 @@
     }
   ],
   "paths": {
+    "/": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Open the commercial customer authentication shell.",
+        "operationId": "get_",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/portal": {
       "get": {
         "tags": [
           "Commercial customer portal"
         ],
-        "summary": "Open the commercial customer portal.",
+        "summary": "Permanently redirect the legacy portal path to the root.",
         "operationId": "get_portal",
         "responses": {
           "200": {
@@ -4945,7 +5216,7 @@
         "tags": [
           "Commercial customer portal"
         ],
-        "summary": "Serve portal routes.",
+        "summary": "Permanently redirect legacy portal subpaths to the root.",
         "operationId": "get_portal_path",
         "responses": {
           "200": {
@@ -4970,13 +5241,13 @@
         }
       }
     },
-    "/api/v1/guest/bootstrap": {
+    "/api/v1/guest/auth-config": {
       "get": {
         "tags": [
           "Commercial customer portal"
         ],
-        "summary": "Return public plans, notices, guides, clients, and site settings.",
-        "operationId": "get_api_v1_guest_bootstrap",
+        "summary": "Return only the site and authentication configuration.",
+        "operationId": "get_api_v1_guest_auth_config",
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5326,6 +5597,77 @@
         }
       }
     },
+    "/api/v1/user/bootstrap": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Return plans, notices, guides, clients, and payment methods for an authenticated customer.",
+        "operationId": "get_api_v1_user_bootstrap",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/applications/{id}/download": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Download a client installer as an authenticated customer.",
+        "operationId": "get_api_v1_user_applications_id_download",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/user/dashboard": {
       "get": {
         "tags": [
@@ -5533,6 +5875,185 @@
         ],
         "summary": "Return a subscription QR code.",
         "operationId": "get_api_v1_user_subscription_qr",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/residential-relays": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "List plan-authorized lines and the customer’s residential SOCKS5 relays.",
+        "operationId": "get_api_v1_user_residential_relays",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Route one authorized line through a customer-owned residential SOCKS5 proxy.",
+        "operationId": "post_api_v1_user_residential_relays",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/residential-relays/{id}": {
+      "put": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Update a customer-owned residential SOCKS5 relay.",
+        "operationId": "put_api_v1_user_residential_relays_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Remove a residential relay and restore the line’s normal egress.",
+        "operationId": "delete_api_v1_user_residential_relays_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/residential-relays/{id}/qr": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Return a QR code for the selected relayed line.",
+        "operationId": "get_api_v1_user_residential_relays_id_qr",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -5955,7 +6476,7 @@
         "tags": [
           "Commercial administration"
         ],
-        "summary": "Revoke a customer subscription and remove its 3X-UI client.",
+        "summary": "Revoke a customer subscription and remove its panel client.",
         "operationId": "delete_panel_api_commercial_customers_id_subscription",
         "parameters": [
           {
@@ -6056,6 +6577,406 @@
         ],
         "summary": "Save a plan price.",
         "operationId": "post_panel_api_commercial_plan_prices",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-sources": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List encrypted subscription and manual line sources.",
+        "operationId": "get_panel_api_commercial_line_sources",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Create or update a subscription URL source.",
+        "operationId": "post_panel_api_commercial_line_sources",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-sources/{id}/refresh": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Queue an immediate subscription source refresh.",
+        "operationId": "post_panel_api_commercial_line_sources_id_refresh",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-sources/{id}": {
+      "delete": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Delete a line source after administrator reauthentication.",
+        "operationId": "delete_panel_api_commercial_line_sources_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-imports/preview": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Validate protocol links and report duplicates.",
+        "operationId": "post_panel_api_commercial_line_imports_preview",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-imports/commit": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Commit valid protocol links to the unassigned node pool.",
+        "operationId": "post_panel_api_commercial_line_imports_commit",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-nodes": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Filter imported line nodes by source, group, or status.",
+        "operationId": "get_panel_api_commercial_line_nodes",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-nodes/groups": {
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Replace group assignments for selected line nodes.",
+        "operationId": "put_panel_api_commercial_line_nodes_groups",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-nodes/{id}/probe": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Queue provisioning and a real outbound probe for one node.",
+        "operationId": "post_panel_api_commercial_line_nodes_id_probe",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-groups": {
+      "get": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "List line groups with plan and health totals.",
+        "operationId": "get_panel_api_commercial_line_groups",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Create or update a line group.",
+        "operationId": "post_panel_api_commercial_line_groups",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/line-groups/{id}": {
+      "delete": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Delete an unused line group after administrator reauthentication.",
+        "operationId": "delete_panel_api_commercial_line_groups_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -6271,7 +7192,7 @@
         "tags": [
           "Commercial administration"
         ],
-        "summary": "List official clients.",
+        "summary": "List client downloads.",
         "operationId": "get_panel_api_commercial_applications",
         "responses": {
           "200": {
@@ -6299,8 +7220,49 @@
         "tags": [
           "Commercial administration"
         ],
-        "summary": "Save an official client.",
+        "summary": "Save client download metadata.",
         "operationId": "post_panel_api_commercial_applications",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/panel/api/commercial/applications/{id}/package": {
+      "post": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Upload or replace a client installer package.",
+        "operationId": "post_panel_api_commercial_applications_id_package",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful response",
@@ -8686,7 +9648,7 @@
         "tags": [
           "Server"
         ],
-        "summary": "Check whether a newer 3x-ui release is available on GitHub.",
+        "summary": "Check whether a newer panel release is available on GitHub.",
         "operationId": "get_panel_api_server_getPanelUpdateInfo",
         "responses": {
           "200": {
@@ -14160,7 +15122,7 @@
         "tags": [
           "Settings"
         ],
-        "summary": "Restart the entire 3x-ui process after a 3-second grace period. The connection drops immediately; the panel comes back online ~5-10 seconds later.",
+        "summary": "Restart the entire panel process after a 3-second grace period. The connection drops immediately; the panel comes back online ~5-10 seconds later.",
         "operationId": "post_panel_api_setting_restartPanel",
         "responses": {
           "200": {

@@ -7,8 +7,9 @@ type EventType string
 
 const (
 	// Outbound health (observatory-driven)
-	EventOutboundDown EventType = "outbound.down"
-	EventOutboundUp   EventType = "outbound.up"
+	EventOutboundDown   EventType = "outbound.down"
+	EventOutboundUp     EventType = "outbound.up"
+	EventOutboundSample EventType = "outbound.sample"
 
 	// Xray core (local)
 	EventXrayCrash EventType = "xray.crash"
@@ -35,8 +36,10 @@ type Event struct {
 
 // OutboundHealthData carries observatory details for outbound events.
 type OutboundHealthData struct {
-	Delay int64  // last measured delay in ms, 0 if unknown
-	Error string // last error if probe failed, empty if up
+	Delay       int64
+	Error       string
+	Alive       bool
+	LastTryTime int64
 }
 
 // NodeHealthData carries heartbeat details for node events.

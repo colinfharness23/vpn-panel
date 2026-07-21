@@ -15,6 +15,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	emailservice "github.com/mhsanaei/3x-ui/v3/internal/web/service/email"
@@ -24,12 +25,13 @@ import (
 )
 
 type Worker struct {
-	db       *gorm.DB
-	orders   *OrderService
-	config   *ConfigStore
-	clients  service.ClientService
-	inbounds service.InboundService
-	mailer   customerEmailSender
+	db         *gorm.DB
+	orders     *OrderService
+	config     *ConfigStore
+	clients    service.ClientService
+	inbounds   service.InboundService
+	mailer     customerEmailSender
+	lineEvents chan eventbus.Event
 }
 
 type customerEmailSender interface {
@@ -39,7 +41,7 @@ type customerEmailSender interface {
 func NewWorker() *Worker {
 	return &Worker{
 		db: database.GetDB(), orders: NewOrderService(), config: NewConfigStore(),
-		mailer: emailservice.NewEmailService(service.SettingService{}),
+		mailer: emailservice.NewEmailService(service.SettingService{}), lineEvents: make(chan eventbus.Event, 256),
 	}
 }
 
@@ -59,14 +61,28 @@ func (w *Worker) Run(ctx context.Context) {
 			if err := w.processNextOutbox(); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				logger.Warning("commercial outbox:", err)
 			}
+			if err := w.processNextLineNode(ctx); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Warning("commercial line provisioning:", err)
+			}
 		case <-slow.C:
 			w.recoverStaleJobs()
+			w.recoverLineLocks()
+			if err := w.processNextLineSource(ctx); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Warning("commercial line refresh:", err)
+			}
+			if err := w.cleanupStaleLine(); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Warning("commercial line cleanup:", err)
+			}
 			if err := w.reconcilePayments(ctx); err != nil {
 				logger.Warning("commercial payment reconciliation:", err)
 			}
 			w.expireOrders()
 			if err := w.confirmMatureCommissions(); err != nil {
 				logger.Warning("commercial commission confirmation:", err)
+			}
+		case event := <-w.lineEvents:
+			if err := w.applyLineHealthEvent(event); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Warning("commercial line health:", err)
 			}
 		}
 	}
@@ -179,7 +195,7 @@ func (w *Worker) provision(_ context.Context, job *model.ProvisioningJob) error 
 	clientID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("client:"+order.ID)).String()
 	expiry := time.Now().UTC().AddDate(0, price.Months, 0)
 	policy := w.config.SubscriptionPolicy()
-	client := model.Client{ID: clientID, Email: internalID, SubID: subscriptionID, Enable: true, TotalGB: plan.TrafficBytes, ExpiryTime: expiry.UnixMilli(), LimitIP: plan.DeviceLimit, Group: plan.NodeGroup, Reset: resetDaysForPolicy(plan.ResetCycle, policy.MonthlyResetMode), Comment: "commercial:" + order.ID}
+	client := model.Client{ID: clientID, Email: internalID, SubID: subscriptionID, Enable: true, TotalGB: plan.TrafficBytes, TrafficMultiplierPermille: model.NormalizeTrafficMultiplierPermille(plan.TrafficMultiplierPermille), UploadLimitMbps: plan.UploadLimitMbps, DownloadLimitMbps: plan.DownloadLimitMbps, ExpiryTime: expiry.UnixMilli(), LimitIP: plan.DeviceLimit, Group: plan.NodeGroup, Reset: resetDaysForPolicy(plan.ResetCycle, policy.MonthlyResetMode), Comment: "commercial:" + order.ID}
 	var record model.ClientRecord
 	lookupErr := w.db.Where("email = ?", internalID).First(&record).Error
 	if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
@@ -197,7 +213,7 @@ func (w *Worker) provision(_ context.Context, job *model.ProvisioningJob) error 
 		}
 	}
 	starts := time.Now().UTC()
-	entitlement := model.SubscriptionEntitlement{ID: uuid.NewString(), CustomerID: order.CustomerID, PlanID: plan.ID, OrderID: order.ID, InternalClientID: internalID, SubscriptionID: subscriptionID, Status: "active", TrafficQuota: plan.TrafficBytes, DeviceLimit: plan.DeviceLimit, NodeGroup: plan.NodeGroup, StartsAt: starts, ExpiresAt: &expiry}
+	entitlement := model.SubscriptionEntitlement{ID: uuid.NewString(), CustomerID: order.CustomerID, PlanID: plan.ID, OrderID: order.ID, InternalClientID: internalID, SubscriptionID: subscriptionID, Status: "active", TrafficQuota: plan.TrafficBytes, DeviceLimit: plan.DeviceLimit, TrafficMultiplierPermille: model.NormalizeTrafficMultiplierPermille(plan.TrafficMultiplierPermille), UploadLimitMbps: plan.UploadLimitMbps, DownloadLimitMbps: plan.DownloadLimitMbps, ResidentialRelayEnabled: plan.ResidentialRelayEnabled, ResidentialRelayLimit: plan.ResidentialRelayLimit, NodeGroup: plan.NodeGroup, StartsAt: starts, ExpiresAt: &expiry}
 	if policy.EventFor(order.OrderKind) == SubscriptionEventResetTraffic {
 		if _, err := w.clients.ResetTrafficByEmail(&w.inbounds, internalID); err != nil {
 			return err
@@ -248,7 +264,7 @@ func (w *Worker) provisionExistingSubscription(order *model.Order, plan *model.P
 	}
 	var record model.ClientRecord
 	if err := w.db.Where("email = ?", entitlement.InternalClientID).First(&record).Error; err != nil {
-		return errors.New("订阅对应的 3X-UI 客户端不存在")
+		return errors.New("订阅对应的面板客户端不存在")
 	}
 	currentInboundIDs, err := w.clients.GetInboundIdsForEmail(w.db, entitlement.InternalClientID)
 	if err != nil {
@@ -259,6 +275,9 @@ func (w *Worker) provisionExistingSubscription(order *model.Order, plan *model.P
 	client.SubID = entitlement.SubscriptionID
 	client.Enable = true
 	client.TotalGB = plan.TrafficBytes
+	client.TrafficMultiplierPermille = model.NormalizeTrafficMultiplierPermille(plan.TrafficMultiplierPermille)
+	client.UploadLimitMbps = plan.UploadLimitMbps
+	client.DownloadLimitMbps = plan.DownloadLimitMbps
 	client.ExpiryTime = order.ResultExpiresAt.UnixMilli()
 	client.LimitIP = plan.DeviceLimit
 	client.Group = plan.NodeGroup
@@ -294,11 +313,16 @@ func (w *Worker) provisionExistingSubscription(order *model.Order, plan *model.P
 	now := time.Now().UTC()
 	return w.db.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]any{
-			"plan_id":       plan.ID,
-			"traffic_quota": plan.TrafficBytes,
-			"device_limit":  plan.DeviceLimit,
-			"node_group":    plan.NodeGroup,
-			"expires_at":    *order.ResultExpiresAt,
+			"plan_id":                     plan.ID,
+			"traffic_quota":               plan.TrafficBytes,
+			"device_limit":                plan.DeviceLimit,
+			"traffic_multiplier_permille": model.NormalizeTrafficMultiplierPermille(plan.TrafficMultiplierPermille),
+			"upload_limit_mbps":           plan.UploadLimitMbps,
+			"download_limit_mbps":         plan.DownloadLimitMbps,
+			"residential_relay_enabled":   plan.ResidentialRelayEnabled,
+			"residential_relay_limit":     plan.ResidentialRelayLimit,
+			"node_group":                  plan.NodeGroup,
+			"expires_at":                  *order.ResultExpiresAt,
 		}
 		if resetTraffic {
 			updates["traffic_used"] = 0
@@ -335,13 +359,21 @@ func (w *Worker) provisionInboundIDs(plan *model.Plan) ([]int, error) {
 			return nil, errors.New("套餐入站配置无效")
 		}
 	}
-	if len(ids) > 0 {
-		return ids, nil
+	if plan.ID == "" {
+		return sortedUniqueInts(ids), nil
 	}
-	if err := w.db.Model(&model.Inbound{}).Where("enable = ?", true).Order("id asc").Pluck("id", &ids).Error; err != nil {
+	var managed []int
+	err := w.db.Table(model.PlanLineGroup{}.TableName()+" AS plan_groups").
+		Distinct("nodes.inbound_id").
+		Joins("JOIN "+model.LineGroup{}.TableName()+" AS groups ON groups.id = plan_groups.group_id AND groups.active = true").
+		Joins("JOIN "+model.LineGroupNode{}.TableName()+" AS group_nodes ON group_nodes.group_id = plan_groups.group_id").
+		Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = group_nodes.node_id").
+		Where("plan_groups.plan_id = ? AND nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL", plan.ID).
+		Pluck("nodes.inbound_id", &managed).Error
+	if err != nil {
 		return nil, err
 	}
-	return ids, nil
+	return sortedUniqueInts(append(ids, managed...)), nil
 }
 
 func (w *Worker) completeOrder(orderID string) error {

@@ -74,7 +74,14 @@ jobs:
           set -o pipefail
           XUI_DB_TYPE=postgres XUI_DB_DSN="host=127.0.0.1 port=5432 user=postgres password=postgres dbname=xui_durable sslmode=disable" \
             go test ./internal/web/service -run 'PostgresCommitFailure' -count=1 -v | tee /tmp/postgres-durable-first.log
+          XUI_DB_TYPE=postgres \
+            XUI_DB_DSN="host=127.0.0.1 port=5432 user=postgres password=postgres dbname=xui_durable sslmode=disable" \
+            XUI_TEST_PG_DSN="host=127.0.0.1 port=5432 user=postgres password=postgres dbname=xui_durable sslmode=disable" \
+            go test ./internal/web/service/commercial -run 'PostgresLine' -count=1 -v | tee /tmp/postgres-lines.log
           if grep -q -- '--- SKIP' /tmp/postgres-durable-first.log; then
+            exit 1
+          fi
+          if grep -q -- '--- SKIP' /tmp/postgres-lines.log; then
             exit 1
           fi
 

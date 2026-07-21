@@ -43,6 +43,7 @@ const REPO_URL = 'https://github.com/MHSanaei/3x-ui';
 const LOGOUT_KEY = '__logout__';
 const PORTAL_KEY = '__portal__';
 const INVITATION_COMMISSION_KEY = '__invitation_commission__';
+const PANEL_BRAND = 'NOVA';
 
 type SidebarSection = 'xui' | 'system' | 'utility';
 type IconName = 'dashboard' | 'inbound' | 'team' | 'groups' | 'setting' | 'tool' | 'cluster' | 'hosts' | 'logout' | 'website' | 'apidocs' | 'outbound' | 'routing' | 'commercial' | 'migration' | 'siteSettings' | 'securitySettings' | 'subscriptionSettings' | 'invitationSettings' | 'emailSettings' | 'telegramSettings' | 'subscriptionTemplate' | 'subscriptionFormats';
@@ -180,7 +181,7 @@ export default function AppSidebar() {
     {
       type: 'group',
       key: '__xui_group__',
-      label: collapsed ? null : '3X-UI',
+      label: collapsed ? null : PANEL_BRAND,
       children: toMenuItems(xuiItems),
     },
     {
@@ -195,7 +196,7 @@ export default function AppSidebar() {
     {
       type: 'group',
       key: '__drawer_xui_group__',
-      label: '3X-UI',
+      label: PANEL_BRAND,
       children: toMenuItems(xuiItems),
     },
     {
@@ -210,7 +211,7 @@ export default function AppSidebar() {
     if (key === PORTAL_KEY) {
       const basePath = window.X_UI_PUBLIC_BASE_PATH || '/';
       const normalizedBasePath = basePath.endsWith('/') ? basePath : `${basePath}/`;
-      window.location.href = `${normalizedBasePath}portal/`;
+      window.location.href = normalizedBasePath;
       return;
     }
     if (key === LOGOUT_KEY) {
@@ -285,7 +286,7 @@ export default function AppSidebar() {
       >
         <div className="drawer-header">
           <div className="brand-block">
-            <span className="drawer-brand">3X-UI</span>
+            <span className="drawer-brand">{PANEL_BRAND}</span>
           </div>
           <div className="drawer-header-actions">
             <button

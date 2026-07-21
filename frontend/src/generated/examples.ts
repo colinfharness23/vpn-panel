@@ -39,10 +39,13 @@ export const EXAMPLES: Record<string, unknown> = {
     "createdAt": "2025-01-01T00:00:00Z",
     "description": "",
     "deviceLimit": 0,
+    "displayBenefits": {},
+    "downloadLimitMbps": 0,
     "entitlement": {
       "createdAt": "2025-01-01T00:00:00Z",
       "customerId": "",
       "deviceLimit": 0,
+      "downloadLimitMbps": 0,
       "expiresAt": null,
       "id": "",
       "internalClientId": "",
@@ -50,11 +53,15 @@ export const EXAMPLES: Record<string, unknown> = {
       "nodeGroup": "",
       "orderId": "",
       "planId": "",
+      "residentialRelayEnabled": false,
+      "residentialRelayLimit": 0,
       "startsAt": "2025-01-01T00:00:00Z",
       "status": "",
+      "trafficMultiplierPermille": 0,
       "trafficQuota": 0,
       "trafficUsed": 0,
-      "updatedAt": "2025-01-01T00:00:00Z"
+      "updatedAt": "2025-01-01T00:00:00Z",
+      "uploadLimitMbps": 0
     },
     "id": "",
     "name": "",
@@ -62,11 +69,15 @@ export const EXAMPLES: Record<string, unknown> = {
     "provisionInboundIds": "",
     "renewable": false,
     "resetCycle": "",
+    "residentialRelayEnabled": false,
+    "residentialRelayLimit": 0,
     "slug": "",
     "sortOrder": 0,
     "trafficBytes": 0,
+    "trafficMultiplierPermille": 0,
     "updatedAt": "2025-01-01T00:00:00Z",
     "upgradable": false,
+    "uploadLimitMbps": 0,
     "visibility": ""
   },
   "AllSetting": {
@@ -294,6 +305,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "auth": "",
     "comment": "",
     "created_at": 0,
+    "downloadLimitMbps": 0,
     "email": "",
     "enable": false,
     "expiryTime": 0,
@@ -313,15 +325,22 @@ export const EXAMPLES: Record<string, unknown> = {
     "subId": "",
     "tgId": 0,
     "totalGB": 0,
-    "updated_at": 0
+    "trafficMultiplierPermille": 0,
+    "updated_at": 0,
+    "uploadLimitMbps": 0
   },
   "ClientApplication": {
     "active": false,
     "createdAt": "2025-01-01T00:00:00Z",
     "description": "",
+    "downloadUrl": "",
     "id": "",
     "name": "",
     "officialUrl": "",
+    "packageContentType": "",
+    "packageFileName": "",
+    "packageSha256": "",
+    "packageSize": 0,
     "platform": "",
     "slug": "",
     "sortOrder": 0,
@@ -340,6 +359,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "auth": "",
     "comment": "",
     "createdAt": 0,
+    "downloadLimitMbps": 0,
     "email": "",
     "enable": false,
     "expiryTime": 0,
@@ -359,7 +379,9 @@ export const EXAMPLES: Record<string, unknown> = {
     "subId": "",
     "tgId": 0,
     "totalGB": 0,
+    "trafficMultiplierPermille": 0,
     "updatedAt": 0,
+    "uploadLimitMbps": 0,
     "uuid": ""
   },
   "ClientReverse": {
@@ -449,7 +471,12 @@ export const EXAMPLES: Record<string, unknown> = {
     "capacity": 0,
     "description": "",
     "deviceLimit": 0,
+    "displayBenefits": {},
+    "downloadLimitMbps": 0,
     "id": "",
+    "lineGroupIds": [
+      ""
+    ],
     "name": "example",
     "nodeGroup": "",
     "provisionInboundIds": [
@@ -457,10 +484,14 @@ export const EXAMPLES: Record<string, unknown> = {
     ],
     "renewable": false,
     "resetCycle": "never",
+    "residentialRelayEnabled": false,
+    "residentialRelayLimit": 0,
     "slug": "example",
     "sortOrder": 0,
     "trafficBytes": 0,
+    "trafficMultiplierPermille": 100,
     "upgradable": false,
+    "uploadLimitMbps": 0,
     "visibility": "public"
   },
   "CommercialRoleRequest": {
@@ -479,10 +510,13 @@ export const EXAMPLES: Record<string, unknown> = {
   },
   "CommercialSubscriptionUpdateRequest": {
     "deviceLimit": 0,
+    "downloadLimitMbps": 0,
     "expiresAt": "",
     "planId": "example",
     "resetTraffic": false,
-    "trafficQuota": 0
+    "trafficMultiplierPermille": 100,
+    "trafficQuota": 0,
+    "uploadLimitMbps": 0
   },
   "CommercialTicketReplyRequest": {
     "body": "example",
@@ -514,6 +548,7 @@ export const EXAMPLES: Record<string, unknown> = {
   },
   "CreateTicketRequest": {
     "body": "example",
+    "entitlementId": "",
     "subject": "example"
   },
   "Customer": {
@@ -660,9 +695,14 @@ export const EXAMPLES: Record<string, unknown> = {
         "active": false,
         "createdAt": "2025-01-01T00:00:00Z",
         "description": "",
+        "downloadUrl": "",
         "id": "",
         "name": "",
         "officialUrl": "",
+        "packageContentType": "",
+        "packageFileName": "",
+        "packageSha256": "",
+        "packageSize": 0,
         "platform": "",
         "slug": "",
         "sortOrder": 0,
@@ -703,7 +743,12 @@ export const EXAMPLES: Record<string, unknown> = {
         "createdAt": "2025-01-01T00:00:00Z",
         "description": "",
         "deviceLimit": 0,
+        "displayBenefits": {},
+        "downloadLimitMbps": 0,
         "id": "",
+        "lineGroupIds": [
+          ""
+        ],
         "name": "",
         "nodeGroup": "",
         "prices": [
@@ -721,11 +766,15 @@ export const EXAMPLES: Record<string, unknown> = {
         "provisionInboundIds": "",
         "renewable": false,
         "resetCycle": "",
+        "residentialRelayEnabled": false,
+        "residentialRelayLimit": 0,
         "slug": "",
         "sortOrder": 0,
         "trafficBytes": 0,
+        "trafficMultiplierPermille": 0,
         "updatedAt": "2025-01-01T00:00:00Z",
         "upgradable": false,
+        "uploadLimitMbps": 0,
         "visibility": ""
       }
     ],
@@ -1135,17 +1184,23 @@ export const EXAMPLES: Record<string, unknown> = {
     "createdAt": "2025-01-01T00:00:00Z",
     "description": "",
     "deviceLimit": 0,
+    "displayBenefits": {},
+    "downloadLimitMbps": 0,
     "id": "",
     "name": "",
     "nodeGroup": "",
     "provisionInboundIds": "",
     "renewable": false,
     "resetCycle": "",
+    "residentialRelayEnabled": false,
+    "residentialRelayLimit": 0,
     "slug": "",
     "sortOrder": 0,
     "trafficBytes": 0,
+    "trafficMultiplierPermille": 0,
     "updatedAt": "2025-01-01T00:00:00Z",
     "upgradable": false,
+    "uploadLimitMbps": 0,
     "visibility": ""
   },
   "PlanCatalogItem": {
@@ -1154,7 +1209,12 @@ export const EXAMPLES: Record<string, unknown> = {
     "createdAt": "2025-01-01T00:00:00Z",
     "description": "",
     "deviceLimit": 0,
+    "displayBenefits": {},
+    "downloadLimitMbps": 0,
     "id": "",
+    "lineGroupIds": [
+      ""
+    ],
     "name": "",
     "nodeGroup": "",
     "prices": [
@@ -1172,11 +1232,15 @@ export const EXAMPLES: Record<string, unknown> = {
     "provisionInboundIds": "",
     "renewable": false,
     "resetCycle": "",
+    "residentialRelayEnabled": false,
+    "residentialRelayLimit": 0,
     "slug": "",
     "sortOrder": 0,
     "trafficBytes": 0,
+    "trafficMultiplierPermille": 0,
     "updatedAt": "2025-01-01T00:00:00Z",
     "upgradable": false,
+    "uploadLimitMbps": 0,
     "visibility": ""
   },
   "PlanPrice": {
@@ -1249,6 +1313,7 @@ export const EXAMPLES: Record<string, unknown> = {
     "createdAt": "2025-01-01T00:00:00Z",
     "customerId": "",
     "deviceLimit": 0,
+    "downloadLimitMbps": 0,
     "expiresAt": null,
     "id": "",
     "internalClientId": "",
@@ -1256,11 +1321,15 @@ export const EXAMPLES: Record<string, unknown> = {
     "nodeGroup": "",
     "orderId": "",
     "planId": "",
+    "residentialRelayEnabled": false,
+    "residentialRelayLimit": 0,
     "startsAt": "2025-01-01T00:00:00Z",
     "status": "",
+    "trafficMultiplierPermille": 0,
     "trafficQuota": 0,
     "trafficUsed": 0,
-    "updatedAt": "2025-01-01T00:00:00Z"
+    "updatedAt": "2025-01-01T00:00:00Z",
+    "uploadLimitMbps": 0
   },
   "SubscriptionLinks": {
     "clash": "",
@@ -1273,10 +1342,13 @@ export const EXAMPLES: Record<string, unknown> = {
     "createdAt": "2025-01-01T00:00:00Z",
     "description": "",
     "deviceLimit": 0,
+    "displayBenefits": {},
+    "downloadLimitMbps": 0,
     "entitlement": {
       "createdAt": "2025-01-01T00:00:00Z",
       "customerId": "",
       "deviceLimit": 0,
+      "downloadLimitMbps": 0,
       "expiresAt": null,
       "id": "",
       "internalClientId": "",
@@ -1284,11 +1356,15 @@ export const EXAMPLES: Record<string, unknown> = {
       "nodeGroup": "",
       "orderId": "",
       "planId": "",
+      "residentialRelayEnabled": false,
+      "residentialRelayLimit": 0,
       "startsAt": "2025-01-01T00:00:00Z",
       "status": "",
+      "trafficMultiplierPermille": 0,
       "trafficQuota": 0,
       "trafficUsed": 0,
-      "updatedAt": "2025-01-01T00:00:00Z"
+      "updatedAt": "2025-01-01T00:00:00Z",
+      "uploadLimitMbps": 0
     },
     "id": "",
     "links": {
@@ -1301,18 +1377,25 @@ export const EXAMPLES: Record<string, unknown> = {
     "provisionInboundIds": "",
     "renewable": false,
     "resetCycle": "",
+    "residentialRelayEnabled": false,
+    "residentialRelayLimit": 0,
     "slug": "",
     "sortOrder": 0,
     "trafficBytes": 0,
+    "trafficMultiplierPermille": 0,
     "updatedAt": "2025-01-01T00:00:00Z",
     "upgradable": false,
+    "uploadLimitMbps": 0,
     "usedBytes": 0,
     "visibility": ""
   },
   "Ticket": {
     "createdAt": "2025-01-01T00:00:00Z",
     "customerId": "",
+    "entitlementId": "",
     "id": "",
+    "planId": "",
+    "planName": "",
     "priority": "",
     "status": "",
     "subject": "",

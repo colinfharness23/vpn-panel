@@ -25,6 +25,9 @@ func seedCommercialDefaults() error {
 				return err
 			}
 		}
+		if err := syncCommercialPlanCatalog(tx); err != nil {
+			return err
+		}
 		const renewalUpgradeSeeder = "CommercialRenewalUpgradePolicies"
 		var renewalUpgradeSeeded int64
 		if err := tx.Model(&model.HistoryOfSeeders{}).Where("seeder_name = ?", renewalUpgradeSeeder).Count(&renewalUpgradeSeeded).Error; err != nil {
@@ -49,6 +52,9 @@ func seedCommercialDefaults() error {
 			if err := seedCommercialApplications(tx); err != nil {
 				return err
 			}
+		}
+		if err := normalizeCommercialClientCatalog(tx); err != nil {
+			return err
 		}
 
 		var articleCount int64
@@ -140,61 +146,202 @@ func AdminCustomerDeletionMarkerKey(userID int) string {
 	return fmt.Sprintf("system.admin_customer_deleted.%d", userID)
 }
 
+type commercialPlanPriceSeed struct {
+	period string
+	months int
+	amount int64
+}
+
+type commercialPlanSeed struct {
+	slug         string
+	name         string
+	description  string
+	traffic      int64
+	devices      int
+	speedMbps    int
+	relayEnabled bool
+	relayLimit   int
+	benefits     map[string]string
+	prices       []commercialPlanPriceSeed
+}
+
+func commercialPlanSeeds() []commercialPlanSeed {
+	const (
+		included    = "包含"
+		notIncluded = "不包含"
+		gb          = int64(1024 * 1024 * 1024)
+	)
+	return []commercialPlanSeed{
+		{
+			slug: "starter", name: "全球畅游版", description: "适合日常个人使用",
+			traffic: 150 * gb, devices: 3, speedMbps: 200,
+			benefits: map[string]string{
+				"globalCoverage": included, "standardNodes": included, "advancedNodes": notIncluded,
+				"premiumRoutes": notIncluded, "residentialIpSale": notIncluded,
+				"socialMedia": "日常使用", "crossBorderWork": "基础使用", "liveStreaming": "不推荐",
+				"uploadOptimization": notIncluded, "peakPriority": "标准", "failover": "基础", "support": "标准",
+			},
+			prices: []commercialPlanPriceSeed{{"monthly", 1, 1000}, {"quarterly", 3, 2700}, {"yearly", 12, 9600}},
+		},
+		{
+			slug: "pro", name: "跨境增长版", description: "适合跨境业务运营",
+			traffic: 500 * gb, devices: 8, speedMbps: 500, relayEnabled: true, relayLimit: 1,
+			benefits: map[string]string{
+				"globalCoverage": included, "standardNodes": included, "advancedNodes": "部分开放",
+				"premiumRoutes": "精选线路", "residentialIpSale": notIncluded,
+				"socialMedia": "高频运营", "crossBorderWork": "推荐", "liveStreaming": "1080P直播",
+				"uploadOptimization": included, "peakPriority": "优先", "failover": "快速切换", "support": "优先",
+			},
+			prices: []commercialPlanPriceSeed{{"monthly", 1, 2000}, {"quarterly", 3, 5400}, {"yearly", 12, 19200}},
+		},
+		{
+			slug: "ultimate", name: "直播旗舰版", description: "适合专业直播及团队",
+			traffic: 1500 * gb, devices: 15, speedMbps: 1000, relayEnabled: true, relayLimit: 5,
+			benefits: map[string]string{
+				"globalCoverage": included, "standardNodes": included, "advancedNodes": "全部开放",
+				"premiumRoutes": "全部线路", "residentialIpSale": notIncluded,
+				"socialMedia": "专业运营", "crossBorderWork": "专业级", "liveStreaming": "4K及长时间直播",
+				"uploadOptimization": "高优先级", "peakPriority": "最高", "failover": "优先切换", "support": "专属优先",
+			},
+			prices: []commercialPlanPriceSeed{{"monthly", 1, 4500}, {"half_yearly", 6, 22900}, {"yearly", 12, 40500}},
+		},
+	}
+}
+
 func seedCommercialPlans(tx *gorm.DB) error {
-	type planSeed struct {
-		slug        string
-		name        string
-		description string
-		traffic     int64
-		devices     int
-		prices      []struct {
-			period string
-			months int
-			amount int64
-		}
-	}
-	seeds := []planSeed{
-		{slug: "starter", name: "轻量套餐", description: "适合轻度浏览与临时使用", traffic: 100 * 1024 * 1024 * 1024, devices: 3, prices: []struct {
-			period string
-			months int
-			amount int64
-		}{{"monthly", 1, 1000}, {"quarterly", 3, 2700}, {"yearly", 12, 9600}}},
-		{slug: "pro", name: "专业套餐", description: "适合多设备的日常稳定使用", traffic: 300 * 1024 * 1024 * 1024, devices: 5, prices: []struct {
-			period string
-			months int
-			amount int64
-		}{{"monthly", 1, 2000}, {"quarterly", 3, 5400}, {"yearly", 12, 19200}}},
-		{slug: "ultimate", name: "旗舰套餐", description: "适合多设备与高流量场景", traffic: 1024 * 1024 * 1024 * 1024, devices: 10, prices: []struct {
-			period string
-			months int
-			amount int64
-		}{{"monthly", 1, 4500}, {"half_yearly", 6, 22900}, {"yearly", 12, 40500}}},
-	}
-	for index, seed := range seeds {
-		// Seed editable examples, but never sell them before an operator binds
-		// real 3X-UI inbound IDs and explicitly publishes the plan.
-		plan := model.Plan{ID: uuid.NewString(), Slug: seed.slug, Name: seed.name, Description: seed.description, TrafficBytes: seed.traffic, DeviceLimit: seed.devices, ResetCycle: "monthly", NodeGroup: "default", Visibility: "public", Renewable: true, Upgradable: true, Active: false, SortOrder: index + 1, ProvisionInboundIDs: "[]"}
-		if err := tx.Create(&plan).Error; err != nil {
+	for index, seed := range commercialPlanSeeds() {
+		if _, err := createCommercialPlanSeed(tx, seed, index+1); err != nil {
 			return err
-		}
-		for _, price := range seed.prices {
-			row := model.PlanPrice{ID: uuid.NewString(), PlanID: plan.ID, BillingPeriod: price.period, Months: price.months, AmountFen: price.amount, Active: true}
-			if err := tx.Create(&row).Error; err != nil {
-				return err
-			}
 		}
 	}
 	return nil
 }
 
+func createCommercialPlanSeed(tx *gorm.DB, seed commercialPlanSeed, sortOrder int) (*model.Plan, error) {
+	plan := &model.Plan{
+		ID: uuid.NewString(), Slug: seed.slug, Name: seed.name, Description: seed.description,
+		TrafficBytes: seed.traffic, DeviceLimit: seed.devices, UploadLimitMbps: seed.speedMbps,
+		DownloadLimitMbps: seed.speedMbps, ResidentialRelayEnabled: seed.relayEnabled,
+		ResidentialRelayLimit: seed.relayLimit, ResetCycle: "monthly", NodeGroup: "default",
+		Visibility: "public", Renewable: true, Upgradable: true, Active: false,
+		SortOrder: sortOrder, ProvisionInboundIDs: "[]", DisplayBenefits: seed.benefits,
+	}
+	if err := tx.Create(plan).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Model(plan).Update("active", false).Error; err != nil {
+		return nil, err
+	}
+	for _, price := range seed.prices {
+		row := model.PlanPrice{ID: uuid.NewString(), PlanID: plan.ID, BillingPeriod: price.period, Months: price.months, AmountFen: price.amount, Active: true}
+		if err := tx.Create(&row).Error; err != nil {
+			return nil, err
+		}
+	}
+	return plan, nil
+}
+
+func syncCommercialPlanCatalog(tx *gorm.DB) error {
+	const seederName = "CommercialPlanCatalogV2"
+	var seeded int64
+	if err := tx.Model(&model.HistoryOfSeeders{}).Where("seeder_name = ?", seederName).Count(&seeded).Error; err != nil || seeded > 0 {
+		return err
+	}
+	legacyTraffic := map[string]int64{
+		"starter":  100 * 1024 * 1024 * 1024,
+		"pro":      300 * 1024 * 1024 * 1024,
+		"ultimate": 1024 * 1024 * 1024 * 1024,
+	}
+	legacyDevices := map[string]int{"starter": 3, "pro": 5, "ultimate": 10}
+	for index, seed := range commercialPlanSeeds() {
+		var plan model.Plan
+		err := tx.Where("slug = ?", seed.slug).First(&plan).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			if _, err := createCommercialPlanSeed(tx, seed, index+1); err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		benefitsJSON, _ := json.Marshal(seed.benefits)
+		updates := map[string]any{"display_benefits": string(benefitsJSON)}
+		isUntouchedLegacy := plan.TrafficBytes == legacyTraffic[seed.slug] &&
+			plan.DeviceLimit == legacyDevices[seed.slug] && plan.UploadLimitMbps == 0 && plan.DownloadLimitMbps == 0
+		if isUntouchedLegacy {
+			updates["name"] = seed.name
+			updates["description"] = seed.description
+			updates["traffic_bytes"] = seed.traffic
+			updates["device_limit"] = seed.devices
+			updates["upload_limit_mbps"] = seed.speedMbps
+			updates["download_limit_mbps"] = seed.speedMbps
+			updates["residential_relay_enabled"] = seed.relayEnabled
+			updates["residential_relay_limit"] = seed.relayLimit
+		}
+		if err := tx.Model(&plan).Updates(updates).Error; err != nil {
+			return err
+		}
+		var priceCount int64
+		if err := tx.Model(&model.PlanPrice{}).Where("plan_id = ?", plan.ID).Count(&priceCount).Error; err != nil {
+			return err
+		}
+		if priceCount == 0 {
+			for _, price := range seed.prices {
+				row := model.PlanPrice{ID: uuid.NewString(), PlanID: plan.ID, BillingPeriod: price.period, Months: price.months, AmountFen: price.amount, Active: true}
+				if err := tx.Create(&row).Error; err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return tx.Create(&model.HistoryOfSeeders{SeederName: seederName}).Error
+}
+
 func seedCommercialApplications(tx *gorm.DB) error {
 	apps := []model.ClientApplication{
-		{ID: uuid.NewString(), Slug: "v2rayn", Name: "v2rayN", Platform: "Windows / macOS / Linux", OfficialURL: "https://github.com/2dust/v2rayN/releases", SourceURL: "https://github.com/2dust/v2rayN", Description: "适合桌面设备使用，支持订阅导入与更新", Active: true, SortOrder: 1},
-		{ID: uuid.NewString(), Slug: "clash-verge-rev", Name: "Clash Verge Rev", Platform: "Windows / macOS / Linux", OfficialURL: "https://github.com/clash-verge-rev/clash-verge-rev/releases", SourceURL: "https://github.com/clash-verge-rev/clash-verge-rev", Description: "界面清晰的跨平台桌面客户端", Active: true, SortOrder: 2},
-		{ID: uuid.NewString(), Slug: "shadowrocket", Name: "Shadowrocket", Platform: "iOS", OfficialURL: "https://apps.apple.com/us/app/shadowrocket/id932747118", Description: "请从 Apple App Store 获取正版客户端", Active: true, SortOrder: 3},
-		{ID: uuid.NewString(), Slug: "hiddify", Name: "Hiddify", Platform: "Android / iOS / Desktop", OfficialURL: "https://github.com/hiddify/hiddify-app/releases", SourceURL: "https://github.com/hiddify/hiddify-app", Description: "开源多平台订阅客户端", Active: true, SortOrder: 4},
+		{ID: uuid.NewString(), Slug: "v2rayn", Name: "v2rayN", Platform: "Windows / macOS / Linux", Description: "适合桌面设备使用，支持订阅导入与更新", Active: true, SortOrder: 1},
+		{ID: uuid.NewString(), Slug: "clash-verge-rev", Name: "Clash Verge Rev", Platform: "Windows / macOS / Linux", Description: "界面清晰的跨平台桌面客户端", Active: true, SortOrder: 2},
+		{ID: uuid.NewString(), Slug: "shadowrocket", Name: "Shadowrocket", Platform: "iOS", Description: "适合 iPhone 和 iPad 使用的订阅客户端", Active: true, SortOrder: 3},
+		{ID: uuid.NewString(), Slug: "v2rayng", Name: "v2rayNG", Platform: "Android", Description: "适合 Android 设备使用，支持订阅导入与更新", Active: true, SortOrder: 4},
 	}
 	return tx.Create(&apps).Error
+}
+
+func normalizeCommercialClientCatalog(tx *gorm.DB) error {
+	var hiddify model.ClientApplication
+	if err := tx.Where("slug = ?", "hiddify").First(&hiddify).Error; err == nil {
+		var v2rayNGCount int64
+		if err := tx.Model(&model.ClientApplication{}).Where("slug = ?", "v2rayng").Count(&v2rayNGCount).Error; err != nil {
+			return err
+		}
+		if v2rayNGCount == 0 {
+			if err := tx.Model(&hiddify).Updates(map[string]any{
+				"slug": "v2rayng", "name": "v2rayNG", "platform": "Android",
+				"official_url": "", "source_url": "",
+				"description": "适合 Android 设备使用，支持订阅导入与更新",
+			}).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Model(&hiddify).Update("active", false).Error; err != nil {
+			return err
+		}
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	androidZH := "从本站下载并安装 v2rayNG，在首页点击添加配置并从剪贴板导入订阅。"
+	androidEN := "Download and install v2rayNG from this site, add a profile, and import the subscription from the clipboard."
+	if err := tx.Model(&model.KnowledgeArticle{}).
+		Where("slug = ? AND content_i18n LIKE ?", "android-import", "%Hiddify%").
+		Update("content_i18n", localizedText(androidZH, androidEN)).Error; err != nil {
+		return err
+	}
+	linuxZH := "从本站下载并安装 v2rayN 或 Clash Verge Rev，从 URL 导入订阅并选择可用节点。"
+	linuxEN := "Download and install v2rayN or Clash Verge Rev from this site, import the profile by URL, and select an available endpoint."
+	return tx.Model(&model.KnowledgeArticle{}).
+		Where("slug = ? AND content_i18n LIKE ?", "linux-import", "%Hiddify%").
+		Update("content_i18n", localizedText(linuxZH, linuxEN)).Error
 }
 
 func seedCommercialArticles(tx *gorm.DB) error {
@@ -209,9 +356,9 @@ func seedCommercialArticles(tx *gorm.DB) error {
 	seeds := []articleSeed{
 		{slug: "windows-import", category: "Windows", zh: "Windows 导入教程", en: "Windows setup", bodyZH: "安装 v2rayN 或 Clash Verge Rev，复制订阅链接，在客户端中选择从剪贴板导入并更新订阅。", bodyEN: "Install v2rayN or Clash Verge Rev, copy the subscription URL, import it from the clipboard, then refresh the profile."},
 		{slug: "macos-import", category: "macOS", zh: "macOS 导入教程", en: "macOS setup", bodyZH: "安装 Clash Verge Rev，添加新的订阅配置，粘贴链接并启用系统代理。", bodyEN: "Install Clash Verge Rev, add a remote profile, paste the URL, and enable the system proxy."},
-		{slug: "android-import", category: "Android", zh: "Android 导入教程", en: "Android setup", bodyZH: "从官方发布页安装 Hiddify，在首页点击添加配置并从剪贴板导入订阅。", bodyEN: "Install Hiddify from its official release page, add a profile, and import the subscription from the clipboard."},
+		{slug: "android-import", category: "Android", zh: "Android 导入教程", en: "Android setup", bodyZH: "从本站下载并安装 v2rayNG，在首页点击添加配置并从剪贴板导入订阅。", bodyEN: "Download and install v2rayNG from this site, add a profile, and import the subscription from the clipboard."},
 		{slug: "ios-import", category: "iOS", zh: "iOS 导入教程", en: "iOS setup", bodyZH: "从 App Store 安装 Shadowrocket，点击右上角加号，选择 Subscribe 并粘贴订阅链接。", bodyEN: "Install Shadowrocket from the App Store, tap the plus button, choose Subscribe, and paste the subscription URL."},
-		{slug: "linux-import", category: "Linux", zh: "Linux 导入教程", en: "Linux setup", bodyZH: "安装 v2rayN、Clash Verge Rev 或 Hiddify，从 URL 导入订阅并选择可用节点。", bodyEN: "Install v2rayN, Clash Verge Rev, or Hiddify, import the profile by URL, and select an available endpoint."},
+		{slug: "linux-import", category: "Linux", zh: "Linux 导入教程", en: "Linux setup", bodyZH: "从本站下载并安装 v2rayN 或 Clash Verge Rev，从 URL 导入订阅并选择可用节点。", bodyEN: "Download and install v2rayN or Clash Verge Rev from this site, import the profile by URL, and select an available endpoint."},
 	}
 	for index, seed := range seeds {
 		row := model.KnowledgeArticle{ID: uuid.NewString(), Slug: seed.slug, Category: seed.category, TitleI18n: localizedText(seed.zh, seed.en), ContentI18n: localizedText(seed.bodyZH, seed.bodyEN), Published: true, SortOrder: index + 1}

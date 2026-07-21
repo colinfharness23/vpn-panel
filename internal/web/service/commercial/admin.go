@@ -271,6 +271,18 @@ func (s *AdminService) UpsertSubscription(customerID string, request entity.Comm
 	if deviceLimit == 0 {
 		deviceLimit = plan.DeviceLimit
 	}
+	trafficMultiplier := model.NormalizeTrafficMultiplierPermille(plan.TrafficMultiplierPermille)
+	if request.TrafficMultiplierPermille != nil {
+		trafficMultiplier = model.NormalizeTrafficMultiplierPermille(*request.TrafficMultiplierPermille)
+	}
+	uploadLimit := plan.UploadLimitMbps
+	if request.UploadLimitMbps != nil {
+		uploadLimit = *request.UploadLimitMbps
+	}
+	downloadLimit := plan.DownloadLimitMbps
+	if request.DownloadLimitMbps != nil {
+		downloadLimit = *request.DownloadLimitMbps
+	}
 	var entitlement model.SubscriptionEntitlement
 	lookupErr := s.db.Where("customer_id = ? AND status = ?", customerID, "active").Order("created_at desc").First(&entitlement).Error
 	if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
@@ -284,6 +296,11 @@ func (s *AdminService) UpsertSubscription(customerID string, request entity.Comm
 	entitlement.PlanID = plan.ID
 	entitlement.TrafficQuota = trafficQuota
 	entitlement.DeviceLimit = deviceLimit
+	entitlement.TrafficMultiplierPermille = trafficMultiplier
+	entitlement.UploadLimitMbps = uploadLimit
+	entitlement.DownloadLimitMbps = downloadLimit
+	entitlement.ResidentialRelayEnabled = plan.ResidentialRelayEnabled
+	entitlement.ResidentialRelayLimit = plan.ResidentialRelayLimit
 	entitlement.NodeGroup = plan.NodeGroup
 	entitlement.ExpiresAt = expiresAt
 	if err := s.applyAdminSubscriptionClient(&entitlement, &plan, inboundIDs, request.ResetTraffic); err != nil {
@@ -299,7 +316,7 @@ func (s *AdminService) UpsertSubscription(customerID string, request entity.Comm
 			return nil, err
 		}
 	} else {
-		updates := map[string]any{"plan_id": plan.ID, "traffic_quota": trafficQuota, "device_limit": deviceLimit, "node_group": plan.NodeGroup, "expires_at": expiresAt}
+		updates := map[string]any{"plan_id": plan.ID, "traffic_quota": trafficQuota, "device_limit": deviceLimit, "traffic_multiplier_permille": trafficMultiplier, "upload_limit_mbps": uploadLimit, "download_limit_mbps": downloadLimit, "residential_relay_enabled": plan.ResidentialRelayEnabled, "residential_relay_limit": plan.ResidentialRelayLimit, "node_group": plan.NodeGroup, "expires_at": expiresAt}
 		if request.ResetTraffic {
 			updates["traffic_used"] = 0
 			updates["last_reset_at"] = now
@@ -332,7 +349,7 @@ func (s *AdminService) applyAdminSubscriptionClient(entitlement *model.Subscript
 	var record model.ClientRecord
 	lookupErr := s.db.Where("email = ?", entitlement.InternalClientID).First(&record).Error
 	if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-		client := model.Client{ID: uuid.NewSHA1(uuid.NameSpaceURL, []byte("admin-client:"+entitlement.ID)).String(), Email: entitlement.InternalClientID, SubID: entitlement.SubscriptionID, Enable: true, TotalGB: entitlement.TrafficQuota, ExpiryTime: expiryMillis, LimitIP: entitlement.DeviceLimit, Group: plan.NodeGroup, Reset: resetDaysForPolicy(plan.ResetCycle, s.config.SubscriptionPolicy().MonthlyResetMode), Comment: "commercial:admin:" + entitlement.CustomerID}
+		client := model.Client{ID: uuid.NewSHA1(uuid.NameSpaceURL, []byte("admin-client:"+entitlement.ID)).String(), Email: entitlement.InternalClientID, SubID: entitlement.SubscriptionID, Enable: true, TotalGB: entitlement.TrafficQuota, TrafficMultiplierPermille: entitlement.TrafficMultiplierPermille, UploadLimitMbps: entitlement.UploadLimitMbps, DownloadLimitMbps: entitlement.DownloadLimitMbps, ExpiryTime: expiryMillis, LimitIP: entitlement.DeviceLimit, Group: plan.NodeGroup, Reset: resetDaysForPolicy(plan.ResetCycle, s.config.SubscriptionPolicy().MonthlyResetMode), Comment: "commercial:admin:" + entitlement.CustomerID}
 		needRestart, err := s.clients.Create(&s.inbounds, &service.ClientCreatePayload{Client: client, InboundIds: inboundIDs})
 		if needRestart {
 			s.xray.SetToNeedRestart()
@@ -352,6 +369,9 @@ func (s *AdminService) applyAdminSubscriptionClient(entitlement *model.Subscript
 		client.SubID = entitlement.SubscriptionID
 		client.Enable = true
 		client.TotalGB = entitlement.TrafficQuota
+		client.TrafficMultiplierPermille = entitlement.TrafficMultiplierPermille
+		client.UploadLimitMbps = entitlement.UploadLimitMbps
+		client.DownloadLimitMbps = entitlement.DownloadLimitMbps
 		client.ExpiryTime = expiryMillis
 		client.LimitIP = entitlement.DeviceLimit
 		client.Group = plan.NodeGroup
@@ -412,9 +432,12 @@ func (s *AdminService) DeleteSubscription(customerID string) error {
 		s.xray.SetToNeedRestart()
 	}
 	if err != nil && !isMissingCommercialClient(err) {
-		return fmt.Errorf("清理 3X-UI 客户端失败: %w", err)
+		return fmt.Errorf("清理面板客户端失败: %w", err)
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("entitlement_id = ?", entitlement.ID).Delete(&model.ResidentialRelay{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("aggregate_id = ?", entitlement.ID).Delete(&model.OutboxEvent{}).Error; err != nil {
 			return err
 		}
@@ -466,7 +489,7 @@ func (s *AdminService) deleteCustomer(customerID string) error {
 			s.xray.SetToNeedRestart()
 		}
 		if err != nil && !isMissingCommercialClient(err) {
-			return fmt.Errorf("清理 3X-UI 客户端失败: %w", err)
+			return fmt.Errorf("清理面板客户端失败: %w", err)
 		}
 	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
@@ -550,6 +573,7 @@ func (s *AdminService) deleteCustomer(customerID string) error {
 			model any
 		}{
 			{"customer_id = ?", []any{customerID}, &model.Ticket{}},
+			{"customer_id = ?", []any{customerID}, &model.ResidentialRelay{}},
 			{"customer_id = ?", []any{customerID}, &model.SubscriptionEntitlement{}},
 			{"customer_id = ?", []any{customerID}, &model.ProvisioningJob{}},
 			{"customer_id = ?", []any{customerID}, &model.Order{}},
@@ -606,8 +630,12 @@ func (s *AdminService) SavePlan(request entity.CommercialPlanRequest) (*model.Pl
 	if !commercialSlugPattern.MatchString(request.Slug) || request.Name == "" || len(request.Name) > 120 {
 		return nil, errors.New("套餐名称或唯一标识无效")
 	}
-	if request.TrafficBytes < 0 || request.DeviceLimit < 0 || request.DeviceLimit > 1000 || request.Capacity < 0 {
+	if request.TrafficBytes < 0 || request.DeviceLimit < 0 || request.DeviceLimit > 1000 || request.Capacity < 0 || request.UploadLimitMbps < 0 || request.DownloadLimitMbps < 0 {
 		return nil, errors.New("套餐流量、设备上限或容量无效")
+	}
+	request.TrafficMultiplierPermille = model.NormalizeTrafficMultiplierPermille(request.TrafficMultiplierPermille)
+	if request.TrafficMultiplierPermille < 100 || request.TrafficMultiplierPermille > 100000 || request.UploadLimitMbps > 100000 || request.DownloadLimitMbps > 100000 {
+		return nil, errors.New("流量倍率或带宽限制无效")
 	}
 	if !map[string]bool{"never": true, "daily": true, "weekly": true, "monthly": true, "quarterly": true}[request.ResetCycle] {
 		return nil, errors.New("流量重置周期无效")
@@ -624,16 +652,36 @@ func (s *AdminService) SavePlan(request entity.CommercialPlanRequest) (*model.Pl
 		seen[id] = true
 		uniqueInboundIDs = append(uniqueInboundIDs, id)
 	}
-	if request.Active && len(uniqueInboundIDs) == 0 {
-		return nil, errors.New("上架套餐前必须绑定至少一个已启用的 3X-UI 入站")
+	lineGroupIDs := uniqueStrings(request.LineGroupIDs)
+	if len(lineGroupIDs) > 0 {
+		var groupCount int64
+		if err := s.db.Model(&model.LineGroup{}).Where("id IN ? AND active = ?", lineGroupIDs, true).Count(&groupCount).Error; err != nil {
+			return nil, err
+		}
+		if groupCount != int64(len(lineGroupIDs)) {
+			return nil, errors.New("套餐包含不存在或已停用的线路组")
+		}
 	}
-	if request.Active && request.ID != "" {
+	if request.Active && len(uniqueInboundIDs) == 0 && len(lineGroupIDs) == 0 {
+		return nil, errors.New("上架套餐前必须绑定至少一个线路组或高级入站")
+	}
+	if request.Active {
+		if request.ID == "" {
+			return nil, errors.New("请先将套餐保存为草稿并添加价格，再启用套餐")
+		}
 		var activePrices int64
 		if err := s.db.Model(&model.PlanPrice{}).Where("plan_id = ? AND active = ?", request.ID, true).Count(&activePrices).Error; err != nil {
 			return nil, err
 		}
 		if activePrices == 0 {
 			return nil, errors.New("上架套餐前必须启用至少一个价格")
+		}
+		hasLine, err := hasHealthyLineForGroupsDB(s.db, lineGroupIDs, uniqueInboundIDs)
+		if err != nil {
+			return nil, err
+		}
+		if !hasLine {
+			return nil, errors.New("上架套餐前必须至少有一条健康线路")
 		}
 	}
 	if len(uniqueInboundIDs) > 0 {
@@ -642,29 +690,79 @@ func (s *AdminService) SavePlan(request entity.CommercialPlanRequest) (*model.Pl
 			return nil, err
 		}
 		if count != int64(len(uniqueInboundIDs)) {
-			return nil, errors.New("套餐包含不存在或未启用的 3X-UI 入站")
+			return nil, errors.New("套餐包含不存在或未启用的面板入站")
 		}
 	}
 	inboundIDs, _ := json.Marshal(uniqueInboundIDs)
-	row := &model.Plan{ID: request.ID, Slug: strings.TrimSpace(request.Slug), Name: strings.TrimSpace(request.Name), Description: request.Description, TrafficBytes: request.TrafficBytes, DeviceLimit: request.DeviceLimit, ResetCycle: request.ResetCycle, NodeGroup: request.NodeGroup, Capacity: request.Capacity, Visibility: request.Visibility, Renewable: request.Renewable, Upgradable: request.Upgradable, Active: request.Active, SortOrder: request.SortOrder, ProvisionInboundIDs: string(inboundIDs)}
+	if request.ResidentialRelayEnabled && request.ResidentialRelayLimit == 0 {
+		request.ResidentialRelayLimit = 1
+	}
+	if !request.ResidentialRelayEnabled {
+		request.ResidentialRelayLimit = 0
+	}
+	displayBenefits, err := normalizePlanDisplayBenefits(request.DisplayBenefits)
+	if err != nil {
+		return nil, err
+	}
+	row := &model.Plan{ID: request.ID, Slug: strings.TrimSpace(request.Slug), Name: strings.TrimSpace(request.Name), Description: request.Description, TrafficBytes: request.TrafficBytes, DeviceLimit: request.DeviceLimit, TrafficMultiplierPermille: request.TrafficMultiplierPermille, UploadLimitMbps: request.UploadLimitMbps, DownloadLimitMbps: request.DownloadLimitMbps, ResidentialRelayEnabled: request.ResidentialRelayEnabled, ResidentialRelayLimit: request.ResidentialRelayLimit, ResetCycle: request.ResetCycle, NodeGroup: request.NodeGroup, Capacity: request.Capacity, Visibility: request.Visibility, Renewable: request.Renewable, Upgradable: request.Upgradable, Active: request.Active, SortOrder: request.SortOrder, ProvisionInboundIDs: string(inboundIDs), DisplayBenefits: displayBenefits}
 	if row.ID == "" {
 		row.ID = uuid.NewString()
-		if err := s.db.Create(row).Error; err != nil {
-			return nil, err
+	}
+	isNew := request.ID == ""
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if isNew {
+			if err := tx.Create(row).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(row).Updates(map[string]any{"residential_relay_enabled": request.ResidentialRelayEnabled, "renewable": request.Renewable, "upgradable": request.Upgradable, "active": request.Active}).Error; err != nil {
+				return err
+			}
+		} else {
+			result := tx.Model(&model.Plan{}).Where("id = ?", row.ID).Select("slug", "name", "description", "traffic_bytes", "device_limit", "traffic_multiplier_permille", "upload_limit_mbps", "download_limit_mbps", "residential_relay_enabled", "residential_relay_limit", "reset_cycle", "node_group", "capacity", "visibility", "renewable", "upgradable", "active", "sort_order", "provision_inbound_ids", "display_benefits").Updates(row)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return errors.New("套餐不存在")
+			}
 		}
-		return row, nil
-	}
-	result := s.db.Model(&model.Plan{}).Where("id = ?", row.ID).Updates(map[string]any{"slug": row.Slug, "name": row.Name, "description": row.Description, "traffic_bytes": row.TrafficBytes, "device_limit": row.DeviceLimit, "reset_cycle": row.ResetCycle, "node_group": row.NodeGroup, "capacity": row.Capacity, "visibility": row.Visibility, "renewable": row.Renewable, "upgradable": row.Upgradable, "active": row.Active, "sort_order": row.SortOrder, "provision_inbound_ids": row.ProvisionInboundIDs})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return nil, errors.New("套餐不存在")
+		if err := tx.Where("plan_id = ?", row.ID).Delete(&model.PlanLineGroup{}).Error; err != nil {
+			return err
+		}
+		for _, groupID := range lineGroupIDs {
+			if err := tx.Create(&model.PlanLineGroup{PlanID: row.ID, GroupID: groupID}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	if err := s.db.First(row, "id = ?", row.ID).Error; err != nil {
 		return nil, err
 	}
+	if err := NewWorker().reconcileActivePlanClients(row.ID); err != nil {
+		return row, err
+	}
 	return row, nil
+}
+
+func normalizePlanDisplayBenefits(input map[string]string) (map[string]string, error) {
+	keys := []string{
+		"globalCoverage", "standardNodes", "advancedNodes", "premiumRoutes",
+		"residentialIpSale", "socialMedia", "crossBorderWork", "liveStreaming",
+		"uploadOptimization", "peakPriority", "failover", "support",
+	}
+	result := make(map[string]string, len(keys))
+	for _, key := range keys {
+		value := strings.TrimSpace(input[key])
+		if len([]rune(value)) > 120 {
+			return nil, errors.New("前台套餐详情每项不能超过 120 个字符")
+		}
+		result[key] = value
+	}
+	return result, nil
 }
 
 func (s *AdminService) SavePlanPrice(request entity.CommercialPlanPriceRequest) (*model.PlanPrice, error) {
@@ -700,6 +798,10 @@ func (s *AdminService) SavePlanPrice(request entity.CommercialPlanPriceRequest) 
 		if err := s.db.Create(row).Error; err != nil {
 			return nil, err
 		}
+		if err := s.db.Model(row).Update("active", request.Active).Error; err != nil {
+			return nil, err
+		}
+		row.Active = request.Active
 		return row, nil
 	}
 	result := s.db.Model(&model.PlanPrice{}).Where("id = ?", row.ID).Updates(map[string]any{"plan_id": row.PlanID, "billing_period": row.BillingPeriod, "months": row.Months, "amount_fen": row.AmountFen, "active": row.Active})
@@ -772,17 +874,31 @@ func (s *AdminService) SaveArticle(row *model.KnowledgeArticle) error {
 func (s *AdminService) Applications() ([]model.ClientApplication, error) {
 	var rows []model.ClientApplication
 	err := s.db.Order("sort_order asc, created_at desc").Find(&rows).Error
+	populateApplicationDownloads(rows)
 	return rows, err
 }
 
 func (s *AdminService) SaveApplication(row *model.ClientApplication) error {
-	if !commercialSlugPattern.MatchString(strings.TrimSpace(row.Slug)) || strings.TrimSpace(row.Name) == "" || strings.TrimSpace(row.Platform) == "" || !validHTTPSURL(row.OfficialURL) || row.SourceURL != "" && !validHTTPSURL(row.SourceURL) {
-		return errors.New("客户端名称、平台或官方地址无效（仅允许 HTTPS）")
+	if !commercialSlugPattern.MatchString(strings.TrimSpace(row.Slug)) || strings.TrimSpace(row.Name) == "" || strings.TrimSpace(row.Platform) == "" || (row.OfficialURL != "" && !validHTTPSURL(row.OfficialURL)) || (row.SourceURL != "" && !validHTTPSURL(row.SourceURL)) {
+		return errors.New("客户端名称、平台或标识无效")
 	}
 	row.Slug = strings.TrimSpace(row.Slug)
+	row.Name = strings.TrimSpace(row.Name)
+	row.Platform = strings.TrimSpace(row.Platform)
+	row.OfficialURL = strings.TrimSpace(row.OfficialURL)
+	row.SourceURL = strings.TrimSpace(row.SourceURL)
+	requestedActive := row.Active
 	if row.ID == "" {
 		row.ID = uuid.NewString()
-		return s.db.Create(row).Error
+		if err := s.db.Create(row).Error; err != nil {
+			return err
+		}
+		if err := s.db.Model(row).Update("active", requestedActive).Error; err != nil {
+			return err
+		}
+		row.Active = requestedActive
+		populateApplicationDownload(row)
+		return nil
 	}
 	result := s.db.Model(&model.ClientApplication{}).Where("id = ?", row.ID).Updates(map[string]any{"slug": row.Slug, "name": row.Name, "platform": row.Platform, "official_url": row.OfficialURL, "source_url": row.SourceURL, "description": row.Description, "active": row.Active, "sort_order": row.SortOrder})
 	if result.Error != nil {
@@ -791,6 +907,10 @@ func (s *AdminService) SaveApplication(row *model.ClientApplication) error {
 	if result.RowsAffected == 0 {
 		return errors.New("客户端入口不存在")
 	}
+	if err := s.db.First(row, "id = ?", row.ID).Error; err != nil {
+		return err
+	}
+	populateApplicationDownload(row)
 	return nil
 }
 
@@ -844,10 +964,15 @@ func (s *AdminService) SaveCoupon(row *model.Coupon) error {
 	if row.StartsAt != nil && row.ExpiresAt != nil && !row.ExpiresAt.After(*row.StartsAt) {
 		return errors.New("优惠券到期时间必须晚于开始时间")
 	}
+	requestedActive := row.Active
 	if row.ID == "" {
 		row.ID = uuid.NewString()
 		row.RedeemedCount = 0
-		return s.db.Create(row).Error
+		if err := s.db.Create(row).Error; err != nil {
+			return err
+		}
+		row.Active = requestedActive
+		return s.db.Model(row).Update("active", requestedActive).Error
 	}
 	// RedeemedCount is payment-derived state. Never trust a value posted by an
 	// administrator client, otherwise coupon usage limits can be reset.

@@ -28,8 +28,9 @@ const (
 )
 
 type PlanCatalogItem struct {
-	Plan   model.Plan        `json:"plan"`
-	Prices []model.PlanPrice `json:"prices"`
+	Plan         model.Plan        `json:"plan"`
+	Prices       []model.PlanPrice `json:"prices"`
+	LineGroupIDs []string          `json:"lineGroupIds,omitempty"`
 }
 
 type OrderService struct {
@@ -52,6 +53,21 @@ func (s *OrderService) Catalog(publicOnly bool) ([]PlanCatalogItem, error) {
 	}
 	items := make([]PlanCatalogItem, 0, len(plans))
 	for _, plan := range plans {
+		if publicOnly {
+			var manualInboundIDs []int
+			if plan.ProvisionInboundIDs != "" {
+				if err := json.Unmarshal([]byte(plan.ProvisionInboundIDs), &manualInboundIDs); err != nil {
+					return nil, errors.New("套餐入站配置无效")
+				}
+			}
+			healthy, err := planHasHealthyLineDB(s.db, plan.ID, manualInboundIDs)
+			if err != nil {
+				return nil, err
+			}
+			if !healthy {
+				continue
+			}
+		}
 		var prices []model.PlanPrice
 		priceQuery := s.db.Where("plan_id = ?", plan.ID)
 		if publicOnly {
@@ -60,7 +76,13 @@ func (s *OrderService) Catalog(publicOnly bool) ([]PlanCatalogItem, error) {
 		if err := priceQuery.Order("months asc").Find(&prices).Error; err != nil {
 			return nil, err
 		}
-		items = append(items, PlanCatalogItem{Plan: plan, Prices: prices})
+		item := PlanCatalogItem{Plan: plan, Prices: prices}
+		if !publicOnly {
+			if err := s.db.Model(&model.PlanLineGroup{}).Where("plan_id = ?", plan.ID).Order("group_id asc").Pluck("group_id", &item.LineGroupIDs).Error; err != nil {
+				return nil, err
+			}
+		}
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -94,6 +116,19 @@ func (s *OrderService) CreateFor(customerID, priceID, orderKind, entitlementID, 
 		}
 		if plan.Visibility != "public" {
 			return errors.New("该套餐不能直接购买")
+		}
+		var manualInboundIDs []int
+		if plan.ProvisionInboundIDs != "" {
+			if err := json.Unmarshal([]byte(plan.ProvisionInboundIDs), &manualInboundIDs); err != nil {
+				return errors.New("套餐入站配置无效")
+			}
+		}
+		hasLine, err := planHasHealthyLineDB(tx, plan.ID, manualInboundIDs)
+		if err != nil {
+			return err
+		}
+		if !hasLine {
+			return errors.New("该套餐暂无可用线路")
 		}
 		now := time.Now().UTC()
 		var targetEntitlement model.SubscriptionEntitlement

@@ -23,7 +23,7 @@ export const gitConfig = {
 
 export const productRepoUrl = `https://github.com/${productRepo.user}/${productRepo.repo}`;
 
-// AI-generated interactive wiki of the 3x-ui codebase.
+// Interactive wiki of the 3x-ui codebase.
 export const deepWikiUrl = `https://deepwiki.com/${productRepo.user}/${productRepo.repo}`;
 
 // Official 3x-ui community channel on Telegram (announcements & support).

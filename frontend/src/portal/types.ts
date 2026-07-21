@@ -11,6 +11,10 @@ export interface Plan {
   description: string;
   trafficBytes: number;
   deviceLimit: number;
+  uploadLimitMbps?: number;
+  downloadLimitMbps?: number;
+  residentialRelayEnabled?: boolean;
+  residentialRelayLimit?: number;
   resetCycle: string;
   nodeGroup: string;
   visibility: string;
@@ -18,6 +22,22 @@ export interface Plan {
   upgradable: boolean;
   active: boolean;
   sortOrder?: number;
+  displayBenefits?: PlanDisplayBenefits;
+}
+
+export interface PlanDisplayBenefits {
+  globalCoverage?: string;
+  standardNodes?: string;
+  advancedNodes?: string;
+  premiumRoutes?: string;
+  residentialIpSale?: string;
+  socialMedia?: string;
+  crossBorderWork?: string;
+  liveStreaming?: string;
+  uploadOptimization?: string;
+  peakPriority?: string;
+  failover?: string;
+  support?: string;
 }
 
 export interface PlanPrice {
@@ -48,9 +68,11 @@ export interface ClientApplication {
   slug: string;
   name: string;
   platform: string;
-  officialUrl: string;
-  sourceUrl?: string;
   description: string;
+  packageFileName?: string;
+  packageSize?: number;
+  packageSha256?: string;
+  downloadUrl?: string;
 }
 
 export interface PaymentMethod {
@@ -65,6 +87,10 @@ export interface GuestBootstrap {
   notices: LocalizedContent[];
   articles: LocalizedContent[];
   applications: ClientApplication[];
+}
+
+export interface GuestAuthConfig {
+  site: Record<string, string>;
 }
 
 export interface Customer {
@@ -86,6 +112,8 @@ export interface Entitlement {
   trafficQuota: number;
   trafficUsed: number;
   deviceLimit: number;
+  residentialRelayEnabled?: boolean;
+  residentialRelayLimit?: number;
   startsAt: string;
   expiresAt?: string;
 }
@@ -104,7 +132,7 @@ export interface SubscriptionOverview {
 export interface Order {
   id: string;
   outTradeNo: string;
-  orderKind?: 'purchase' | 'renewal' | 'upgrade';
+  orderKind?: "purchase" | "renewal" | "upgrade";
   entitlementId?: string;
   resultExpiresAt?: string;
   status: string;
@@ -150,6 +178,9 @@ export interface PaymentPayload {
 
 export interface Ticket {
   id: string;
+  entitlementId?: string;
+  planId?: string;
+  planName?: string;
   subject: string;
   status: string;
   priority: string;
@@ -175,4 +206,32 @@ export interface CustomerSession {
 export interface SessionList {
   currentSessionId: string;
   sessions: CustomerSession[];
+}
+
+export interface ResidentialRelayLine {
+  id: number;
+  name: string;
+  protocol: string;
+}
+
+export interface ResidentialRelay {
+  id: string;
+  inboundId: number;
+  lineName: string;
+  protocol: string;
+  name: string;
+  host: string;
+  port: number;
+  username?: string;
+  hasPassword: boolean;
+  status: "active" | "pending";
+  createdAt: string;
+  links: string[];
+}
+
+export interface ResidentialRelayOverview {
+  enabled: boolean;
+  limit: number;
+  lines: ResidentialRelayLine[];
+  relays: ResidentialRelay[];
 }

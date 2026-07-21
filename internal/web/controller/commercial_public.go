@@ -3,12 +3,14 @@ package controller
 import (
 	"encoding/base64"
 	"errors"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/sub"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/entity"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/middleware"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/commercial"
@@ -27,23 +29,30 @@ type CommercialPublicController struct {
 	orders *commercial.OrderService
 	portal *commercial.PortalService
 	config *commercial.ConfigStore
+	relays *commercial.ResidentialRelayService
 }
 
 func NewCommercialPublicController(g *gin.RouterGroup, mailer commercial.VerificationMailer) *CommercialPublicController {
-	controller := &CommercialPublicController{auth: commercial.NewAuthService(mailer), orders: commercial.NewOrderService(), portal: commercial.NewPortalService(), config: commercial.NewConfigStore()}
+	controller := &CommercialPublicController{auth: commercial.NewAuthService(mailer), orders: commercial.NewOrderService(), portal: commercial.NewPortalService(), config: commercial.NewConfigStore(), relays: commercial.NewResidentialRelayService()}
 	controller.initRouter(g)
 	return controller
 }
 
 func (a *CommercialPublicController) initRouter(g *gin.RouterGroup) {
+	g.GET("/", a.siteHostGuard, a.portalSPA)
+	for _, route := range []string{"/subscription", "/plans", "/guides", "/tickets", "/orders", "/account"} {
+		g.GET(route, a.siteHostGuard, a.portalSPA)
+	}
 	g.GET("/portal", a.siteHostGuard, func(c *gin.Context) {
-		c.Redirect(http.StatusTemporaryRedirect, strings.TrimRight(c.GetString("base_path"), "/")+"/portal/")
+		c.Redirect(http.StatusPermanentRedirect, strings.TrimRight(c.GetString("base_path"), "/")+"/")
 	})
-	g.GET("/portal/*path", a.siteHostGuard, a.portalSPA)
+	g.GET("/portal/*path", a.siteHostGuard, func(c *gin.Context) {
+		c.Redirect(http.StatusPermanentRedirect, strings.TrimRight(c.GetString("base_path"), "/")+"/")
+	})
 
 	guest := g.Group("/api/v1/guest")
 	guest.Use(a.siteHostGuard)
-	guest.GET("/bootstrap", a.bootstrap)
+	guest.GET("/auth-config", a.authConfig)
 	guest.POST("/payments/alipay/notify", a.alipayNotify)
 	guest.GET("/payments/epay/notify", a.epayNotify)
 	guest.POST("/payments/epay/notify", a.epayNotify)
@@ -64,6 +73,8 @@ func (a *CommercialPublicController) initRouter(g *gin.RouterGroup) {
 	user.Use(a.siteHostGuard)
 	user.Use(a.customerAuth)
 	user.Use(middleware.CSRFMiddleware())
+	user.GET("/bootstrap", a.bootstrap)
+	user.GET("/applications/:id/download", a.downloadApplication)
 	user.GET("/dashboard", a.dashboard)
 	user.GET("/orders", a.ordersList)
 	user.POST("/orders", a.createOrder)
@@ -72,6 +83,11 @@ func (a *CommercialPublicController) initRouter(g *gin.RouterGroup) {
 	user.POST("/orders/:id/demo-pay", a.demoPay)
 	user.POST("/subscription/rotate", a.rotateSubscription)
 	user.GET("/subscription/qr", a.subscriptionQR)
+	user.GET("/residential-relays", a.residentialRelays)
+	user.POST("/residential-relays", a.createResidentialRelay)
+	user.PUT("/residential-relays/:id", a.updateResidentialRelay)
+	user.DELETE("/residential-relays/:id", a.deleteResidentialRelay)
+	user.GET("/residential-relays/:id/qr", a.residentialRelayQR)
 	user.GET("/sessions", a.sessions)
 	user.DELETE("/sessions/:id", a.revokeSession)
 	user.POST("/account/password", a.changePassword)
@@ -118,6 +134,31 @@ func (a *CommercialPublicController) bootstrap(c *gin.Context) {
 	locale := requestLocale(c)
 	data, err := a.portal.Bootstrap(locale)
 	commercialJSON(c, data, err)
+}
+
+func (a *CommercialPublicController) authConfig(c *gin.Context) {
+	commercialJSON(c, a.portal.AuthConfig(), nil)
+}
+
+func (a *CommercialPublicController) downloadApplication(c *gin.Context) {
+	row, file, info, err := a.portal.OpenApplicationPackage(c.Param("id"))
+	if err != nil {
+		c.AbortWithStatusJSON(http.StatusNotFound, entity.Msg{Success: false, Msg: err.Error()})
+		return
+	}
+	defer file.Close()
+
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": row.PackageFileName})
+	if disposition != "" {
+		c.Header("Content-Disposition", disposition)
+	}
+	c.Header("Content-Type", "application/octet-stream")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Cache-Control", "private, max-age=0, must-revalidate")
+	if row.PackageSHA256 != "" {
+		c.Header("ETag", `"`+row.PackageSHA256+`"`)
+	}
+	http.ServeContent(c.Writer, c.Request, row.PackageFileName, info.ModTime(), file)
 }
 
 func (a *CommercialPublicController) sendCode(c *gin.Context) {
@@ -273,6 +314,83 @@ func (a *CommercialPublicController) subscriptionQR(c *gin.Context) {
 	c.Data(http.StatusOK, "image/png", png)
 }
 
+func (a *CommercialPublicController) residentialRelays(c *gin.Context) {
+	identity := customerIdentity(c)
+	overview, err := a.relays.Overview(identity.Customer.ID)
+	if err == nil {
+		a.attachResidentialRelayLinks(c, overview)
+	}
+	commercialJSON(c, overview, err)
+}
+
+func (a *CommercialPublicController) createResidentialRelay(c *gin.Context) {
+	var request entity.ResidentialRelayRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		commercialJSON(c, nil, errors.New("请检查住宅中转的填写内容"))
+		return
+	}
+	identity := customerIdentity(c)
+	overview, err := a.relays.Create(c.Request.Context(), identity.Customer.ID, request)
+	if err == nil {
+		a.attachResidentialRelayLinks(c, overview)
+	}
+	commercialJSON(c, overview, err)
+}
+
+func (a *CommercialPublicController) updateResidentialRelay(c *gin.Context) {
+	var request entity.ResidentialRelayRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		commercialJSON(c, nil, errors.New("请检查住宅中转的填写内容"))
+		return
+	}
+	identity := customerIdentity(c)
+	overview, err := a.relays.Update(c.Request.Context(), identity.Customer.ID, c.Param("id"), request)
+	if err == nil {
+		a.attachResidentialRelayLinks(c, overview)
+	}
+	commercialJSON(c, overview, err)
+}
+
+func (a *CommercialPublicController) deleteResidentialRelay(c *gin.Context) {
+	identity := customerIdentity(c)
+	overview, err := a.relays.Delete(identity.Customer.ID, c.Param("id"))
+	if err == nil {
+		a.attachResidentialRelayLinks(c, overview)
+	}
+	commercialJSON(c, overview, err)
+}
+
+func (a *CommercialPublicController) residentialRelayQR(c *gin.Context) {
+	identity := customerIdentity(c)
+	relay, err := a.relays.Relay(identity.Customer.ID, c.Param("id"))
+	if err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	links := sub.NewLinkProvider().LinksForClient(requestOrigin(c), relay.Inbound, relay.ClientID)
+	if len(links) == 0 {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	png, err := qrcode.Encode(links[0], qrcode.Medium, 360)
+	if err != nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Data(http.StatusOK, "image/png", png)
+}
+
+func (a *CommercialPublicController) attachResidentialRelayLinks(c *gin.Context, overview *commercial.ResidentialRelayOverview) {
+	if overview == nil {
+		return
+	}
+	provider := sub.NewLinkProvider()
+	for i := range overview.Relays {
+		overview.Relays[i].Links = provider.LinksForClient(requestOrigin(c), overview.Relays[i].Inbound, overview.Relays[i].ClientID)
+	}
+}
+
 func (a *CommercialPublicController) sessions(c *gin.Context) {
 	identity := customerIdentity(c)
 	rows, err := a.auth.Sessions(identity.Customer.ID)
@@ -315,7 +433,7 @@ func (a *CommercialPublicController) createTicket(c *gin.Context) {
 		return
 	}
 	identity := customerIdentity(c)
-	ticket, err := a.portal.CreateTicket(identity.Customer.ID, request.Subject, request.Body)
+	ticket, err := a.portal.CreateTicket(identity.Customer.ID, request.EntitlementID, request.Subject, request.Body)
 	commercialJSON(c, ticket, err)
 }
 

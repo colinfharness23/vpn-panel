@@ -7,10 +7,13 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/config"
+	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/json_util"
@@ -314,6 +317,10 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		mergeSubscriptionOutbounds(xrayConfig, prepend, appendList)
 	}
 
+	injectCommercialLines(xrayConfig)
+
+	injectResidentialRelays(xrayConfig)
+
 	// Route opted-in local mtproto inbounds through the core's router. Each one
 	// gets a loopback SOCKS bridge — tagged with the inbound's own tag so it is
 	// matchable in routing rules — that its mtg sidecar dials Telegram through.
@@ -343,6 +350,255 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 	}
 
 	return xrayConfig, nil
+}
+
+func injectCommercialLines(cfg *xray.Config) {
+	db := database.GetDB()
+	if db == nil {
+		return
+	}
+	type managedLine struct {
+		model.LineNode
+		InboundTag string `gorm:"column:inbound_tag"`
+	}
+	var rows []managedLine
+	err := db.Table(model.LineNode{}.TableName()+" AS nodes").
+		Select("nodes.*, inbounds.tag AS inbound_tag").
+		Joins("JOIN inbounds ON inbounds.id = nodes.inbound_id").
+		Where("nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL AND nodes.status IN ?", []string{"checking", "provisioning", "retry", "healthy", "offline"}).
+		Order("nodes.created_at asc").Scan(&rows).Error
+	if err != nil || len(rows) == 0 {
+		if err != nil {
+			logger.Warning("commercial lines: read failed:", err)
+		}
+		return
+	}
+	var outbounds []any
+	if len(cfg.OutboundConfigs) > 0 {
+		if err := json.Unmarshal(cfg.OutboundConfigs, &outbounds); err != nil {
+			logger.Warning("commercial lines: outbounds section is unparsable:", err)
+			return
+		}
+	}
+	existingTags := make(map[string]bool, len(outbounds))
+	for _, raw := range outbounds {
+		if outbound, ok := raw.(map[string]any); ok {
+			tag, _ := outbound["tag"].(string)
+			existingTags[tag] = tag != ""
+		}
+	}
+	routing := map[string]any{}
+	if len(cfg.RouterConfig) > 0 {
+		if err := json.Unmarshal(cfg.RouterConfig, &routing); err != nil {
+			logger.Warning("commercial lines: routing section is unparsable:", err)
+			return
+		}
+	}
+	rules, _ := routing["rules"].([]any)
+	newRules := make([]any, 0, len(rows))
+	observerTags := make([]string, 0, len(rows))
+	for i := range rows {
+		plain, err := UnprotectCredential(rows[i].OutboundCiphertext)
+		if err != nil {
+			logger.Warning("commercial lines: decrypt outbound failed for [", rows[i].ID, "]:", err)
+			continue
+		}
+		var outbound map[string]any
+		if err := json.Unmarshal([]byte(plain), &outbound); err != nil {
+			logger.Warning("commercial lines: decode outbound failed for [", rows[i].ID, "]:", err)
+			continue
+		}
+		outbound["tag"] = rows[i].OutboundTag
+		serialized, _ := json.Marshal(outbound)
+		if err := xray.ValidateOutboundConfig(serialized); err != nil {
+			logger.Warning("commercial lines: invalid outbound [", rows[i].OutboundTag, "]:", err)
+			continue
+		}
+		if !existingTags[rows[i].OutboundTag] {
+			outbounds = append(outbounds, outbound)
+			existingTags[rows[i].OutboundTag] = true
+		}
+		observerTags = append(observerTags, rows[i].OutboundTag)
+		if rows[i].InboundTag != "" {
+			newRules = append(newRules, map[string]any{"type": "field", "inboundTag": []string{rows[i].InboundTag}, "outboundTag": rows[i].OutboundTag})
+		}
+	}
+	if len(observerTags) == 0 {
+		return
+	}
+	routing["rules"] = append(newRules, rules...)
+	serializedOutbounds, err := json.Marshal(outbounds)
+	if err != nil {
+		return
+	}
+	serializedRouting, err := json.Marshal(routing)
+	if err != nil {
+		return
+	}
+	cfg.OutboundConfigs = json_util.RawMessage(serializedOutbounds)
+	cfg.RouterConfig = json_util.RawMessage(serializedRouting)
+	injectCommercialLineObserver(cfg, observerTags)
+}
+
+func injectCommercialLineObserver(cfg *xray.Config, tags []string) {
+	tags = append([]string(nil), tags...)
+	sort.Strings(tags)
+	if len(cfg.BurstObservatory) > 0 {
+		parsed := map[string]any{}
+		if json.Unmarshal(cfg.BurstObservatory, &parsed) == nil {
+			parsed["subjectSelector"] = mergeObserverSelectors(parsed["subjectSelector"], tags)
+			if serialized, err := json.Marshal(parsed); err == nil {
+				cfg.BurstObservatory = json_util.RawMessage(serialized)
+			}
+		}
+		return
+	}
+	parsed := map[string]any{"probeURL": "https://www.google.com/generate_204", "probeInterval": "1m", "enableConcurrency": true}
+	if len(cfg.Observatory) > 0 {
+		_ = json.Unmarshal(cfg.Observatory, &parsed)
+	}
+	parsed["subjectSelector"] = mergeObserverSelectors(parsed["subjectSelector"], tags)
+	if serialized, err := json.Marshal(parsed); err == nil {
+		cfg.Observatory = json_util.RawMessage(serialized)
+	}
+}
+
+func mergeObserverSelectors(raw any, tags []string) []string {
+	set := map[string]bool{}
+	switch values := raw.(type) {
+	case []any:
+		for _, value := range values {
+			if text, ok := value.(string); ok && text != "" {
+				set[text] = true
+			}
+		}
+	case []string:
+		for _, value := range values {
+			if value != "" {
+				set[value] = true
+			}
+		}
+	}
+	for _, tag := range tags {
+		set[tag] = true
+	}
+	result := make([]string, 0, len(set))
+	for value := range set {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func injectResidentialRelays(cfg *xray.Config) {
+	db := database.GetDB()
+	if db == nil {
+		return
+	}
+	var relays []model.ResidentialRelay
+	if err := db.Where("status IN ?", []string{"active", "pending"}).Order("created_at asc").Find(&relays).Error; err != nil {
+		logger.Warning("residential relay: read configurations failed:", err)
+		return
+	}
+	if len(relays) == 0 {
+		return
+	}
+
+	var outbounds []any
+	if len(cfg.OutboundConfigs) > 0 {
+		if err := json.Unmarshal(cfg.OutboundConfigs, &outbounds); err != nil {
+			logger.Warning("residential relay: outbounds section is unparsable, skipping injection:", err)
+			return
+		}
+	}
+	routing := map[string]any{}
+	if len(cfg.RouterConfig) > 0 {
+		if err := json.Unmarshal(cfg.RouterConfig, &routing); err != nil {
+			logger.Warning("residential relay: routing section is unparsable, skipping injection:", err)
+			return
+		}
+	}
+	existingRules, _ := routing["rules"].([]any)
+	existingTags := make(map[string]struct{}, len(outbounds))
+	for _, raw := range outbounds {
+		if outbound, ok := raw.(map[string]any); ok {
+			if tag, _ := outbound["tag"].(string); tag != "" {
+				existingTags[tag] = struct{}{}
+			}
+		}
+	}
+
+	newRules := make([]any, 0, len(relays))
+	now := time.Now().UTC()
+	for i := range relays {
+		relay := &relays[i]
+		if _, duplicate := existingTags[relay.OutboundTag]; duplicate {
+			logger.Warning("residential relay: duplicate outbound tag [", relay.OutboundTag, "], skipping")
+			continue
+		}
+
+		var entitlement model.SubscriptionEntitlement
+		query := db.Where("id = ? AND customer_id = ? AND status = ? AND residential_relay_enabled = ? AND residential_relay_limit > 0", relay.EntitlementID, relay.CustomerID, "active", true)
+		query = query.Where("expires_at IS NULL OR expires_at > ?", now)
+		if err := query.First(&entitlement).Error; err != nil || entitlement.InternalClientID == "" {
+			continue
+		}
+		var inbound model.Inbound
+		if err := db.Where("id = ? AND enable = ? AND node_id IS NULL", relay.InboundID, true).First(&inbound).Error; err != nil || inbound.Tag == "" {
+			continue
+		}
+		var assigned int64
+		if err := db.Table(model.ClientRecord{}.TableName()+" AS clients").
+			Joins("JOIN "+model.ClientInbound{}.TableName()+" AS bindings ON bindings.client_id = clients.id").
+			Where("clients.email = ? AND bindings.inbound_id = ?", entitlement.InternalClientID, inbound.Id).
+			Count(&assigned).Error; err != nil || assigned == 0 {
+			continue
+		}
+
+		username, err := UnprotectCredential(relay.UsernameCiphertext)
+		if err != nil {
+			logger.Warning("residential relay: decrypt username failed for [", relay.ID, "]:", err)
+			continue
+		}
+		password, err := UnprotectCredential(relay.PasswordCiphertext)
+		if err != nil {
+			logger.Warning("residential relay: decrypt password failed for [", relay.ID, "]:", err)
+			continue
+		}
+		server := map[string]any{"address": relay.SOCKSHost, "port": relay.SOCKSPort}
+		if username != "" && password != "" {
+			server["users"] = []any{map[string]any{"user": username, "pass": password}}
+		}
+		outbounds = append(outbounds, map[string]any{
+			"tag":      relay.OutboundTag,
+			"protocol": "socks",
+			"settings": map[string]any{"servers": []any{server}},
+		})
+		newRules = append(newRules, map[string]any{
+			"type":        "field",
+			"inboundTag":  []any{inbound.Tag},
+			"user":        []any{entitlement.InternalClientID},
+			"outboundTag": relay.OutboundTag,
+		})
+		existingTags[relay.OutboundTag] = struct{}{}
+	}
+	if len(newRules) == 0 {
+		return
+	}
+
+	serializedOutbounds, err := json.Marshal(outbounds)
+	if err != nil {
+		logger.Warning("residential relay: rebuild outbounds failed:", err)
+		return
+	}
+	routing["rules"] = append(newRules, existingRules...)
+	serializedRouting, err := json.Marshal(routing)
+	if err != nil {
+		logger.Warning("residential relay: rebuild routing failed:", err)
+		return
+	}
+	cfg.OutboundConfigs = json_util.RawMessage(serializedOutbounds)
+	cfg.RouterConfig = json_util.RawMessage(serializedRouting)
 }
 
 // PanelEgressInboundTag is the tag of the loopback SOCKS inbound injected into

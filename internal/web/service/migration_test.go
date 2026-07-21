@@ -52,14 +52,26 @@ func TestMigrationInstallCommandSeparatesChmodAndInstaller(t *testing.T) {
 		!strings.Contains(command, "NOVA_ADMIN_PATH='583104927618350492'") ||
 		!strings.Contains(command, "NOVA_ADMIN_USERNAME='owner'") ||
 		!strings.Contains(command, "NOVA_ADMIN_PASSWORD='Aa1-bootstrap-secret'") ||
+		strings.Contains(command, "NOVA_PANEL_PORT=") ||
 		!strings.HasSuffix(command, "bash '/tmp/install.sh'") {
 		t.Fatalf("installer environment is incomplete: %q", command)
 	}
 }
 
+func TestMigrationRestoreKeepsTargetSubscriptionSettings(t *testing.T) {
+	for _, postgresSource := range []bool{false, true} {
+		command := migrationRestoreCommand("/tmp/source.dump", postgresSource)
+		for _, required := range []string{"${NOVA_SUB_PORT}", "${NOVA_SUB_PATH}", "${NOVA_SUB_JSON_PATH}", "${NOVA_SUB_CLASH_PATH}", "https://${NOVA_DOMAIN}"} {
+			if !strings.Contains(command, required) {
+				t.Fatalf("restore command does not preserve target setting %s: %q", required, command)
+			}
+		}
+	}
+}
+
 func TestMigrationResultURLs(t *testing.T) {
 	portal, panel := migrationResultURLs(migrationDeployConfig{Domain: "vpn.example.com", WebBasePath: "/", AdminPath: "583104927618350492"}, "203.0.113.10")
-	if portal != "https://vpn.example.com/portal/" || panel != "https://vpn.example.com/583104927618350492/" {
+	if portal != "https://vpn.example.com/" || panel != "https://vpn.example.com/583104927618350492/" {
 		t.Fatalf("unexpected URLs: %s %s", portal, panel)
 	}
 }

@@ -121,7 +121,7 @@ textarea {
   height: 3px;
   border-radius: 4px 4px 0 0;
   background: #4f95f5;
-  content: '';
+  content: "";
   opacity: 0;
   transform: scaleX(0.5);
   transition: 160ms ease;
@@ -352,8 +352,10 @@ textarea {
 .customer-greeting h1.ant-typography {
   margin: 0 0 8px;
   color: #17233d;
-  font-size: 40px;
-  letter-spacing: -0.03em;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.28;
 }
 
 .customer-greeting > div {
@@ -391,11 +393,13 @@ textarea {
 
 .plan-summary > div > strong {
   color: #1b2a45;
-  font-size: 21px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .plan-summary > div:first-child > strong {
-  font-size: 32px;
+  font-size: 24px;
 }
 
 .plan-summary .status-active {
@@ -448,21 +452,22 @@ textarea {
 
 .usage-progress-label strong {
   color: #1d2d49;
-  font-size: 34px;
+  font-size: 28px;
+  font-weight: 650;
 }
 
 .usage-progress-label span {
   margin-top: 5px;
   color: #8795a9;
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .usage-progress-label em {
   margin-top: 6px;
   color: #176df3;
-  font-size: 16px;
+  font-size: 14px;
   font-style: normal;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .usage-details {
@@ -483,7 +488,8 @@ textarea {
 
 .usage-details strong {
   color: #263753;
-  font-size: 22px;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .usage-details span {
@@ -536,19 +542,21 @@ textarea {
 
 .import-card h2.ant-typography {
   margin: 0 0 8px;
-  font-size: 28px;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
   white-space: normal;
 }
 
 .import-card p.ant-typography {
   margin: 4px 0 0;
   color: #78869a;
-  font-size: 15px;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 1.65;
 }
 
 .subscription-label {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .import-actions {
@@ -560,7 +568,7 @@ textarea {
 .import-actions .ant-btn {
   min-width: 100%;
   min-height: 58px;
-  font-size: 17px;
+  font-size: 15px;
 }
 
 .security-note {
@@ -576,6 +584,150 @@ textarea {
 .security-note svg {
   margin-top: 3px;
   color: #2fc28a;
+}
+
+.residential-relay-card.ant-card {
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(213, 226, 237, 0.9);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 14px 36px rgba(60, 92, 120, 0.075);
+}
+
+.residential-relay-card .ant-card-body {
+  padding: 28px 32px;
+}
+
+.residential-relay-heading,
+.residential-relay-title,
+.residential-relay-item-top,
+.residential-relay-endpoint {
+  display: flex;
+  align-items: center;
+}
+
+.residential-relay-heading {
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.residential-relay-title {
+  min-width: 0;
+  gap: 14px;
+}
+
+.residential-relay-title h2.ant-typography {
+  margin: 0 0 4px;
+  color: #17233d;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.residential-relay-title .ant-typography-secondary {
+  line-height: 1.65;
+}
+
+.residential-relay-icon,
+.residential-relay-item-icon {
+  display: grid;
+  flex: 0 0 auto;
+  color: #267df3;
+  background: #eaf3ff;
+  place-items: center;
+}
+
+.residential-relay-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  font-size: 24px;
+}
+
+.residential-relay-security.ant-alert {
+  margin: 22px 0;
+  border-color: #d8e8fb;
+  border-radius: 12px;
+  background: #f5f9ff;
+}
+
+.residential-relay-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.residential-relay-item {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid #dce8f4;
+  border-radius: 16px;
+  background: #fff;
+}
+
+.residential-relay-item-top {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.residential-relay-item-top > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.residential-relay-item-top strong {
+  overflow: hidden;
+  color: #1b2a45;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.residential-relay-item-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  font-size: 18px;
+}
+
+.residential-relay-endpoint {
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f6f9fd;
+}
+
+.residential-relay-endpoint code {
+  overflow: hidden;
+  color: #263753;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.residential-relay-actions {
+  width: 100%;
+}
+
+.residential-relay-qr {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 18px;
+  padding-top: 8px;
+}
+
+.residential-relay-qr img {
+  width: min(280px, 100%);
+  height: auto;
+  padding: 12px;
+  border: 1px solid #dce8f4;
+  border-radius: 16px;
+  background: #fff;
 }
 
 .quick-card.ant-card {
@@ -694,7 +846,11 @@ textarea {
   padding: 42px;
   border: 1px solid rgba(211, 227, 240, 0.8);
   border-radius: 22px;
-  background: linear-gradient(125deg, rgba(255, 255, 255, 0.97), rgba(235, 246, 255, 0.94));
+  background: linear-gradient(
+    125deg,
+    rgba(255, 255, 255, 0.97),
+    rgba(235, 246, 255, 0.94)
+  );
   box-shadow: 0 18px 45px rgba(59, 92, 120, 0.08);
   grid-template-columns: minmax(0, 1.18fr) minmax(390px, 0.82fr);
   align-items: center;
@@ -930,7 +1086,7 @@ textarea {
   font-weight: 700;
 }
 
-[dir='rtl'] .recommended {
+[dir="rtl"] .recommended {
   right: auto;
   left: 18px;
 }
@@ -967,8 +1123,74 @@ textarea {
   color: #4c96f4;
 }
 
+.plan-card-benefits {
+  display: grid;
+  margin-bottom: 22px;
+}
+
+.plan-card-benefit {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 42px;
+  padding: 9px 0;
+  color: #64748a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.plan-card-benefit > span {
+  flex: 1 1 58%;
+}
+
+.plan-card-benefit > strong {
+  flex: 0 1 42%;
+  color: #20324d;
+  font-weight: 600;
+  text-align: end;
+}
+
+.plan-card-benefit .plan-benefit-included,
+.plan-card-benefit .plan-benefit-unavailable {
+  margin: 0;
+}
+
+.plan-activation-note.ant-typography {
+  display: block;
+  margin-bottom: 22px;
+  color: #5e6c80;
+  font-size: 13px;
+}
+
+.plan-activation-note svg {
+  margin-inline-end: 8px;
+  color: #4c96f4;
+}
+
 .product-plan > .ant-card-body > .ant-btn {
   margin-top: auto;
+}
+
+.plan-benefit-included {
+  color: #347fdf;
+  font-size: 16px;
+}
+
+.plan-benefit-unavailable {
+  color: #9aa7b7;
+  font-size: 15px;
+}
+
+@media (max-width: 767px) {
+  .plan-card-benefit {
+    align-items: flex-start;
+  }
+
+  .plan-card-benefit > span,
+  .plan-card-benefit > strong {
+    flex-basis: 50%;
+  }
 }
 
 .content-card.ant-card,
@@ -1164,10 +1386,10 @@ textarea {
   margin: 4px 0 14px;
 }
 
-.coupon-entry {
-  display: flex;
-  width: min(420px, 100%);
-  margin: 18px auto 0;
+.purchase-redeem-code {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
 }
 
 .notice-detail-content {
@@ -1410,6 +1632,27 @@ textarea {
     padding: 22px;
   }
 
+  .residential-relay-card .ant-card-body {
+    padding: 22px;
+  }
+
+  .residential-relay-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .residential-relay-heading > .ant-btn {
+    width: 100%;
+  }
+
+  .residential-relay-list {
+    grid-template-columns: 1fr;
+  }
+
+  .residential-relay-actions .ant-btn {
+    flex: 1 1 auto;
+  }
+
   .quick-step-icon {
     width: 56px;
     height: 56px;
@@ -1518,7 +1761,9 @@ textarea {
   font-weight: 700;
   justify-content: center;
   text-decoration: none;
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .telegram-support-fab:hover {
@@ -1610,11 +1855,28 @@ textarea {
 
 .empty-subscription-copy h3.ant-typography {
   margin-bottom: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .empty-subscription-copy p.ant-typography {
   color: #728198;
-  line-height: 1.75;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.empty-subscription-page .portal-info-card h4.ant-typography {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.empty-subscription-page .quick-header h3.ant-typography,
+.subscription-dashboard .quick-header h3.ant-typography {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .portal-info-card.ant-card {
@@ -1684,7 +1946,11 @@ textarea {
 .after-install-card.ant-card,
 .invitation-hero-card.ant-card {
   border: 1px solid #cfe1f5;
-  background: linear-gradient(120deg, rgba(255, 255, 255, 0.98), rgba(235, 246, 255, 0.95));
+  background: linear-gradient(
+    120deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(235, 246, 255, 0.95)
+  );
   box-shadow: 0 14px 34px rgba(60, 92, 120, 0.07);
 }
 
@@ -1763,7 +2029,7 @@ textarea {
   font-weight: 800;
 }
 
-[dir='rtl'] .guide-card-index {
+[dir="rtl"] .guide-card-index {
   right: auto;
   left: 20px;
 }

@@ -175,7 +175,10 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	// large backups and streams them to disk, so only its exact route suffix is
 	// exempt. Follow-up: make the limit a setting.
 	const maxRequestBodyBytes = 10 << 20 // 10 MiB
-	engine.Use(middleware.MaxBodyBytes(maxRequestBodyBytes, "/panel/api/server/importDB"))
+	engine.Use(middleware.MaxBodyBytesBySuffix(maxRequestBodyBytes, map[string]int64{
+		"/panel/api/server/importDB":                   0,
+		"/panel/api/commercial/applications/*/package": commercial.MaxClientPackageSize + (1 << 20),
+	}))
 
 	webDomain, err := s.settingService.GetWebDomain()
 	if err != nil {
@@ -680,7 +683,7 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 		if err := s.tgbotService.TestConnection(); err != nil {
 			return fmt.Errorf("telegram API test failed: %w", err)
 		}
-		s.tgbotService.SendMsgToTgbotAdmins("✅ Test message from 3x-ui")
+		s.tgbotService.SendMsgToTgbotAdmins("✅ Test message from NOVA")
 		return nil
 	})
 	controller.SetConfigureTgWebhookFunc(func(ctx context.Context, webhookURL string) (any, error) {
@@ -737,7 +740,9 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 		}
 	})
 
-	go commercial.NewWorker().Run(s.ctx)
+	commercialWorker := commercial.NewWorker()
+	s.bus.Subscribe("commercial-line-health", commercialWorker.HandleLineHealthEvent)
+	go commercialWorker.Run(s.ctx)
 
 	s.startTask(restartXray)
 

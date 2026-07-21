@@ -17,7 +17,7 @@ type routeDef struct {
 var routePattern = regexp.MustCompile(`\b(g|api)\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\("([^"]+)"`)
 
 // docRoutePattern matches { method: 'X', path: 'Y' ... } entries in endpoints.ts.
-var docRoutePattern = regexp.MustCompile(`method:\s*'([A-Z]+)'\s*,\s*path:\s*'([^']+)'`)
+var docRoutePattern = regexp.MustCompile(`method:\s*["']([A-Z]+)["']\s*,\s*path:\s*["']([^"']+)["']`)
 
 // buildDocSet parses frontend/src/pages/api-docs/endpoints.ts and returns the
 // set of documented "METHOD PATH" keys. WS pseudo-routes and subscription

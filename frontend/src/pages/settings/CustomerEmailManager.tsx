@@ -140,7 +140,7 @@ export function EmailTemplatesPane({ templates, setTemplates, loading }: EmailTe
         type="info"
         showIcon
         title="用户邮件模板"
-        description="这里的模板用于发送给已注册用户。修改后会保存到数据库，不会影响 3X-UI 的系统告警邮件。"
+        description="这里的模板用于发送给已注册用户。修改后会保存到数据库，不会影响系统告警邮件。"
       />
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={7}>

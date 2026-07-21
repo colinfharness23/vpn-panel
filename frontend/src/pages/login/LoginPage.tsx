@@ -23,8 +23,8 @@ import { setMessageInstance } from '@/utils/messageBus';
 import './LoginPage.css';
 
 type LoginForm = LoginFormValues;
-type GuestBootstrap = { site?: Record<string, string> };
-type GuestBootstrapEnvelope = { success?: boolean; obj?: GuestBootstrap };
+type GuestAuthConfig = { site?: Record<string, string> };
+type GuestAuthConfigEnvelope = { success?: boolean; obj?: GuestAuthConfig };
 
 const basePath = window.X_UI_BASE_PATH || '';
 const rawPublicBasePath = window.X_UI_PUBLIC_BASE_PATH || '/';
@@ -59,8 +59,8 @@ export default function LoginPage() {
     let cancelled = false;
     Promise.all([
       HttpUtil.post<boolean>('/getTwoFactorEnable', undefined, { silent: true }),
-      fetch('/api/v1/guest/bootstrap?locale=zh-CN', { credentials: 'same-origin' })
-        .then(async (response) => response.ok ? (await response.json()) as GuestBootstrapEnvelope : null)
+      fetch('/api/v1/guest/auth-config', { credentials: 'same-origin' })
+        .then(async (response) => response.ok ? (await response.json()) as GuestAuthConfigEnvelope : null)
         .catch(() => null),
     ]).then(([twoFactorResult, bootstrapResult]) => {
       if (cancelled) return;
@@ -88,7 +88,7 @@ export default function LoginPage() {
       <Layout className="login-app">
         <Layout.Content className="login-content">
           <header className="login-header">
-            <a className="login-brand" href={`${publicBasePath}portal/`} aria-label={`${siteName} 用户前台`}>
+            <a className="login-brand" href={publicBasePath} aria-label={`${siteName} 用户前台`}>
               <span className="login-brand-mark"><SafetyCertificateFilled /></span>
               <span>{siteName}</span>
             </a>

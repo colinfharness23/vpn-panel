@@ -43,7 +43,8 @@ func TestPrivateAdminRouteIsIndependentFromPortal(t *testing.T) {
 		wantStatus int
 		wantBody   string
 	}{
-		{path: "/portal/", wantStatus: http.StatusOK},
+		{path: "/", wantStatus: http.StatusOK, wantBody: `<div id="portal"></div>`},
+		{path: "/portal/", wantStatus: http.StatusPermanentRedirect},
 		{path: "/583104927618350492/", wantStatus: http.StatusOK, wantBody: "X_UI_BASE_PATH=\"/583104927618350492/\""},
 		{path: "/panel/", wantStatus: http.StatusNotFound},
 		{path: "/admin/", wantStatus: http.StatusNotFound},

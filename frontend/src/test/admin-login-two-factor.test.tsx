@@ -41,8 +41,8 @@ describe('administrator login two-factor challenge', () => {
     renderWithProviders(<LoginPage />);
 
     const publicLink = await screen.findByRole('link', { name: 'NOVA 用户前台' });
-    expect(publicLink.getAttribute('href')).toBe('/portal/');
-    expect(fetch).toHaveBeenCalledWith('/api/v1/guest/bootstrap?locale=zh-CN', {
+    expect(publicLink.getAttribute('href')).toBe('/');
+    expect(fetch).toHaveBeenCalledWith('/api/v1/guest/auth-config', {
       credentials: 'same-origin',
     });
   });

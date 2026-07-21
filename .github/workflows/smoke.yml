@@ -53,7 +53,7 @@ jobs:
           grep -Fq 'certbot renew' "$install"
           grep -Fq '/portal/' "$install"
           grep -Fq '/panel/' "$install"
-          grep -Fq '/sub/health-probe' "$install"
+          grep -Fq '${NOVA_SUB_PATH}health-probe' "$install"
           grep -Fq '安装和全部健康检查完成' "$install"
 
       - name: Validate update, backup, rollback and rotation helpers

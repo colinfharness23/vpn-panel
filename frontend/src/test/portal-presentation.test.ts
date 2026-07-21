@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildPortalNavigation } from '../portal/navigation';
+import { residentialRelayCopies } from '../portal/PortalApp';
 import { localeOptions, portalCopies } from '../portal/translations';
 
 describe('portal presentation policy', () => {
@@ -25,13 +26,32 @@ describe('portal presentation policy', () => {
     }
   });
 
+  it('presents client packages as direct site downloads in every locale', () => {
+    expect(portalCopies['zh-CN'].officialDownload).toBe('下载');
+    for (const copy of Object.values(portalCopies)) {
+      expect(copy.officialDownload).not.toMatch(/official|github|官方/i);
+      expect(copy.clientsDescription).not.toMatch(/github/i);
+    }
+  });
+
   it('only shows the private subscription entry after sign-in', () => {
-    expect(buildPortalNavigation(portalCopies['zh-CN'], false).map((item) => item.key)).toEqual([
-      'home',
-      'plans',
-      'guides',
-      'tickets',
-    ]);
+    expect(buildPortalNavigation(portalCopies['zh-CN'], false)).toEqual([]);
     expect(buildPortalNavigation(portalCopies['zh-CN'], true).map((item) => item.key)).toContain('subscription');
+  });
+
+  it('presents a redeem code instead of a coupon code at checkout', () => {
+    expect(portalCopies['zh-CN'].couponCode).toBe('兑换码（可选）');
+    for (const copy of Object.values(portalCopies)) {
+      expect(copy.couponCode).not.toMatch(/coupon code|优惠码/i);
+    }
+  });
+
+  it('localizes residential relay controls without exposing implementation details', () => {
+    expect(Object.keys(residentialRelayCopies)).toHaveLength(localeOptions.length);
+    for (const copy of Object.values(residentialRelayCopies)) {
+      expect(copy.title).toBeTruthy();
+      expect(copy.add).toBeTruthy();
+      expect(`${copy.title} ${copy.description} ${copy.security}`).not.toMatch(/3x-ui|xray/i);
+    }
   });
 });

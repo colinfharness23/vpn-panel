@@ -18,12 +18,31 @@ import (
 // through uncapped — these are routes that legitimately accept a large upload
 // (e.g. database restore, which streams a multi-MiB SQLite file).
 func MaxBodyBytes(limit int64, skipSuffixes ...string) gin.HandlerFunc {
+	overrides := make(map[string]int64, len(skipSuffixes))
+	for _, suffix := range skipSuffixes {
+		overrides[suffix] = 0
+	}
+	return MaxBodyBytesBySuffix(limit, overrides)
+}
+
+func MaxBodyBytesBySuffix(defaultLimit int64, overrides map[string]int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		limit := defaultLimit
+		for suffix, override := range overrides {
+			if matchesPathSuffix(c.Request.URL.Path, suffix) {
+				limit = override
+				break
+			}
+		}
 		if limit > 0 {
 			switch c.Request.Method {
 			case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
 			default:
-				if c.Request.Body != nil && !hasAnySuffix(c.Request.URL.Path, skipSuffixes) {
+				if c.Request.ContentLength > limit {
+					c.AbortWithStatus(http.StatusRequestEntityTooLarge)
+					return
+				}
+				if c.Request.Body != nil {
 					c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 				}
 			}
@@ -32,11 +51,21 @@ func MaxBodyBytes(limit int64, skipSuffixes ...string) gin.HandlerFunc {
 	}
 }
 
-func hasAnySuffix(path string, suffixes []string) bool {
-	for _, suffix := range suffixes {
-		if suffix != "" && strings.HasSuffix(path, suffix) {
-			return true
-		}
+func matchesPathSuffix(path, pattern string) bool {
+	star := strings.IndexByte(pattern, '*')
+	if star < 0 {
+		return pattern != "" && strings.HasSuffix(path, pattern)
 	}
-	return false
+	prefix := pattern[:star]
+	suffix := pattern[star+1:]
+	if !strings.HasSuffix(path, suffix) {
+		return false
+	}
+	end := len(path) - len(suffix)
+	start := strings.LastIndex(path[:end], prefix)
+	if start < 0 {
+		return false
+	}
+	middle := path[start+len(prefix) : end]
+	return middle != "" && !strings.Contains(middle, "/")
 }
