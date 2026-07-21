@@ -155,25 +155,32 @@ jobs:
           export CGO_ENABLED=1
           export GOOS=linux
           export GOARCH=${{ matrix.platform }}
-          # Use Bootlin prebuilt cross-toolchains (musl 1.2.5 in stable series)
+          # Use an immutable Bootlin musl toolchain and verify it before the
+          # compiler is allowed to influence a production binary.
           case "${{ matrix.platform }}" in
-            amd64) BOOTLIN_ARCH="x86-64" ;;
-            arm64) BOOTLIN_ARCH="aarch64" ;;
-            armv7) BOOTLIN_ARCH="armv7-eabihf"; export GOARCH=arm GOARM=7 ;;
-            armv6) BOOTLIN_ARCH="armv6-eabihf"; export GOARCH=arm GOARM=6 ;;
-            armv5) BOOTLIN_ARCH="armv5-eabi"; export GOARCH=arm GOARM=5 ;;
-            386) BOOTLIN_ARCH="x86-i686" ;;
-            s390x) BOOTLIN_ARCH="s390x-z13" ;;
+            amd64)
+              BOOTLIN_ARCH="x86-64"
+              BOOTLIN_TARBALL="x86-64--musl--stable-2025.08-1.tar.xz"
+              BOOTLIN_SHA256="09fca3aa89540f1b01b5f4210d488cbeb00f522044c53e9989b1dd8a38076912"
+              ;;
+            arm64)
+              BOOTLIN_ARCH="aarch64"
+              BOOTLIN_TARBALL="aarch64--musl--stable-2025.08-1.tar.xz"
+              BOOTLIN_SHA256="defba831ffa1175236f137069333e21ed46d4d19feb5080a90cf248b6fc2cb08"
+              ;;
+            *)
+              echo "Unsupported release architecture: ${{ matrix.platform }}" >&2
+              exit 1
+              ;;
           esac
-          echo "Resolving Bootlin musl toolchain for arch=$BOOTLIN_ARCH (platform=${{ matrix.platform }})"
           TARBALL_BASE="https://toolchains.bootlin.com/downloads/releases/toolchains/$BOOTLIN_ARCH/tarballs/"
-          TARBALL_URL=$(curl -fsSL "$TARBALL_BASE" | grep -oE "${BOOTLIN_ARCH}--musl--stable-[^\"]+\\.tar\\.xz" | sort -r | head -n1)
-          [ -z "$TARBALL_URL" ] && { echo "Failed to locate Bootlin musl toolchain for arch=$BOOTLIN_ARCH" >&2; exit 1; }
-          echo "Downloading: $TARBALL_URL"
+          echo "Downloading pinned Bootlin toolchain: $BOOTLIN_TARBALL"
           cd /tmp
-          curl -fL -sS -o "$(basename "$TARBALL_URL")" "$TARBALL_BASE/$TARBALL_URL"
-          tar -xf "$(basename "$TARBALL_URL")"
-          TOOLCHAIN_DIR=$(find . -maxdepth 1 -type d -name "${BOOTLIN_ARCH}--musl--stable-*" | head -n1)
+          curl -fL -sS -o "$BOOTLIN_TARBALL" "$TARBALL_BASE/$BOOTLIN_TARBALL"
+          echo "$BOOTLIN_SHA256  $BOOTLIN_TARBALL" | sha256sum --check -
+          tar -xf "$BOOTLIN_TARBALL"
+          TOOLCHAIN_DIR="${BOOTLIN_TARBALL%.tar.xz}"
+          [ -d "$TOOLCHAIN_DIR" ] || { echo "Toolchain archive layout is invalid" >&2; exit 1; }
           export PATH="$(realpath "$TOOLCHAIN_DIR")/bin:$PATH"
           export CC=$(realpath "$(find "$TOOLCHAIN_DIR/bin" -name '*-gcc.br_real' -type f -executable | head -n1)")
           [ -z "$CC" ] && { echo "No gcc.br_real found in $TOOLCHAIN_DIR/bin" >&2; exit 1; }
