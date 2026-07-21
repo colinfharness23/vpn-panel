@@ -29,7 +29,7 @@ func TestRemoteDo_RejectsOversizeResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := NewRemote(nodeForServer(t, srv, "skip", ""), nil)
+	r := NewRemote(nodeForServer(t, srv, "pin", leafPinBase64(srv)), nil)
 	if _, err := r.do(context.Background(), http.MethodGet, "/probe", nil); !errors.Is(err, errRemoteResponseTooLarge) {
 		t.Fatalf("do() error = %v, want errRemoteResponseTooLarge", err)
 	}
@@ -44,7 +44,7 @@ func TestRemoteDo_AcceptsNormalResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := NewRemote(nodeForServer(t, srv, "skip", ""), nil)
+	r := NewRemote(nodeForServer(t, srv, "pin", leafPinBase64(srv)), nil)
 	env, err := r.do(context.Background(), http.MethodGet, "/probe", nil)
 	if err != nil {
 		t.Fatalf("do() unexpected error: %v", err)
@@ -97,7 +97,7 @@ func TestRemoteDo_NonOKStatusReturnsHTTPError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := NewRemote(nodeForServer(t, srv, "skip", ""), nil)
+	r := NewRemote(nodeForServer(t, srv, "pin", leafPinBase64(srv)), nil)
 	_, err := r.do(context.Background(), http.MethodGet, "/probe", nil)
 	if err == nil {
 		t.Fatal("do() error = nil, want HTTP 500 error")
@@ -184,7 +184,7 @@ func TestRemoteDoSetsContentType(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := NewRemote(nodeForServer(t, srv, "skip", ""), nil)
+	r := NewRemote(nodeForServer(t, srv, "pin", leafPinBase64(srv)), nil)
 	if _, err := r.do(context.Background(), http.MethodPost, "x", url.Values{"a": {"b"}}); err != nil {
 		t.Fatalf("do: %v", err)
 	}

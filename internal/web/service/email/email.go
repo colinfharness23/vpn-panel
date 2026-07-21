@@ -384,10 +384,13 @@ func normalizeSMTPSubject(value string) (string, error) {
 	return mime.QEncoding.Encode("UTF-8", value), nil
 }
 
-func buildMessage(from string, to []string, subject, body string) []byte {
+func buildMessage(from string, _ []string, subject, body string) []byte {
 	headers := map[string]string{
-		"From":                      from,
-		"To":                        strings.Join(to, ","),
+		"From": from,
+		// Envelope recipients are supplied to SMTP RCPT after strict address
+		// parsing. Keeping user-controlled addresses out of the MIME headers
+		// removes the remaining header/content injection data path.
+		"To":                        "undisclosed-recipients:;",
 		"Subject":                   subject,
 		"MIME-Version":              "1.0",
 		"Content-Type":              "text/html; charset=utf-8",

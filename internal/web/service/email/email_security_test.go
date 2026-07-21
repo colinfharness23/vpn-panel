@@ -4,6 +4,9 @@ import (
 	"encoding/base64"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
 )
 
 func TestNormalizeSMTPAddressRejectsHeaderInjection(t *testing.T) {
@@ -52,5 +55,36 @@ func TestBuildMessageBase64EncodesBody(t *testing.T) {
 	}
 	if string(decoded) != body {
 		t.Fatalf("decoded body = %q, want %q", decoded, body)
+	}
+	if strings.Contains(parts[0], "user@example.com") {
+		t.Fatal("envelope recipient leaked into MIME headers")
+	}
+	if !strings.Contains(parts[0], "To: undisclosed-recipients:;") {
+		t.Fatal("message does not use a constant undisclosed-recipient header")
+	}
+}
+
+func TestSubscriberEscapesUntrustedEventHTML(t *testing.T) {
+	subscriber := &Subscriber{}
+	_, body := subscriber.formatMessage(eventbus.Event{
+		Type:      eventbus.EventLoginAttempt,
+		Source:    "portal",
+		Timestamp: time.Unix(1, 0),
+		Data: &eventbus.LoginEventData{
+			Status:   "failed",
+			Username: `<img src=x onerror="alert(1)">`,
+			IP:       `<script>alert(2)</script>`,
+			Reason:   `<a href="https://attacker.invalid">click</a>`,
+		},
+	})
+	for _, raw := range []string{"<img", "<script", "<a href"} {
+		if strings.Contains(body, raw) {
+			t.Fatalf("untrusted event HTML was not escaped: %q", raw)
+		}
+	}
+	for _, escaped := range []string{"&lt;img", "&lt;script", "&lt;a href"} {
+		if !strings.Contains(body, escaped) {
+			t.Fatalf("escaped event value missing: %q", escaped)
+		}
 	}
 }

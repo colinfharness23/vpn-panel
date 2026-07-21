@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
@@ -32,6 +33,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
+	"github.com/mhsanaei/3x-ui/v3/internal/util/netsafe"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/sys"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 
@@ -2197,8 +2199,8 @@ func walkCertFiles(node any, out []string) []string {
 	return out
 }
 
-// GetRemoteCertHash opens a uTLS (Chrome fingerprint) handshake to a remote
-// endpoint and returns the hex-encoded SHA-256 of its leaf certificate — the
+// GetRemoteCertHash opens a verified uTLS (Chrome fingerprint) handshake to a
+// public remote endpoint and returns the hex-encoded SHA-256 of its leaf certificate — the
 // value to put in pinnedPeerCertSha256 (pcs) when pinning a server whose
 // certificate file you don't hold (a CDN front, a REALITY dest, an external
 // proxy). A native handshake replaces the old `xray tls ping` subprocess so the
@@ -2214,9 +2216,18 @@ func (s *ServerService) GetRemoteCertHash(server string) ([]string, error) {
 	if h, p, err := stdnet.SplitHostPort(server); err == nil {
 		host, port = h, p
 	}
+	host, err := netsafe.NormalizeHost(host)
+	if err != nil {
+		return nil, common.NewError("invalid server host: ", err)
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return nil, common.NewError("server port must be 1-65535")
+	}
 
-	dialer := stdnet.Dialer{Timeout: 10 * time.Second}
-	tcpConn, err := dialer.Dial("tcp", stdnet.JoinHostPort(host, port))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	tcpConn, err := netsafe.SSRFGuardedDialContext(ctx, "tcp", stdnet.JoinHostPort(host, port))
 	if err != nil {
 		return nil, common.NewErrorf("failed to dial %s: %s", stdnet.JoinHostPort(host, port), err)
 	}
@@ -2224,9 +2235,9 @@ func (s *ServerService) GetRemoteCertHash(server string) ([]string, error) {
 	_ = tcpConn.SetDeadline(time.Now().Add(15 * time.Second))
 
 	tlsConn := utls.UClient(tcpConn, &utls.Config{
-		ServerName:         host,
-		InsecureSkipVerify: true,
-		NextProtos:         []string{"h2", "http/1.1"},
+		ServerName: host,
+		NextProtos: []string{"h2", "http/1.1"},
+		MinVersion: tls.VersionTLS12,
 	}, utls.HelloChrome_Auto)
 	defer tlsConn.Close()
 	if err := tlsConn.Handshake(); err != nil {
@@ -2237,8 +2248,8 @@ func (s *ServerService) GetRemoteCertHash(server string) ([]string, error) {
 	if len(certs) == 0 {
 		return nil, common.NewError("no certificate returned by ", host)
 	}
-	// PeerCertificates[0] is always the leaf the connection verifies against —
-	// robust for IP-only self-signed certs that carry no DNS SANs.
+	// PeerCertificates[0] is the leaf already verified against the system roots
+	// and requested host name by the handshake above.
 	sum := sha256.Sum256(certs[0].Raw)
 	return []string{hex.EncodeToString(sum[:])}, nil
 }

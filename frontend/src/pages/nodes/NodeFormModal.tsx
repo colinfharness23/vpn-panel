@@ -259,6 +259,9 @@ export default function NodeFormModal({
                   name="scheme"
                   onAfterChange={(value) => {
                     if (value === 'http') methods.setValue('tlsVerifyMode', 'skip');
+                    if (value === 'https' && methods.getValues('tlsVerifyMode') === 'skip') {
+                      methods.setValue('tlsVerifyMode', 'verify');
+                    }
                   }}
                 >
                   <Select
@@ -325,20 +328,10 @@ export default function NodeFormModal({
                 options={[
                   { value: 'verify', label: t('pages.nodes.tlsVerify') },
                   { value: 'pin', label: t('pages.nodes.tlsPin') },
-                  { value: 'skip', label: t('pages.nodes.tlsSkip') },
                   { value: 'mtls', label: t('pages.nodes.tlsMtls') },
                 ]}
               />
             </FormField>
-
-            {tlsVerifyMode === 'skip' && (
-              <Alert
-                type="warning"
-                showIcon
-                style={{ marginBottom: 16 }}
-                title={t('pages.nodes.tlsSkipWarning')}
-              />
-            )}
 
             {tlsVerifyMode === 'mtls' && (
               <Alert

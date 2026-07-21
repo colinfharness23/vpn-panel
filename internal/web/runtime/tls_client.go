@@ -61,6 +61,9 @@ func HTTPClientForNode(n *model.Node, proxyURL string) (*http.Client, error) {
 	if mode == "" {
 		mode = "verify"
 	}
+	if n.Scheme == "https" && mode == "skip" {
+		return nil, common.NewError("unverified HTTPS node connections are disabled; use verify, pin, or mtls")
+	}
 	if proxyURL != "" {
 		client, err := netproxy.NewHTTPClient(proxyURL, remoteHTTPTimeout)
 		if err != nil {
@@ -112,22 +115,26 @@ func tlsConfigForNode(n *model.Node) (*tls.Config, error) {
 			MinVersion:   tls.VersionTLS12,
 		}, nil
 	}
-	tlsCfg := &tls.Config{InsecureSkipVerify: true} // lgtm[go/disabled-certificate-check]
-	if n.TlsVerifyMode == "pin" {
-		want, err := DecodeCertPin(n.PinnedCertSha256)
-		if err != nil {
-			return nil, err
+	if n.TlsVerifyMode != "pin" {
+		return nil, common.NewError("unsupported TLS verification mode")
+	}
+	want, err := DecodeCertPin(n.PinnedCertSha256)
+	if err != nil {
+		return nil, err
+	}
+	// Pin mode deliberately replaces PKI verification with an exact SHA-256
+	// certificate identity check. The callback is mandatory and uses a
+	// constant-time comparison; there is no unauthenticated "skip" mode.
+	tlsCfg := &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12} // #nosec G402 -- exact leaf pin verified below
+	tlsCfg.VerifyConnection = func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) == 0 {
+			return common.NewError("node presented no certificate")
 		}
-		tlsCfg.VerifyConnection = func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 {
-				return common.NewError("node presented no certificate")
-			}
-			sum := sha256.Sum256(cs.PeerCertificates[0].Raw)
-			if subtle.ConstantTimeCompare(sum[:], want) != 1 {
-				return common.NewError("node certificate does not match pinned SHA-256")
-			}
-			return nil
+		sum := sha256.Sum256(cs.PeerCertificates[0].Raw)
+		if subtle.ConstantTimeCompare(sum[:], want) != 1 {
+			return common.NewError("node certificate does not match pinned SHA-256")
 		}
+		return nil
 	}
 	return tlsCfg, nil
 }
