@@ -83,6 +83,8 @@ type MigrationJob = {
   logs: string[];
   portalUrl?: string;
   adminUrl?: string;
+  dnsCutoverRequired?: boolean;
+  finalizeCommand?: string;
   error?: string;
   startedAt: string;
   endedAt?: string;
@@ -217,7 +219,7 @@ export default function MigrationPage() {
         type="info"
         showIcon
         title="推荐迁移顺序"
-        description="先填写目标服务器并完成连接检测，再把域名解析到目标 IP；DNS 检测通过后执行迁移。迁移成功前旧服务器不会被关闭。"
+        description="先填写目标服务器并完成连接检测。域名应继续指向旧服务器；系统会通过 SSH 预部署和恢复数据，完成后再提示你切换 DNS 与自动申请 HTTPS。"
       />
 
       <Card className="migration-steps-card">
@@ -341,9 +343,16 @@ export default function MigrationPage() {
           {job.status === 'completed' && (
             <Result
               status="success"
-              title="服务器迁移完成"
-              subTitle="目标服务器健康检查已通过。请分别检查用户网站和管理员后台，确认无误后再停用旧服务器。"
-              extra={[
+              title={job.dnsCutoverRequired ? '数据迁移完成，等待域名切换' : '服务器迁移完成'}
+              subTitle={job.dnsCutoverRequired
+                ? '旧服务器仍在对外服务。请先在新服务器启动下面的收尾命令，再修改域名 A/AAAA 记录；脚本检测到新 IP 后会自动申请 HTTPS。'
+                : '目标服务器健康检查已通过。请分别检查用户网站和管理员后台，确认无误后再停用旧服务器。'}
+              extra={job.dnsCutoverRequired ? (
+                <Space direction="vertical" size="middle">
+                  <Typography.Text code copyable>{job.finalizeCommand || 'sudo nova-finalize-domain'}</Typography.Text>
+                  <Typography.Text type="warning">不要同时保留新旧两个源站 IP，也不要在确认新站前关闭旧服务器。</Typography.Text>
+                </Space>
+              ) : [
                 <Button key="portal" type="primary" href={job.portalUrl} target="_blank">打开用户网站</Button>,
                 <Button key="panel" href={job.adminUrl} target="_blank">打开管理员后台</Button>,
               ]}
@@ -399,7 +408,7 @@ export default function MigrationPage() {
             <Input inputMode="numeric" maxLength={6} autoComplete="one-time-code" />
           </Form.Item>
           <Form.Item name="confirmed" valuePropName="checked" rules={[{ validator: (_, checked) => checked ? Promise.resolve() : Promise.reject(new Error('请确认迁移覆盖范围')) }]}>
-            <Checkbox>我已确认域名解析和目标服务器无误，并同意覆盖目标端同名服务及数据库。</Checkbox>
+            <Checkbox>我已确认目标服务器无误，并同意覆盖目标端同名服务及数据库；如域名仍指向旧机，将在迁移完成后再切换。</Checkbox>
           </Form.Item>
         </Form>
               </Modal>

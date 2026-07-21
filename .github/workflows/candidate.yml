@@ -155,7 +155,6 @@ jobs:
           cp x-ui.service.debian x-ui/
           cp x-ui.service.arch x-ui/
           cp x-ui.service.rhel x-ui/
-          cp x-ui.sh x-ui/
           cp deploy/ubuntu/*.sh x-ui/deploy/ubuntu/
           chmod +x x-ui/x-ui x-ui/deploy/ubuntu/*.sh
           cp internal/web/service/config.json x-ui/bin/config.json

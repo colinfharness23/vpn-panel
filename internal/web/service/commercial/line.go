@@ -583,7 +583,11 @@ func (s *LineService) fetchURLSource(ctx context.Context, rawURL string) (string
 		return "", nil, err
 	}
 	req.Header.Set("User-Agent", "NOVA-line-source/1.0")
-	resp, err := client.Do(req)
+	// cleanURL is restricted to public HTTP(S) targets above. NewPublicHTTPClient
+	// resolves and rejects private/link-local addresses again at connect time,
+	// and CheckRedirect repeats URL validation for every redirect hop. This
+	// second DNS check is what blocks rebinding between validation and dialing.
+	resp, err := client.Do(req) // lgtm[go/request-forgery]
 	if err != nil {
 		return "", nil, errors.New("获取订阅失败，请检查地址、证书和网络")
 	}

@@ -213,7 +213,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	sessionOptions := sessions.Options{
 		Path:     basePath,
 		HttpOnly: true,
-		Secure:   externalHTTPS,
+		Secure:   externalHTTPS || config.IsCommercialProduction(),
 		SameSite: http.SameSiteLaxMode,
 	}
 	if sessionMaxAge, err := s.settingService.GetSessionMaxAge(); err == nil && sessionMaxAge > 0 {

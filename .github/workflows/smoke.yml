@@ -67,13 +67,16 @@ jobs:
 
       - name: Validate update, backup, rollback and rotation helpers
         run: |
-          for helper in update rollback backup rotate-admin-path uninstall; do
+          for helper in update rollback backup rotate-admin-path uninstall finalize-domain; do
             test -s "deploy/ubuntu/${helper}.sh"
           done
           grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/update.sh
           grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/backup.sh
           grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/rollback.sh
           grep -Fq 'generate_admin_path' deploy/ubuntu/rotate-admin-path.sh
+          grep -Fq 'NOVA_DEFER_TLS' deploy/ubuntu/install.sh
+          grep -Fq "('webDomain','\$NOVA_DOMAIN')" deploy/ubuntu/install.sh
+          grep -Fq 'NOVA_EXPECTED_PUBLIC_IP' deploy/ubuntu/finalize-domain.sh
 
   release-assets:
     if: >-

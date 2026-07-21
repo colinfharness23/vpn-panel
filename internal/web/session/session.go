@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/config"
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
@@ -166,7 +167,7 @@ func ClearSession(c *gin.Context) error {
 	if cookiePath == "" {
 		cookiePath = "/"
 	}
-	secure := c.Request.TLS != nil
+	secure := c.Request.TLS != nil || config.IsBehindHTTPSProxy() || config.IsCommercialProduction()
 	s.Options(sessions.Options{
 		Path:     cookiePath,
 		MaxAge:   -1,

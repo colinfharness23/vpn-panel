@@ -34,6 +34,7 @@ describe('migration page', () => {
     expect(screen.getByRole('spinbutton', { name: 'SSH 端口' })).toBeTruthy();
     expect(screen.getByRole('textbox', { name: 'SSH 用户名' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /检测连接与迁移环境/ })).toBeTruthy();
+    expect(screen.getByText(/域名应继续指向旧服务器/)).toBeTruthy();
     expect(screen.getByText('旧服务器不自动删除')).toBeTruthy();
     expect(await screen.findByText('本地预览环境不能执行真实迁移')).toBeTruthy();
   });

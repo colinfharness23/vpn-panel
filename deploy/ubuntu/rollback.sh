@@ -32,8 +32,9 @@ if [[ -z $backup ]]; then
   backup="$(find /var/backups/nova/releases -maxdepth 1 -type f -name 'x-ui-*.tar.gz' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
 fi
 [[ -n $backup && -f $backup ]] || { echo "没有找到可回滚版本。" >&2; exit 1; }
-tar -tzf "$backup" | grep -Eq '(^/|(^|/)\.\.(/|$))' && { echo "备份包包含不安全路径。" >&2; exit 1; }
-tar -tzf "$backup" | grep -Ev '^x-ui(/|$)' | grep -q . && { echo "备份包含非 x-ui 路径。" >&2; exit 1; }
+tar -tzf "$backup" | awk '$0 ~ /(^\/|(^|\/)\.\.(\/|$))/ { found=1 } END { exit !found }' && { echo "备份包包含不安全路径。" >&2; exit 1; }
+tar -tzf "$backup" | awk '$0 !~ /^x-ui(\/|$)/ { found=1 } END { exit !found }' && { echo "备份包含非 x-ui 路径。" >&2; exit 1; }
+tar -tvzf "$backup" | awk 'substr($1,1,1) !~ /^[-d]$/ { found=1 } END { exit !found }' && { echo "备份包含符号链接、硬链接或设备文件。" >&2; exit 1; }
 
 /usr/local/sbin/nova-backup
 systemctl stop x-ui

@@ -197,8 +197,11 @@ func (s *ServerService) probeRealityAddr(dialHost string, port int, sni string, 
 	_ = conn.SetDeadline(time.Now().Add(timeout))
 
 	cfg := &tls.Config{
-		ServerName:         sni,
-		InsecureSkipVerify: true,
+		ServerName: sni,
+		// The scanner intentionally inspects arbitrary public TLS endpoints and
+		// verifies the returned leaf against verifyHost immediately below. It
+		// never sends credentials or application data on this connection.
+		InsecureSkipVerify: true, // lgtm[go/disabled-certificate-check]
 		NextProtos:         []string{"h2", "http/1.1"},
 		CurvePreferences:   []tls.CurveID{tls.X25519, tls.X25519MLKEM768},
 		MinVersion:         tls.VersionTLS12,

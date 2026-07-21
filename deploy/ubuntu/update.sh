@@ -5,6 +5,7 @@ set -Eeuo pipefail
 # shellcheck disable=SC1091
 source /etc/nova/deploy.env
 [[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]] || { echo "部署配置中的管理员入口无效。" >&2; exit 1; }
+[[ $NOVA_GITHUB_REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "部署配置中的 GitHub 仓库无效。" >&2; exit 1; }
 
 tmp_dir=""
 backup=""
@@ -52,10 +53,15 @@ expected_sha="$(awk -v name="$asset" '$2 == name || $2 == "*"name {print $1; exi
 [[ $expected_sha =~ ^[a-fA-F0-9]{64}$ ]] || { echo "Release SHA-256 文件格式无效。" >&2; exit 1; }
 actual_sha="$(sha256sum "$tmp_dir/$asset" | awk '{print $1}')"
 [[ ${actual_sha,,} == ${expected_sha,,} ]] || { echo "Release SHA-256 校验失败。" >&2; exit 1; }
-tar -tzf "$tmp_dir/$asset" | grep -Eq '(^/|(^|/)\.\.(/|$))' && { echo "安装包包含不安全路径。" >&2; exit 1; }
+tar -tzf "$tmp_dir/$asset" | awk '$0 ~ /(^\/|(^|\/)\.\.(\/|$))/ { found=1 } END { exit !found }' && { echo "安装包包含不安全路径。" >&2; exit 1; }
+tar -tzf "$tmp_dir/$asset" | awk '$0 !~ /^x-ui(\/|$)/ { found=1 } END { exit !found }' && { echo "安装包包含 x-ui 目录之外的文件。" >&2; exit 1; }
+tar -tvzf "$tmp_dir/$asset" | awk 'substr($1,1,1) !~ /^[-d]$/ { found=1 } END { exit !found }' && { echo "安装包包含符号链接、硬链接或设备文件。" >&2; exit 1; }
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 [[ -x $tmp_dir/x-ui/x-ui && -f $tmp_dir/x-ui/bin/config.json && -x $tmp_dir/x-ui/bin/xray-linux-$arch ]] ||
   { echo "Release 缺少面板、Xray 或初始配置。" >&2; exit 1; }
+for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain; do
+  [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_script.sh ]] || { echo "Release 缺少运维脚本 $required_script.sh。" >&2; exit 1; }
+done
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup="/var/backups/nova/releases/x-ui-$NOVA_RELEASE_TAG-$stamp.tar.gz"
@@ -103,7 +109,7 @@ if find /etc/x-ui /var/lib/x-ui -maxdepth 1 -type f -name '*.db' -print -quit 2>
 fi
 
 sed -i "s|^NOVA_RELEASE_TAG=.*$|NOVA_RELEASE_TAG=$requested_tag|" /etc/nova/deploy.env
-for script in update rollback backup rotate-admin-path uninstall; do
+for script in update rollback backup rotate-admin-path uninstall finalize-domain; do
   [[ -f /usr/local/x-ui/deploy/ubuntu/$script.sh ]] &&
     install -m 755 "/usr/local/x-ui/deploy/ubuntu/$script.sh" "/usr/local/sbin/nova-$script"
 done

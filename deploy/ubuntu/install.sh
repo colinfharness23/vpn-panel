@@ -181,6 +181,9 @@ NOVA_DB_NAME="${NOVA_DB_NAME:-$(saved_value NOVA_DB_NAME)}"
 NOVA_DB_USER="${NOVA_DB_USER:-$(saved_value NOVA_DB_USER)}"
 NOVA_DB_PASSWORD="${NOVA_DB_PASSWORD:-$(saved_value NOVA_DB_PASSWORD)}"
 NOVA_ADMIN_USERNAME="${NOVA_ADMIN_USERNAME:-$(saved_value NOVA_ADMIN_USERNAME)}"
+NOVA_DEFER_TLS="${NOVA_DEFER_TLS:-false}"
+NOVA_EXPECTED_PUBLIC_IP="${NOVA_EXPECTED_PUBLIC_IP:-$(saved_value NOVA_EXPECTED_PUBLIC_IP)}"
+NOVA_PREVIOUS_DNS_IPS="${NOVA_PREVIOUS_DNS_IPS:-$(saved_value NOVA_PREVIOUS_DNS_IPS)}"
 NOVA_DB_NAME="${NOVA_DB_NAME:-nova}"
 NOVA_DB_USER="${NOVA_DB_USER:-nova}"
 
@@ -198,6 +201,7 @@ else
 fi
 [[ $NOVA_GITHUB_REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "请设置 NOVA_GITHUB_REPO=用户名/仓库名。"
 [[ $NOVA_ADMIN_USERNAME =~ ^[A-Za-z0-9_.-]{4,64}$ ]] || die "管理员账号格式无效。"
+NOVA_DOMAIN="${NOVA_DOMAIN,,}"
 [[ $NOVA_DOMAIN =~ ^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$ ]] || die "域名格式无效。"
 [[ $NOVA_DB_NAME =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || die "数据库名称格式无效。"
 [[ $NOVA_DB_USER =~ ^[A-Za-z][A-Za-z0-9_]*$ ]] || die "数据库用户名格式无效。"
@@ -206,6 +210,11 @@ case "$NOVA_DB_NAME" in
   postgres|template0|template1) die "数据库名称不能使用 PostgreSQL 系统数据库。" ;;
 esac
 [[ $NOVA_ADMIN_PASSWORD == "$NOVA_ADMIN_PASSWORD_CONFIRM" ]] || die "两次输入的密码不一致。"
+[[ $NOVA_DEFER_TLS == true || $NOVA_DEFER_TLS == false ]] || die "NOVA_DEFER_TLS 只能是 true 或 false。"
+if [[ $NOVA_DEFER_TLS == true ]]; then
+  [[ -n $NOVA_EXPECTED_PUBLIC_IP && $NOVA_EXPECTED_PUBLIC_IP != *[[:space:]]* ]] || die "延迟 HTTPS 模式缺少有效的迁移目标公网 IP。"
+  [[ $NOVA_PREVIOUS_DNS_IPS != *[[:space:]]* ]] || die "迁移前 DNS 地址列表无效。"
+fi
 password_length="$(printf '%s' "$NOVA_ADMIN_PASSWORD" | wc -c)"
 ((password_length >= 12 && password_length <= 128)) || die "管理员密码长度必须为 12-128 位。"
 [[ $NOVA_ADMIN_PASSWORD =~ [A-Z] && $NOVA_ADMIN_PASSWORD =~ [a-z] && $NOVA_ADMIN_PASSWORD =~ [0-9] ]] || die "管理员密码必须包含大写字母、小写字母和数字。"
@@ -307,13 +316,22 @@ expected_sha="$(awk -v name="$asset" '$2 == name || $2 == "*"name {print $1; exi
 [[ $expected_sha =~ ^[a-fA-F0-9]{64}$ ]] || die "Release SHA-256 文件格式无效。"
 actual_sha="$(sha256sum "$tmp_dir/$asset" | awk '{print $1}')"
 [[ ${actual_sha,,} == ${expected_sha,,} ]] || die "Release SHA-256 校验失败。"
-if tar -tzf "$tmp_dir/$asset" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+if tar -tzf "$tmp_dir/$asset" | awk '$0 ~ /(^\/|(^|\/)\.\.(\/|$))/ { found=1 } END { exit !found }'; then
   die "Release 包含不安全路径。"
+fi
+if tar -tzf "$tmp_dir/$asset" | awk '$0 !~ /^x-ui(\/|$)/ { found=1 } END { exit !found }'; then
+  die "Release 包含 x-ui 目录之外的文件。"
+fi
+if tar -tvzf "$tmp_dir/$asset" | awk 'substr($1,1,1) !~ /^[-d]$/ { found=1 } END { exit !found }'; then
+  die "Release 包含符号链接、硬链接或设备文件。"
 fi
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 [[ -x $tmp_dir/x-ui/x-ui ]] || die "Release 缺少 x-ui。"
 [[ -f $tmp_dir/x-ui/bin/config.json ]] || die "Release 缺少 Xray 配置。"
 [[ -x $tmp_dir/x-ui/bin/xray-linux-$ARCH ]] || die "Release 缺少 $ARCH Xray。"
+for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain; do
+  [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_script.sh ]] || die "Release 缺少运维脚本 $required_script.sh。"
+done
 
 systemctl stop x-ui 2>/dev/null || true
 if ((old_install == 1)); then
@@ -387,6 +405,17 @@ PrivateTmp=true
 NoNewPrivileges=true
 AmbientCapabilities=CAP_NET_BIND_SERVICE CAP_NET_ADMIN CAP_NET_RAW
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE CAP_NET_ADMIN CAP_NET_RAW
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+ReadWritePaths=/usr/local/x-ui/bin /var/lib/x-ui /var/log/x-ui
 UMask=0027
 
 [Install]
@@ -401,22 +430,86 @@ runuser -u "$SERVICE_USER" --preserve-environment -- "$INSTALL_DIR/x-ui" setting
 
 PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -v ON_ERROR_STOP=1 <<SQL
 BEGIN;
-DELETE FROM settings WHERE key IN ('subEnable','subJsonEnable','subClashEnable','subListen','subPort','subPath','subJsonPath','subClashPath','subDomain','subURI','subJsonURI','subClashURI');
+DELETE FROM settings WHERE key IN ('webDomain','subEnable','subJsonEnable','subClashEnable','subListen','subPort','subPath','subJsonPath','subClashPath','subDomain','subURI','subJsonURI','subClashURI','subTitle','subProfileUrl','subSupportUrl');
 INSERT INTO settings (key,value) VALUES
+('webDomain','$NOVA_DOMAIN'),
 ('subEnable','true'),('subJsonEnable','true'),('subClashEnable','true'),
 ('subListen','127.0.0.1'),('subPort','$NOVA_SUB_PORT'),
 ('subPath','$NOVA_SUB_PATH'),('subJsonPath','$NOVA_SUB_JSON_PATH'),('subClashPath','$NOVA_SUB_CLASH_PATH'),
-('subDomain','$NOVA_DOMAIN'),('subURI','https://$NOVA_DOMAIN'),('subJsonURI','https://$NOVA_DOMAIN'),('subClashURI','https://$NOVA_DOMAIN');
-INSERT INTO commercial_settings (key,value,encrypted,updated_at) VALUES ('site.url','https://$NOVA_DOMAIN',false,NOW()) ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, encrypted=false, updated_at=NOW();
+('subDomain','$NOVA_DOMAIN'),('subURI','https://$NOVA_DOMAIN'),('subJsonURI','https://$NOVA_DOMAIN'),('subClashURI','https://$NOVA_DOMAIN'),
+('subTitle','NOVA'),('subProfileUrl','https://$NOVA_DOMAIN'),('subSupportUrl','https://$NOVA_DOMAIN/tickets');
+INSERT INTO commercial_settings (key,value,encrypted,updated_at) VALUES
+('site.url','https://$NOVA_DOMAIN',false,NOW()),
+('site.force_https','true',false,NOW()),
+('security.safe_mode','true',false,NOW()),
+('security.password_attempt_limit','true',false,NOW()),
+('security.max_password_attempts','5',false,NOW()),
+('security.password_lock_minutes','60',false,NOW()),
+('security.ip_registration_limit','true',false,NOW())
+ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, encrypted=false, updated_at=NOW();
 COMMIT;
 SQL
 
 cat >/etc/nginx/sites-available/nova.conf <<EOF
+server_tokens off;
+limit_req_zone \$binary_remote_addr zone=nova_login:10m rate=5r/m;
+limit_req_zone \$binary_remote_addr zone=nova_auth:10m rate=20r/m;
+limit_conn_zone \$binary_remote_addr zone=nova_conn:10m;
+
 server {
     listen 80;
     listen [::]:80;
     server_name $NOVA_DOMAIN;
-    client_max_body_size 1025m;
+    client_max_body_size 10m;
+    client_body_timeout 30s;
+    client_header_timeout 15s;
+    keepalive_timeout 30s;
+    send_timeout 30s;
+    limit_conn nova_conn 40;
+    limit_req_status 429;
+    location = /api/v1/passport/login {
+        limit_req zone=nova_login burst=5 nodelay;
+        proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+    }
+    location = /api/v1/passport/send-code {
+        limit_req zone=nova_login burst=3 nodelay;
+        proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+    }
+    location ~ ^/$NOVA_ADMIN_PATH/panel/api/commercial/applications/[^/]+/package\$ {
+        client_max_body_size 1025m;
+        proxy_request_buffering off;
+        proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+    location ~ ^/(api/v1/passport/(register|reset-password)|$NOVA_ADMIN_PATH/login)\$ {
+        limit_req zone=nova_auth burst=10 nodelay;
+        proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+    }
     location ^~ $NOVA_SUB_PATH {
         proxy_pass http://127.0.0.1:$NOVA_SUB_PORT;
         proxy_http_version 1.1;
@@ -470,12 +563,16 @@ systemctl restart x-ui
 wait_http "http://127.0.0.1:$NOVA_PANEL_PORT/" "$NOVA_DOMAIN" 200 || die "根门户启动失败。"
 wait_http "http://127.0.0.1:$NOVA_PANEL_PORT/$NOVA_ADMIN_PATH/" "$NOVA_DOMAIN" 200 || die "隐藏管理员入口启动失败。"
 
-log "申请并验证 Let's Encrypt 证书…"
-certbot --nginx --non-interactive --agree-tos --redirect --register-unsafely-without-email -d "$NOVA_DOMAIN"
-systemctl enable --now certbot.timer
-certbot renew --cert-name "$NOVA_DOMAIN" --dry-run --no-random-sleep-on-renew
+if [[ $NOVA_DEFER_TLS == false ]]; then
+  log "申请并验证 Let's Encrypt 证书…"
+  certbot --nginx --non-interactive --agree-tos --redirect --register-unsafely-without-email -d "$NOVA_DOMAIN"
+  systemctl enable --now certbot.timer
+  certbot renew --cert-name "$NOVA_DOMAIN" --dry-run --no-random-sleep-on-renew
+else
+  log "同域名迁移预部署模式：暂不申请证书，待数据迁移完成后再切换 DNS。"
+fi
 
-for script in update rollback backup rotate-admin-path uninstall; do
+for script in update rollback backup rotate-admin-path uninstall finalize-domain; do
   [[ -f $INSTALL_DIR/deploy/ubuntu/$script.sh ]] && install -m 755 "$INSTALL_DIR/deploy/ubuntu/$script.sh" "/usr/local/sbin/nova-$script"
 done
 
@@ -494,6 +591,9 @@ NOVA_DB_USER=$NOVA_DB_USER
 NOVA_DB_PASSWORD=$NOVA_DB_PASSWORD
 NOVA_ADMIN_USERNAME=$NOVA_ADMIN_USERNAME
 NOVA_WEB_BASE_PATH=/
+NOVA_EXPECTED_PUBLIC_IP=$NOVA_EXPECTED_PUBLIC_IP
+NOVA_PREVIOUS_DNS_IPS=$NOVA_PREVIOUS_DNS_IPS
+NOVA_TLS_READY=$([[ $NOVA_DEFER_TLS == false ]] && printf true || printf false)
 EOF
 chmod 600 "$DEPLOY_FILE"
 
@@ -524,28 +624,32 @@ systemctl is-active --quiet nginx
 systemctl is-active --quiet x-ui
 PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -tAc 'SELECT 1' | grep -qx 1
 pgrep -u "$SERVICE_USER" -f "$INSTALL_DIR/bin/xray-linux-$ARCH" >/dev/null || die "Xray 进程未运行。"
-curl -fsS --max-time 15 "https://$NOVA_DOMAIN/" | grep -qi '<div id="portal"></div>' || die "HTTPS 根页面不是用户门户。"
-curl -fsS --max-time 15 "https://$NOVA_DOMAIN/$NOVA_ADMIN_PATH/" >/dev/null || die "HTTPS 管理后台不可用。"
-curl -fsS --max-time 15 "https://$NOVA_DOMAIN/api/v1/guest/auth-config" | jq -e '.success == true and (.obj.site.siteName | length > 0)' >/dev/null
-status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/api/v1/user/bootstrap")"
-[[ $status == 401 ]] || die "未登录用户 bootstrap 未返回 401（HTTP $status）。"
-status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/portal/")"
-[[ $status == 308 ]] || die "/portal/ 未永久重定向到根页面（HTTP $status）。"
-status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/panel/")"
-[[ $status == 404 ]] || die "公开 /panel/ 未返回 404（HTTP $status）。"
-if [[ $NOVA_ADMIN_PATH != 123456789012345678 ]]; then
-  status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/123456789012345678/")"
-  [[ $status == 404 ]] || die "错误管理员路径未返回 404（HTTP $status）。"
+if [[ $NOVA_DEFER_TLS == false ]]; then
+  curl -fsS --max-time 15 "https://$NOVA_DOMAIN/" | grep -qi '<div id="portal"></div>' || die "HTTPS 根页面不是用户门户。"
+  curl -fsS --max-time 15 "https://$NOVA_DOMAIN/$NOVA_ADMIN_PATH/" >/dev/null || die "HTTPS 管理后台不可用。"
+  curl -fsS --max-time 15 "https://$NOVA_DOMAIN/api/v1/guest/auth-config" | jq -e '.success == true and (.obj.site.siteName | length > 0)' >/dev/null
+  status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/api/v1/user/bootstrap")"
+  [[ $status == 401 ]] || die "未登录用户 bootstrap 未返回 401（HTTP $status）。"
+  status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/portal/")"
+  [[ $status == 308 ]] || die "/portal/ 未永久重定向到根页面（HTTP $status）。"
+  status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/panel/")"
+  [[ $status == 404 ]] || die "公开 /panel/ 未返回 404（HTTP $status）。"
+  if [[ $NOVA_ADMIN_PATH != 123456789012345678 ]]; then
+    status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/123456789012345678/")"
+    [[ $status == 404 ]] || die "错误管理员路径未返回 404（HTTP $status）。"
+  fi
+  status="$(curl -sS -D "$tmp_dir/sub-health.headers" -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN${NOVA_SUB_PATH}health-probe")"
+  [[ $status != 000 && $status -lt 500 ]] || die "订阅服务健康检查失败（HTTP $status）。"
+  tr -d '\r' <"$tmp_dir/sub-health.headers" | grep -qi '^X-Nova-Service: subscription$' || die "订阅路径未进入独立订阅服务。"
 fi
-status="$(curl -sS -D "$tmp_dir/sub-health.headers" -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN${NOVA_SUB_PATH}health-probe")"
-[[ $status != 000 && $status -lt 500 ]] || die "订阅服务健康检查失败（HTTP $status）。"
-tr -d '\r' <"$tmp_dir/sub-health.headers" | grep -qi '^X-Nova-Service: subscription$' || die "订阅路径未进入独立订阅服务。"
 ss -H -ltn | awk '{print $4}' | grep -Eq "127\.0\.0\.1:$NOVA_PANEL_PORT$" || die "面板未仅监听本机回环地址。"
 ss -H -ltn | awk '{print $4}' | grep -Eq "127\.0\.0\.1:$NOVA_SUB_PORT$" || die "订阅服务未仅监听本机回环地址。"
 if find /etc/x-ui "$DATA_DIR" -maxdepth 1 -type f -name '*.db' -print -quit 2>/dev/null | grep -q .; then
   die "生产安装后检测到 SQLite 文件。"
 fi
-systemctl is-enabled --quiet certbot.timer
+if [[ $NOVA_DEFER_TLS == false ]]; then
+  systemctl is-enabled --quiet certbot.timer
+fi
 
 cat >/root/nova-install-result.txt <<EOF
 网站地址: https://$NOVA_DOMAIN/
@@ -559,6 +663,12 @@ cat >/root/nova-install-result.txt <<EOF
 服务日志: sudo journalctl -u x-ui -f
 手工放行线路端口: TCP 20000-59999（安装器未修改 UFW 或云安全组）
 EOF
+if [[ $NOVA_DEFER_TLS == true ]]; then
+  cat >>/root/nova-install-result.txt <<EOF
+迁移目标 IP: $NOVA_EXPECTED_PUBLIC_IP
+迁移最后一步: 在新服务器运行 sudo nova-finalize-domain，随后按提示切换 DNS
+EOF
+fi
 chmod 600 /root/nova-install-result.txt
 unset NOVA_ADMIN_PASSWORD NOVA_ADMIN_PASSWORD_CONFIRM
 log "安装和全部健康检查完成。结果已保存到 /root/nova-install-result.txt。"

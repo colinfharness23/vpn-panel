@@ -17,8 +17,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/config"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/commercial"
 )
 
 // writeSubError translates a service-layer result into an HTTP response.
@@ -184,7 +186,8 @@ func (a *SUBController) maybeServeSubPage(c *gin.Context) bool {
 		basePath = "/"
 	}
 	basePathStr := basePath.(string)
-	page := subReq.BuildPageData(subId, hostHeader, traffic, lastOnline, subs, emails, subURL, subJsonURL, subClashURL, basePathStr, a.subTitle, a.subSupportUrl)
+	profileTitle, supportURL, _ := a.effectiveSubscriptionBranding()
+	page := subReq.BuildPageData(subId, hostHeader, traffic, lastOnline, subs, emails, subURL, subJsonURL, subClashURL, basePathStr, profileTitle, supportURL)
 	a.serveSubPage(c, basePathStr, page)
 	return true
 }
@@ -423,9 +426,10 @@ func (a *SUBController) subClashs(c *gin.Context) {
 			profileUrl = fmt.Sprintf("%s://%s%s", scheme, hostWithPort, c.Request.RequestURI)
 		}
 		a.ApplyCommonHeaders(c, header, a.updateInterval, a.subTitle, a.subSupportUrl, profileUrl, a.subAnnounce, a.subEnableRouting, a.subRoutingRules, a.subHideSettings)
-		if a.subTitle != "" {
+		profileTitle, _, _ := a.effectiveSubscriptionBranding()
+		if profileTitle != "" {
 			// Clash clients commonly use Content-Disposition to choose the imported profile name.
-			c.Writer.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename*=UTF-8''%s`, url.PathEscape(a.subTitle)))
+			c.Writer.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename*=UTF-8''%s`, url.PathEscape(profileTitle)))
 		}
 		c.Data(200, "application/yaml; charset=utf-8", []byte(clashSub))
 	}
@@ -444,6 +448,9 @@ func (a *SUBController) ApplyCommonHeaders(
 	profileRoutingRules string,
 	profileHideSettings bool,
 ) {
+	if config.IsCommercialProduction() {
+		profileTitle, profileSupportUrl, profileUrl = a.effectiveSubscriptionBranding()
+	}
 	if a.showSubscriptionInfo {
 		c.Writer.Header().Set("Subscription-Userinfo", header)
 	}
@@ -471,4 +478,17 @@ func (a *SUBController) ApplyCommonHeaders(
 	if profileHideSettings {
 		c.Writer.Header().Set("Hide-Settings", "1")
 	}
+}
+
+// effectiveSubscriptionBranding makes the commercial site's own identity the
+// only title/support/profile metadata exposed to VPN clients. Imported source
+// headers and legacy 3x-ui settings cannot override these production values.
+func (a *SUBController) effectiveSubscriptionBranding() (title, supportURL, profileURL string) {
+	if !config.IsCommercialProduction() {
+		return a.subTitle, a.subSupportUrl, a.subProfileUrl
+	}
+	store := commercial.NewConfigStore()
+	return store.GetDefault("site.name", "NOVA"),
+		strings.TrimSpace(store.GetDefault("site.support_url", "")),
+		strings.TrimSpace(store.GetDefault("site.url", ""))
 }

@@ -129,6 +129,10 @@ func (s *PanelService) RestartPanel(delay time.Duration) error {
 // is enabled on a dev build it compares commits against the rolling dev release;
 // otherwise it compares versions against the latest stable tag.
 func (s *PanelService) GetUpdateInfo() (*PanelUpdateInfo, error) {
+	if config.IsCommercialProduction() {
+		current := config.GetPanelVersion()
+		return &PanelUpdateInfo{Channel: "managed", CurrentVersion: current, LatestVersion: current, UpdateAvailable: false}, nil
+	}
 	if devChannelActive() {
 		return getDevUpdateInfo()
 	}
@@ -181,6 +185,9 @@ func getDevUpdateInfo() (*PanelUpdateInfo, error) {
 // setting. Returns the run ID to pass to GetUpdateStatus so the caller can
 // tell this run's result apart from a stale one.
 func (s *PanelService) StartUpdate() (int64, error) {
+	if config.IsCommercialProduction() {
+		return 0, fmt.Errorf("商业生产版已禁用网页远程脚本执行；请通过 SSH 运行 sudo nova-update")
+	}
 	return s.startUpdate(devChannelActive())
 }
 
@@ -213,6 +220,9 @@ func (s *PanelService) GetUpdateStatus() *PanelUpdateStatus {
 }
 
 func (s *PanelService) startUpdate(useDev bool) (int64, error) {
+	if config.IsCommercialProduction() {
+		return 0, fmt.Errorf("商业生产版已禁用网页远程脚本执行；请通过 SSH 运行 sudo nova-update")
+	}
 	runID := time.Now().UnixNano()
 	if !acquireUpdateSlot(runID) {
 		return 0, fmt.Errorf("a panel update is already in progress")

@@ -98,6 +98,12 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	if got := headers.Get("X-Frame-Options"); got != "DENY" {
 		t.Fatalf("X-Frame-Options = %q", got)
 	}
+	if got := headers.Get("X-Permitted-Cross-Domain-Policies"); got != "none" {
+		t.Fatalf("X-Permitted-Cross-Domain-Policies = %q", got)
+	}
+	if got := headers.Get("Permissions-Policy"); !strings.Contains(got, "camera=()") || !strings.Contains(got, "payment=()") {
+		t.Fatalf("Permissions-Policy = %q", got)
+	}
 	if got := headers.Get("Referrer-Policy"); got != "no-referrer" {
 		t.Fatalf("Referrer-Policy = %q", got)
 	}

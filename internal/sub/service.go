@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -472,8 +473,71 @@ func (s *SubService) getInboundsBySubId(subId string) ([]*model.Inbound, error) 
 	if err != nil {
 		return nil, err
 	}
+	if err := s.applyManagedLineBranding(inbounds); err != nil {
+		return nil, err
+	}
 	s.indexStatsBySubId(subId)
 	return inbounds, nil
+}
+
+// applyManagedLineBranding replaces the private upstream node remark on every
+// managed commercial line before any raw, JSON or Clash renderer sees it.
+// LineSource names, provider domains and imported fragments remain available
+// to administrators, but are never part of a customer's subscription.
+func (s *SubService) applyManagedLineBranding(inbounds []*model.Inbound) error {
+	if len(inbounds) == 0 {
+		return nil
+	}
+	ids := make([]int, 0, len(inbounds))
+	byID := make(map[int]*model.Inbound, len(inbounds))
+	for _, inbound := range inbounds {
+		if inbound == nil || inbound.Id <= 0 {
+			continue
+		}
+		ids = append(ids, inbound.Id)
+		byID[inbound.Id] = inbound
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	db := database.GetDB()
+	if db == nil {
+		return errors.New("subscription database is unavailable")
+	}
+	var nodes []model.LineNode
+	if err := db.Select("id", "inbound_id").Where("inbound_id IN ?", ids).Find(&nodes).Error; err != nil {
+		return fmt.Errorf("load managed line branding: %w", err)
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	siteName := "NOVA"
+	var setting model.CommercialSetting
+	if err := db.Select("value", "encrypted").Where("key = ?", "site.name").First(&setting).Error; err == nil && !setting.Encrypted {
+		if value := strings.TrimSpace(setting.Value); value != "" {
+			siteName = value
+		}
+	}
+	for _, node := range nodes {
+		if node.InboundID == nil {
+			continue
+		}
+		inbound := byID[*node.InboundID]
+		if inbound == nil {
+			continue
+		}
+		stableID := strings.ToUpper(strings.ReplaceAll(node.ID, "-", ""))
+		if len(stableID) > 6 {
+			stableID = stableID[:6]
+		}
+		if stableID == "" {
+			stableID = "NODE"
+		}
+		inbound.Remark = fmt.Sprintf("%s 线路 %s", siteName, stableID)
+	}
+	return nil
 }
 
 // indexStatsBySubId loads the traffic rows for just this subscriber's clients

@@ -193,9 +193,8 @@ jobs:
           cp x-ui.service.debian x-ui/
           cp x-ui.service.arch x-ui/
           cp x-ui.service.rhel x-ui/
-          cp x-ui.sh x-ui/
           mkdir -p x-ui/deploy/ubuntu
-          cp deploy/ubuntu/install.sh deploy/ubuntu/update.sh deploy/ubuntu/rollback.sh deploy/ubuntu/backup.sh deploy/ubuntu/rotate-admin-path.sh x-ui/deploy/ubuntu/
+          cp deploy/ubuntu/*.sh x-ui/deploy/ubuntu/
           chmod +x x-ui/deploy/ubuntu/*.sh
           mv x-ui/xui-release x-ui/x-ui
           mkdir x-ui/bin
@@ -240,22 +239,6 @@ jobs:
           019616520463357dea4ae92d5de0e6355646a4d10535873c4951fc59c4ea0115  geosite_RU.dat
           CHECKSUMS
           mv xray xray-linux-${{ matrix.platform }}
-          # mtg-multi (MTProto sidecar) ships prebuilt release binaries whose
-          # platform labels match our matrix, so download and unpack the matching
-          # archive. Only the platforms the fork publishes are packaged. The tag
-          # is resolved from the fork's latest release so it never needs bumping
-          # here; the token only lifts the API rate limit for a public read.
-          MTG_MULTI_VER=$(curl -sfL -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" "https://api.github.com/repos/mhsanaei/mtg-multi/releases/latest" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
-          if [ -z "$MTG_MULTI_VER" ]; then echo "could not resolve the latest mtg-multi release tag"; exit 1; fi
-          case "${{ matrix.platform }}" in
-            amd64|arm64|armv7|armv6|386)
-              MTG_PKG="mtg-multi-${MTG_MULTI_VER#v}-linux-${{ matrix.platform }}"
-              curl -sfLRO "https://github.com/mhsanaei/mtg-multi/releases/download/${MTG_MULTI_VER}/${MTG_PKG}.tar.gz"
-              tar -xzf "${MTG_PKG}.tar.gz"
-              mv "${MTG_PKG}/mtg-multi" "mtg-linux-${{ matrix.platform }}"
-              rm -rf "${MTG_PKG}" "${MTG_PKG}.tar.gz"
-              ;;
-          esac
           cd ../..
 
       - name: Verify Trojan and Hysteria2 traffic through packaged Xray
@@ -281,7 +264,9 @@ jobs:
             x-ui/deploy/ubuntu/update.sh \
             x-ui/deploy/ubuntu/rollback.sh \
             x-ui/deploy/ubuntu/backup.sh \
-            x-ui/deploy/ubuntu/rotate-admin-path.sh; do
+            x-ui/deploy/ubuntu/rotate-admin-path.sh \
+            x-ui/deploy/ubuntu/uninstall.sh \
+            x-ui/deploy/ubuntu/finalize-domain.sh; do
             grep -Fxq "$required" /tmp/release-files.txt || {
               echo "missing release file: $required" >&2
               exit 1
