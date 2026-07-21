@@ -28,7 +28,6 @@ curl -fsSL https://raw.githubusercontent.com/colinfharness23/vpn-panel/main/depl
 
 ```bash
 sudo nova-update                 # 更新到最新稳定 Release
-sudo nova-update v3.7.0          # 更新到指定 Release
 sudo nova-backup                 # 立即备份数据库、配置和上传文件
 sudo nova-rollback               # 回滚最近一次应用更新
 sudo nova-rotate-admin-path      # 更换隐藏管理员入口
