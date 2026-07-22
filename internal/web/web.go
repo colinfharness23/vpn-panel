@@ -286,7 +286,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		}
 	})
 
-	controller.NewCommercialPublicController(publicGroup, email.NewEmailService(s.settingService))
+	controller.NewCommercialPublicController(publicGroup, email.NewEmailService(s.settingService, commercial.NewConfigStore()))
 
 	adminGroup := engine.Group(adminBasePath)
 	adminGroup.Use(func(c *gin.Context) {
@@ -669,7 +669,7 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 	}
 
 	// Register email subscriber (always — it checks smtpEnable at runtime)
-	emailService := email.NewEmailService(s.settingService)
+	emailService := email.NewEmailService(s.settingService, commercial.NewConfigStore())
 	emailSub := email.NewSubscriber(s.settingService, emailService)
 	s.bus.Subscribe("email-notifier", emailSub.HandleEvent)
 

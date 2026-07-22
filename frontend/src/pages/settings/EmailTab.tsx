@@ -7,6 +7,7 @@ import type { AllSetting } from '@/models/setting';
 import { SettingListItem } from '@/components/ui';
 import { EmailNotifications } from '@/components/ui/notifications/EmailNotifications';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useSiteBranding } from '@/hooks/useSiteBranding';
 import { catTabLabel } from './catTabLabel';
 import SecretInput from './SecretInput';
 import {
@@ -44,6 +45,7 @@ const smtpProviderPresets = [
 
 export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
   const { t } = useTranslation();
+  const { siteName } = useSiteBranding();
   const { isMobile } = useMediaQuery();
   const [testLoading, setTestLoading] = useState(false);
   const [testResult, setTestResult] = useState<SmtpTestResult | null>(null);
@@ -80,6 +82,16 @@ export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
         label: catTabLabel(<SettingOutlined />, t('pages.settings.smtpSettings'), isMobile),
         children: (
           <>
+            <Alert
+              type="info"
+              showIcon
+              title={t('pages.settings.smtpSenderIdentity', {
+                siteName,
+                address: allSetting.smtpUsername || 'user@example.com',
+              })}
+              description={t('pages.settings.smtpDeliverabilityHint')}
+              style={{ marginBottom: 16 }}
+            />
             <SettingListItem paddings="small" title={t('pages.settings.smtpEnable')} description={t('pages.settings.smtpEnableDesc')}>
               <Switch checked={allSetting.smtpEnable} onChange={(v) => updateSetting({ smtpEnable: v })} />
             </SettingListItem>

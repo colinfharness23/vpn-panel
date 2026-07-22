@@ -329,12 +329,14 @@ textarea {
 }
 
 .dashboard-card.ant-card {
-  height: 580px;
+  display: flex;
+  height: auto;
   min-height: 580px;
 }
 
 .dashboard-card .ant-card-body {
-  height: 100%;
+  height: auto;
+  flex: 1 1 auto;
   padding: 38px 42px;
 }
 

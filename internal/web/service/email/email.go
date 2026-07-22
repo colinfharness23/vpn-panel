@@ -2,15 +2,20 @@ package email
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	stdhtml "html"
 	"mime"
 	"net"
 	"net/mail"
 	"net/smtp"
+	"net/url"
 	"strings"
 	"time"
+
+	xhtml "golang.org/x/net/html"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 )
@@ -18,6 +23,13 @@ import (
 // EmailService sends email notifications via SMTP.
 type EmailService struct {
 	settingService service.SettingService
+	brandProvider  BrandProvider
+}
+
+// BrandProvider supplies the commercial site identity without coupling the
+// SMTP package to the commercial service package.
+type BrandProvider interface {
+	GetDefault(key, fallback string) string
 }
 
 // SMTPTestResult holds the result of an SMTP connection test.
@@ -28,8 +40,12 @@ type SMTPTestResult struct {
 }
 
 // NewEmailService creates a new EmailService.
-func NewEmailService(settingService service.SettingService) *EmailService {
-	return &EmailService{settingService: settingService}
+func NewEmailService(settingService service.SettingService, brandProviders ...BrandProvider) *EmailService {
+	var brandProvider BrandProvider
+	if len(brandProviders) > 0 {
+		brandProvider = brandProviders[0]
+	}
+	return &EmailService{settingService: settingService, brandProvider: brandProvider}
 }
 
 // Send sends an HTML email to all configured recipients.
@@ -69,7 +85,8 @@ func (s *EmailService) SendTo(recipients []string, subject, body string) error {
 	}
 
 	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
-	msg := buildMessage(from, recipients, subject, body)
+	msg := buildMessage(from, recipients, subject, body, s.siteName())
+	heloName := s.helloName()
 
 	// Authenticate only when credentials are set. Go's PlainAuth refuses to run
 	// over the unencrypted "none" transport, so an open relay must use nil auth.
@@ -84,11 +101,11 @@ func (s *EmailService) SendTo(recipients []string, subject, body string) error {
 	go func() {
 		switch encryptionType {
 		case "tls":
-			ch <- result{s.sendWithTLS(addr, auth, from, recipients, msg, host)}
+			ch <- result{s.sendWithTLS(addr, auth, from, recipients, msg, host, heloName)}
 		case "starttls":
-			ch <- result{s.sendWithSMTP(addr, auth, from, recipients, msg, host, true)}
+			ch <- result{s.sendWithSMTP(addr, auth, from, recipients, msg, host, heloName, true)}
 		case "none":
-			ch <- result{s.sendWithSMTP(addr, auth, from, recipients, msg, host, false)}
+			ch <- result{s.sendWithSMTP(addr, auth, from, recipients, msg, host, heloName, false)}
 		default:
 			ch <- result{fmt.Errorf("unknown SMTP encryption type: %s", encryptionType)}
 		}
@@ -102,7 +119,7 @@ func (s *EmailService) SendTo(recipients []string, subject, body string) error {
 	}
 }
 
-func (s *EmailService) sendWithSMTP(addr string, auth smtp.Auth, from string, to []string, msg []byte, host string, startTLS bool) error {
+func (s *EmailService) sendWithSMTP(addr string, auth smtp.Auth, from string, to []string, msg []byte, host, heloName string, startTLS bool) error {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	conn, err := dialer.Dial("tcp", addr)
 	if err != nil {
@@ -116,7 +133,7 @@ func (s *EmailService) sendWithSMTP(addr string, auth smtp.Auth, from string, to
 	}
 	defer client.Close()
 
-	if err = client.Hello("localhost"); err != nil {
+	if err = client.Hello(heloName); err != nil {
 		return err
 	}
 	if startTLS {
@@ -178,6 +195,7 @@ func (s *EmailService) TestConnection() SMTPTestResult {
 	}
 
 	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	heloName := s.helloName()
 
 	// Stage 1: Connect
 	var conn net.Conn
@@ -205,16 +223,17 @@ func (s *EmailService) TestConnection() SMTPTestResult {
 	}
 	defer client.Close()
 
-	if err = client.Hello("localhost"); err != nil {
+	if err = client.Hello(heloName); err != nil {
 		return SMTPTestResult{false, "auth", classifySMTPError(err)}
 	}
 
 	// STARTTLS upgrade for non-TLS connections
 	if encryptionType == "starttls" {
-		if ok, _ := client.Extension("STARTTLS"); ok {
-			if err = client.StartTLS(&tls.Config{ServerName: host}); err != nil {
-				return SMTPTestResult{false, "auth", classifySMTPError(err)}
-			}
+		if ok, _ := client.Extension("STARTTLS"); !ok {
+			return SMTPTestResult{false, "auth", "pages.settings.smtpErrorStarttls"}
+		}
+		if err = client.StartTLS(&tls.Config{ServerName: host, MinVersion: tls.VersionTLS12}); err != nil {
+			return SMTPTestResult{false, "auth", classifySMTPError(err)}
 		}
 	}
 
@@ -235,11 +254,12 @@ func (s *EmailService) TestConnection() SMTPTestResult {
 		}
 	}
 
-	msg := buildMessage(from, recipients, "[NOVA] Test email",
-		`<html><body style="font-family:monospace;font-size:14px">
-<h2>Test email from NOVA</h2>
-<p>If you received this, SMTP is configured correctly.</p>
-</body></html>`)
+	rawSubject, body := s.testMessage()
+	subject, subjectErr := normalizeSMTPSubject(rawSubject)
+	if subjectErr != nil {
+		return SMTPTestResult{false, "send", classifySMTPError(subjectErr)}
+	}
+	msg := buildMessage(from, recipients, subject, body, s.siteName())
 
 	w, err := client.Data()
 	if err != nil {
@@ -255,7 +275,7 @@ func (s *EmailService) TestConnection() SMTPTestResult {
 	return SMTPTestResult{true, "send", "smtpTestSuccess"}
 }
 
-func (s *EmailService) sendWithTLS(addr string, auth smtp.Auth, from string, to []string, msg []byte, host string) error {
+func (s *EmailService) sendWithTLS(addr string, auth smtp.Auth, from string, to []string, msg []byte, host, heloName string) error {
 	// Dial with explicit timeout
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	conn, err := (&tls.Dialer{NetDialer: dialer, Config: &tls.Config{
@@ -273,7 +293,7 @@ func (s *EmailService) sendWithTLS(addr string, auth smtp.Auth, from string, to 
 	}
 	defer client.Close()
 
-	if err = client.Hello("localhost"); err != nil {
+	if err = client.Hello(heloName); err != nil {
 		return err
 	}
 	if auth != nil {
@@ -301,13 +321,38 @@ func (s *EmailService) sendWithTLS(addr string, auth smtp.Auth, from string, to 
 
 // SendTest sends a test email and returns any error with detail.
 func (s *EmailService) SendTest() error {
-	return s.Send(
-		"[NOVA] Test email",
-		`<html><body style="font-family:monospace;font-size:14px">
-<h2>Test email from NOVA</h2>
+	subject, body := s.testMessage()
+	return s.Send(subject, body)
+}
+
+func (s *EmailService) siteName() string {
+	if s.brandProvider == nil {
+		return "NOVA"
+	}
+	return normalizeSMTPDisplayName(s.brandProvider.GetDefault("site.name", "NOVA"))
+}
+
+func (s *EmailService) helloName() string {
+	if s.brandProvider != nil {
+		if value := normalizeSMTPHelloName(s.brandProvider.GetDefault("site.url", "")); value != "" {
+			return value
+		}
+	}
+	if domain, err := s.settingService.GetWebDomain(); err == nil {
+		if value := normalizeSMTPHelloName(domain); value != "" {
+			return value
+		}
+	}
+	return "localhost"
+}
+
+func (s *EmailService) testMessage() (string, string) {
+	siteName := s.siteName()
+	safeSiteName := stdhtml.EscapeString(siteName)
+	return fmt.Sprintf("[%s] Test email", siteName), fmt.Sprintf(`<html><body style="font-family:Arial,sans-serif;font-size:14px;color:#17233d">
+<h2>Test email from %s</h2>
 <p>If you received this, SMTP is configured correctly.</p>
-</body></html>`,
-	)
+</body></html>`, safeSiteName)
 }
 
 // classifySMTPError maps raw SMTP errors to human-readable messages.
@@ -384,29 +429,181 @@ func normalizeSMTPSubject(value string) (string, error) {
 	return mime.QEncoding.Encode("UTF-8", value), nil
 }
 
-func buildMessage(from string, _ []string, subject, body string) []byte {
-	headers := map[string]string{
-		"From": from,
-		// Envelope recipients are supplied to SMTP RCPT after strict address
-		// parsing. Keeping user-controlled addresses out of the MIME headers
-		// removes the remaining header/content injection data path.
-		"To":                        "undisclosed-recipients:;",
-		"Subject":                   subject,
-		"MIME-Version":              "1.0",
-		"Content-Type":              "text/html; charset=utf-8",
-		"Content-Transfer-Encoding": "base64",
+func normalizeSMTPDisplayName(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Map(func(r rune) rune {
+		if r == '\r' || r == '\n' || r == 0 || r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
+	if value == "" {
+		return "NOVA"
+	}
+	return value
+}
+
+func normalizeSMTPHelloName(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.ContainsAny(value, "\r\n\x00") {
+		return ""
+	}
+	candidate := value
+	if parsed, err := url.Parse(value); err == nil && parsed.Hostname() != "" {
+		candidate = parsed.Hostname()
+	} else if parsed, err := url.Parse("//" + value); err == nil && parsed.Hostname() != "" {
+		candidate = parsed.Hostname()
+	}
+	candidate = strings.TrimSuffix(strings.ToLower(candidate), ".")
+	if ip := net.ParseIP(candidate); ip != nil {
+		return "[" + ip.String() + "]"
+	}
+	if len(candidate) == 0 || len(candidate) > 253 {
+		return ""
+	}
+	for _, label := range strings.Split(candidate, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return ""
+		}
+		for _, r := range label {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return ""
+			}
+		}
+	}
+	return candidate
+}
+
+func buildMessage(from string, recipients []string, subject, body string, displayNames ...string) []byte {
+	displayName := ""
+	if len(displayNames) > 0 {
+		displayName = normalizeSMTPDisplayName(displayNames[0])
+	}
+	fromHeader := (&mail.Address{Name: displayName, Address: from}).String()
+	toHeader := "undisclosed-recipients:;"
+	if len(recipients) == 1 {
+		toHeader = (&mail.Address{Address: recipients[0]}).String()
+	}
+	contentType, multipartBody := buildAlternativeBody(body)
+	headers := [][2]string{
+		{"From", fromHeader},
+		{"Reply-To", fromHeader},
+		{"To", toHeader},
+		{"Date", time.Now().Format(time.RFC1123Z)},
+		{"Message-ID", newMessageID(from)},
+		{"Subject", subject},
+		{"MIME-Version", "1.0"},
+		{"Content-Type", contentType},
+		{"X-Mailer", displayName},
 	}
 	var msg strings.Builder
-	for k, v := range headers {
-		fmt.Fprintf(&msg, "%s: %s\r\n", k, v)
+	for _, header := range headers {
+		fmt.Fprintf(&msg, "%s: %s\r\n", header[0], header[1])
 	}
 	msg.WriteString("\r\n")
-	encodedBody := base64.StdEncoding.EncodeToString([]byte(body))
+	msg.WriteString(multipartBody)
+	return []byte(msg.String())
+}
+
+func buildAlternativeBody(htmlBody string) (string, string) {
+	boundary := newMIMEBoundary()
+	var body strings.Builder
+	writeMIMEPart := func(contentType, value string) {
+		fmt.Fprintf(&body, "--%s\r\n", boundary)
+		fmt.Fprintf(&body, "Content-Type: %s; charset=utf-8\r\n", contentType)
+		body.WriteString("Content-Transfer-Encoding: base64\r\n\r\n")
+		writeBase64Lines(&body, []byte(value))
+		body.WriteString("\r\n")
+	}
+	writeMIMEPart("text/plain", htmlToPlainText(htmlBody))
+	writeMIMEPart("text/html", htmlBody)
+	fmt.Fprintf(&body, "--%s--\r\n", boundary)
+	return mime.FormatMediaType("multipart/alternative", map[string]string{"boundary": boundary}), body.String()
+}
+
+func writeBase64Lines(target *strings.Builder, value []byte) {
+	encodedBody := base64.StdEncoding.EncodeToString(value)
 	for len(encodedBody) > 76 {
-		msg.WriteString(encodedBody[:76])
-		msg.WriteString("\r\n")
+		target.WriteString(encodedBody[:76])
+		target.WriteString("\r\n")
 		encodedBody = encodedBody[76:]
 	}
-	msg.WriteString(encodedBody)
-	return []byte(msg.String())
+	target.WriteString(encodedBody)
+}
+
+func newMIMEBoundary() string {
+	var random [18]byte
+	if _, err := rand.Read(random[:]); err == nil {
+		return fmt.Sprintf("=_panel_%x", random)
+	}
+	return fmt.Sprintf("=_panel_%d", time.Now().UnixNano())
+}
+
+func htmlToPlainText(markup string) string {
+	document, err := xhtml.Parse(strings.NewReader(markup))
+	if err != nil {
+		return strings.TrimSpace(stdhtml.UnescapeString(markup))
+	}
+	var output strings.Builder
+	var lastByte byte
+	appendBreak := func() {
+		if output.Len() > 0 && lastByte != '\n' {
+			output.WriteByte('\n')
+			lastByte = '\n'
+		}
+	}
+	blockElements := map[string]bool{
+		"address": true, "article": true, "blockquote": true, "div": true,
+		"footer": true, "h1": true, "h2": true, "h3": true, "h4": true,
+		"h5": true, "h6": true, "header": true, "li": true, "p": true,
+		"section": true, "table": true, "tr": true,
+	}
+	var visit func(*xhtml.Node)
+	visit = func(node *xhtml.Node) {
+		if node.Type == xhtml.ElementNode && (node.Data == "script" || node.Data == "style") {
+			return
+		}
+		if node.Type == xhtml.ElementNode && (node.Data == "br" || blockElements[node.Data]) {
+			appendBreak()
+		}
+		if node.Type == xhtml.TextNode {
+			text := strings.Join(strings.Fields(node.Data), " ")
+			if text != "" {
+				if output.Len() > 0 && lastByte != '\n' && lastByte != ' ' {
+					output.WriteByte(' ')
+				}
+				output.WriteString(text)
+				lastByte = text[len(text)-1]
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			visit(child)
+		}
+		if node.Type == xhtml.ElementNode && blockElements[node.Data] {
+			appendBreak()
+		}
+	}
+	visit(document)
+	lines := strings.Split(output.String(), "\n")
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if line = strings.TrimSpace(line); line != "" {
+			cleaned = append(cleaned, line)
+		}
+	}
+	return strings.Join(cleaned, "\n")
+}
+
+func newMessageID(from string) string {
+	domain := "localhost"
+	if at := strings.LastIndexByte(from, '@'); at >= 0 && at+1 < len(from) {
+		if candidate := normalizeSMTPHelloName(from[at+1:]); candidate != "" {
+			domain = candidate
+		}
+	}
+	var random [12]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return fmt.Sprintf("<%d@%s>", time.Now().UnixNano(), domain)
+	}
+	return fmt.Sprintf("<%d.%x@%s>", time.Now().UnixNano(), random, domain)
 }

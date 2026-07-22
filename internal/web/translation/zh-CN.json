@@ -1419,6 +1419,8 @@
       "telegramTokenPlaceholder": "已配置——输入新令牌以替换",
       "smtpPasswordConfigured": "已配置；留空则保留当前密码。",
       "smtpPasswordPlaceholder": "已配置——输入新密码以替换",
+      "smtpSenderIdentity": "收件人看到的发件人：{siteName} <{address}>",
+      "smtpDeliverabilityHint": "系统会使用站点名称作为发件人显示名，SMTP 认证邮箱仍是真实发件地址。应用无法绝对保证进入收件箱；请使用站点域名邮箱，并在 SMTP 服务商指导下配置匹配的 SPF、DKIM 和 DMARC 记录。",
       "smtpNotInitialized": "SMTP 尚未初始化",
       "tgBotNotEnabled": "Telegram 机器人未启用",
       "tgTestFailed": "Telegram 测试失败",

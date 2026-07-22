@@ -39,9 +39,10 @@ type customerEmailSender interface {
 }
 
 func NewWorker() *Worker {
+	config := NewConfigStore()
 	return &Worker{
-		db: database.GetDB(), orders: NewOrderService(), config: NewConfigStore(),
-		mailer: emailservice.NewEmailService(service.SettingService{}), lineEvents: make(chan eventbus.Event, 256),
+		db: database.GetDB(), orders: NewOrderService(), config: config,
+		mailer: emailservice.NewEmailService(service.SettingService{}, config), lineEvents: make(chan eventbus.Event, 256),
 	}
 }
 

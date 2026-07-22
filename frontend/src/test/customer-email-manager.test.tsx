@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AllSetting } from '@/models/setting';
 import EmailTab from '@/pages/settings/EmailTab';
+import { updateSiteBranding } from '@/hooks/useSiteBranding';
 import { HttpUtil } from '@/utils';
 
 const templates = [
@@ -28,6 +29,18 @@ const templates = [
 
 describe('customer email settings', () => {
   afterEach(() => vi.restoreAllMocks());
+
+  it('shows the live site identity that recipients will see', () => {
+    vi.spyOn(HttpUtil, 'get').mockResolvedValue({ success: true, msg: '', obj: templates });
+    updateSiteBranding({ siteName: 'PHEERO', logoUrl: '' });
+    const settings = new AllSetting();
+    settings.smtpUsername = 'noreply@pheero.com';
+
+    render(<EmailTab allSetting={settings} updateSetting={vi.fn()} />);
+
+    expect(screen.getByText('Sender shown to recipients: PHEERO <noreply@pheero.com>')).toBeTruthy();
+    expect(screen.getByText(/SPF, DKIM, and DMARC/)).toBeTruthy();
+  });
 
   it('offers common SMTP ports while preserving custom port input', () => {
     vi.spyOn(HttpUtil, 'get').mockResolvedValue({ success: true, msg: '', obj: templates });
