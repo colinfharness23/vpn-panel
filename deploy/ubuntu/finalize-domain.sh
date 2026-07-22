@@ -57,6 +57,7 @@ log "DNS 已切换，正在自动申请 Let's Encrypt 证书并启用 HTTPS。"
 certbot --nginx --non-interactive --agree-tos --redirect --register-unsafely-without-email -d "$NOVA_DOMAIN"
 systemctl enable --now certbot.timer
 certbot renew --cert-name "$NOVA_DOMAIN" --dry-run --no-random-sleep-on-renew
+/usr/local/sbin/nova-sync-line-cert
 
 curl -fsS --max-time 20 "https://$NOVA_DOMAIN/" | grep -qi '<div id="portal"></div>' || die "HTTPS 根门户验证失败。"
 curl -fsS --max-time 20 "https://$NOVA_DOMAIN/$NOVA_ADMIN_PATH/" >/dev/null || die "HTTPS 管理后台验证失败。"

@@ -2,6 +2,8 @@ package sub
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -49,7 +51,7 @@ func TestManagedLineSubscriptionHidesImportedProviderRemark(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("got %d inbounds, want 1", len(rows))
 	}
-	if got, want := rows[0].Remark, "Pheero VPN · 香港 IPLC"; got != want {
+	if got, want := rows[0].Remark, "香港 IPLC"; got != want {
 		t.Fatalf("managed line remark = %q, want %q", got, want)
 	}
 
@@ -64,8 +66,106 @@ func TestManagedLineSubscriptionHidesImportedProviderRemark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse managed subscription link: %v", err)
 	}
-	if got, wantPrefix := parsed.Fragment, "Pheero VPN · 香港 IPLC"; !strings.HasPrefix(got, wantPrefix) {
-		t.Fatalf("rendered node name = %q, want prefix %q", got, wantPrefix)
+	if got, want := parsed.Fragment, "香港 IPLC"; got != want {
+		t.Fatalf("rendered node name = %q, want %q", got, want)
+	}
+}
+
+func TestManagedSubscriptionPreservesSixProtocolTypesAndExactAliases(t *testing.T) {
+	initSubDB(t)
+	db := database.GetDB()
+	if err := db.Create(&model.CommercialSetting{Key: "site.name", Value: "PHEERO"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	privateKey := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("p", 32)))
+	client := &model.ClientRecord{
+		Email: "six@example.com", SubID: "six-protocols", UUID: "11111111-2222-4333-8444-555555555555",
+		Password: "trojan-and-ss-password", Auth: "hysteria-auth", Security: "auto",
+		PrivateKey: privateKey, AllowedIPs: "10.0.0.2/32", Enable: true,
+	}
+	if err := db.Create(client).Error; err != nil {
+		t.Fatal(err)
+	}
+	streams := map[model.Protocol]string{
+		model.VMESS:       `{"network":"tcp","security":"tls","tlsSettings":{"serverName":"vpn.pheero.com","settings":{"fingerprint":"chrome"}}}`,
+		model.VLESS:       `{"network":"tcp","security":"reality","realitySettings":{"serverNames":["vpn.pheero.com"],"shortIds":["abcd1234"],"settings":{"publicKey":"PBK","fingerprint":"chrome","spiderX":"/"}}}`,
+		model.Trojan:      `{"network":"tcp","security":"tls","tlsSettings":{"serverName":"vpn.pheero.com","settings":{"fingerprint":"chrome"}}}`,
+		model.Shadowsocks: `{}`,
+		model.Hysteria:    `{"network":"hysteria","security":"tls","tlsSettings":{"serverName":"vpn.pheero.com","settings":{"fingerprint":"chrome"}},"hysteriaSettings":{"version":2}}`,
+		model.WireGuard:   `{}`,
+	}
+	settings := map[model.Protocol]string{
+		model.VMESS:       `{"clients":[]}`,
+		model.VLESS:       `{"clients":[],"decryption":"none"}`,
+		model.Trojan:      `{"clients":[]}`,
+		model.Shadowsocks: `{"method":"2022-blake3-aes-256-gcm","password":"cHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHA=","network":"tcp,udp","clients":[]}`,
+		model.Hysteria:    `{"version":2,"clients":[]}`,
+		model.WireGuard:   `{"secretKey":"` + privateKey + `","mtu":1420,"peers":[]}`,
+	}
+	protocols := []model.Protocol{model.VMESS, model.VLESS, model.Trojan, model.Shadowsocks, model.Hysteria, model.WireGuard}
+	for index, protocol := range protocols {
+		alias := "Alias-" + strings.ToUpper(string(protocol))
+		inbound := &model.Inbound{UserId: 1, Remark: "private provider", Enable: true, Port: 31000 + index, Protocol: protocol, Settings: settings[protocol], StreamSettings: streams[protocol], Tag: fmt.Sprintf("managed-%s-%d", protocol, index), ShareAddrStrategy: "custom", ShareAddr: "vpn.pheero.com"}
+		if err := db.Create(inbound).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.ClientInbound{ClientId: client.Id, InboundId: inbound.Id}).Error; err != nil {
+			t.Fatal(err)
+		}
+		node := &model.LineNode{
+			ID: fmt.Sprintf("00000000-0000-4000-8000-%012d", index+1), Fingerprint: fmt.Sprintf("%064d", index+1),
+			Remark: "private provider", PublicName: alias, Protocol: string(protocol), OutboundTag: fmt.Sprintf("commercial-line-%d", index+1),
+			OutboundCiphertext: "encrypted", InboundID: &inbound.Id, Status: "healthy", HealthStatus: "healthy",
+		}
+		if err := db.Create(node).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	links, _, _, _, err := NewSubService("").GetSubs("six-protocols", "vpn.pheero.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(links) != len(protocols) {
+		t.Fatalf("got %d links, want %d: %v", len(links), len(protocols), links)
+	}
+	wantSchemes := map[string]bool{"vmess": false, "vless": false, "trojan": false, "ss": false, "hysteria2": false, "wireguard": false}
+	wantAliases := map[string]string{"vless": "Alias-VLESS", "trojan": "Alias-TROJAN", "ss": "Alias-SHADOWSOCKS", "hysteria2": "Alias-HYSTERIA", "wireguard": "Alias-WIREGUARD"}
+	for _, rawLink := range links {
+		if strings.HasPrefix(rawLink, "vmess://") {
+			decoded, decodeErr := base64.StdEncoding.DecodeString(strings.TrimPrefix(rawLink, "vmess://"))
+			if decodeErr != nil {
+				t.Fatal(decodeErr)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal(decoded, &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload["ps"] != "Alias-VMESS" {
+				t.Fatalf("VMess alias = %v", payload["ps"])
+			}
+			wantSchemes["vmess"] = true
+			continue
+		}
+		parsed, parseErr := url.Parse(rawLink)
+		if parseErr != nil {
+			t.Fatal(parseErr)
+		}
+		if _, ok := wantSchemes[parsed.Scheme]; !ok {
+			t.Fatalf("unexpected subscription scheme %q in %q", parsed.Scheme, rawLink)
+		}
+		wantSchemes[parsed.Scheme] = true
+		if got, want := parsed.Fragment, wantAliases[parsed.Scheme]; got != want {
+			t.Fatalf("%s alias = %q, want %q", parsed.Scheme, got, want)
+		}
+		if strings.Contains(parsed.Fragment, "PHEERO") || strings.Contains(rawLink, "private provider") {
+			t.Fatalf("managed link leaked or prefixed branding: %q", rawLink)
+		}
+	}
+	for scheme, present := range wantSchemes {
+		if !present {
+			t.Fatalf("managed subscription omitted %s: %v", scheme, links)
+		}
 	}
 }
 

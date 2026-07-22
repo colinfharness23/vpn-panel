@@ -87,7 +87,7 @@ export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
               showIcon
               title={t('pages.settings.smtpSenderIdentity', {
                 siteName,
-                address: allSetting.smtpUsername || 'user@example.com',
+                address: allSetting.smtpFrom || t('pages.settings.smtpFromMissing'),
               })}
               description={t('pages.settings.smtpDeliverabilityHint')}
               style={{ marginBottom: 16 }}
@@ -142,6 +142,11 @@ export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
             <SettingListItem paddings="small" title={t('pages.settings.smtpUsername')} description={t('pages.settings.smtpUsernameDesc')}>
               <Input value={allSetting.smtpUsername} placeholder="user@example.com"
                 onChange={(e) => updateSetting({ smtpUsername: e.target.value })} />
+            </SettingListItem>
+
+            <SettingListItem paddings="small" title={t('pages.settings.smtpFrom')} description={t('pages.settings.smtpFromDesc')}>
+              <Input value={allSetting.smtpFrom} placeholder="no-reply@example.com"
+                onChange={(e) => updateSetting({ smtpFrom: e.target.value })} />
             </SettingListItem>
 
             <SettingListItem paddings="small" title={t('pages.settings.smtpPassword')}

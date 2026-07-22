@@ -59,7 +59,7 @@ tar -tvzf "$tmp_dir/$asset" | awk 'substr($1,1,1) !~ /^[-d]$/ { found=1 } END { 
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 [[ -x $tmp_dir/x-ui/x-ui && -f $tmp_dir/x-ui/bin/config.json && -x $tmp_dir/x-ui/bin/xray-linux-$arch ]] ||
   { echo "Release 缺少面板、Xray 或初始配置。" >&2; exit 1; }
-for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain; do
+for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_script.sh ]] || { echo "Release 缺少运维脚本 $required_script.sh。" >&2; exit 1; }
 done
 
@@ -78,6 +78,12 @@ chmod 755 /usr/local/x-ui.new/x-ui /usr/local/x-ui.new/bin/* 2>/dev/null || true
 rm -rf -- /usr/local/x-ui
 mv /usr/local/x-ui.new /usr/local/x-ui
 chown -R nova:nova /usr/local/x-ui
+install -m 755 "/usr/local/x-ui/deploy/ubuntu/sync-line-cert.sh" /usr/local/sbin/nova-sync-line-cert
+install -d -m 755 /etc/letsencrypt/renewal-hooks/deploy
+ln -sfn /usr/local/sbin/nova-sync-line-cert /etc/letsencrypt/renewal-hooks/deploy/nova-sync-line-cert
+if [[ -r /etc/letsencrypt/live/$NOVA_DOMAIN/fullchain.pem && -r /etc/letsencrypt/live/$NOVA_DOMAIN/privkey.pem ]]; then
+  NOVA_SYNC_NO_RESTART=true /usr/local/sbin/nova-sync-line-cert
+fi
 systemctl restart x-ui
 
 healthy=0
@@ -109,7 +115,7 @@ if find /etc/x-ui /var/lib/x-ui -maxdepth 1 -type f -name '*.db' -print -quit 2>
 fi
 
 sed -i "s|^NOVA_RELEASE_TAG=.*$|NOVA_RELEASE_TAG=$requested_tag|" /etc/nova/deploy.env
-for script in update rollback backup rotate-admin-path uninstall finalize-domain; do
+for script in update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f /usr/local/x-ui/deploy/ubuntu/$script.sh ]] &&
     install -m 755 "/usr/local/x-ui/deploy/ubuntu/$script.sh" "/usr/local/sbin/nova-$script"
 done

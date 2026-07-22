@@ -478,7 +478,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
           <Form.Item
             name="publicName"
             label="用户线路别名"
-            extra="订阅中会自动加上本站名称；上游机场名称和原始凭证不会展示给用户。"
+            extra="订阅中会严格使用这里填写的名称，不会自动添加站点名、协议编号或上游机场名称。"
             rules={[
               { required: true, message: "请输入用户线路别名" },
               { max: 160, message: "线路别名不能超过 160 个字符" },
@@ -491,8 +491,8 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
       <Alert
         type="info"
         showIcon
-        title="所有导入节点都会包装为本站 VLESS Reality 线路"
-        description="用户订阅只显示本站名称与可编辑别名，不会暴露上游凭证。系统会在发布前确认本机托管端口已经真实监听；上游连通探测仅作诊断，不会因为一次探测失败就把线路移出用户订阅。"
+        title="导入协议会转换为同类型的本站线路"
+        description="用户只连接本站域名并使用你设置的原样别名，上游地址、机场名称和凭证不会下发。VLESS 使用 Reality；VMess、Trojan 与 Hysteria2 使用本站 TLS 证书；Shadowsocks 与 WireGuard 使用各自的本站凭证。请同时放行 TCP 和 UDP 20000–59999。"
       />
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}>
@@ -655,7 +655,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                     { title: "用户线路别名", dataIndex: "publicName", width: 220, render: (value: string, row) => value || row.remark || "—" },
                     { title: "上游协议", dataIndex: "protocol", render: (value: string) => <Tag>{value === "hysteria" ? "hysteria2" : value}</Tag> },
                     { title: "公网端口", dataIndex: "publicPort", render: (value?: number) => value || "待分配" },
-                    { title: "延迟", dataIndex: "latencyMs", render: (value: number) => value > 0 ? `${value} ms` : "—" },
+                    { title: "上游探测延迟", dataIndex: "latencyMs", render: (value: number, row: LineNode) => row.healthStatus === "healthy" && value > 0 && value < 60_000 ? `${value} ms` : "—" },
                     { title: "线路组", dataIndex: "groupIds", render: (values: string[]) => arrayOrEmpty(values).map((id) => <Tag key={id}>{groupById.get(id)?.name || id.slice(0, 8)}</Tag>) },
                     { title: "发布状态", dataIndex: "status", render: (value: string, row) => <Tag color={row.published ? "success" : healthColor(value)}>{publicationLabel(value, row.published)}</Tag> },
                     { title: "连通参考", dataIndex: "healthStatus", render: (value: string) => <Tag color={connectivityColor(value)}>{connectivityLabel(value)}</Tag> },

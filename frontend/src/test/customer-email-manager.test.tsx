@@ -34,12 +34,27 @@ describe('customer email settings', () => {
     vi.spyOn(HttpUtil, 'get').mockResolvedValue({ success: true, msg: '', obj: templates });
     updateSiteBranding({ siteName: 'PHEERO', logoUrl: '' });
     const settings = new AllSetting();
-    settings.smtpUsername = 'noreply@pheero.com';
+    settings.smtpUsername = 'private-login@gmail.com';
+    settings.smtpFrom = 'no-reply@pheero.com';
 
     render(<EmailTab allSetting={settings} updateSetting={vi.fn()} />);
 
-    expect(screen.getByText('Sender shown to recipients: PHEERO <noreply@pheero.com>')).toBeTruthy();
+    expect(screen.getByText('Sender shown to recipients: PHEERO <no-reply@pheero.com>')).toBeTruthy();
+    expect(screen.queryByText(/private-login@gmail.com/)).toBeNull();
     expect(screen.getByText(/SPF, DKIM, and DMARC/)).toBeTruthy();
+  });
+
+  it('never exposes the SMTP login when the public sender is missing', () => {
+    vi.spyOn(HttpUtil, 'get').mockResolvedValue({ success: true, msg: '', obj: templates });
+    updateSiteBranding({ siteName: 'PHEERO', logoUrl: '' });
+    const settings = new AllSetting();
+    settings.smtpUsername = 'private-login@gmail.com';
+    settings.smtpFrom = '';
+
+    render(<EmailTab allSetting={settings} updateSetting={vi.fn()} />);
+
+    expect(screen.queryByText(/private-login@gmail.com/)).toBeNull();
+    expect(screen.getByText(/not configured \(sending is blocked\)/)).toBeTruthy();
   });
 
   it('offers common SMTP ports while preserving custom port input', () => {
@@ -68,6 +83,8 @@ describe('customer email settings', () => {
     render(<EmailTab allSetting={new AllSetting()} updateSetting={updateSetting} />);
 
     expect(screen.getByPlaceholderText('user@example.com')).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText('no-reply@example.com'), { target: { value: 'mail@pheero.com' } });
+    expect(updateSetting).toHaveBeenLastCalledWith({ smtpFrom: 'mail@pheero.com' });
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Common email provider' }));
     fireEvent.click(await screen.findByText('QQ 邮箱'));
     expect(updateSetting).toHaveBeenLastCalledWith({

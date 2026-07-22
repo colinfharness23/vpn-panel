@@ -67,6 +67,10 @@ type SubService struct {
 	// with the clients array left out; generators read only inbound-level
 	// fields (encryption, method, version, …) from it.
 	settingsByInbound map[int]map[string]any
+	// managedInboundNames holds administrator-selected commercial line aliases.
+	// These names bypass the global remark template, protocol prefix and internal
+	// client email so a managed node is rendered exactly as the admin entered it.
+	managedInboundNames map[int]string
 }
 
 // NewSubService creates a new subscription service with the given configuration.
@@ -102,6 +106,7 @@ func (s *SubService) PrepareForRequest(host string) {
 	s.clientsByInbound = map[int]map[string]model.Client{}
 	s.fullyPrimedInbounds = map[int]bool{}
 	s.settingsByInbound = map[int]map[string]any{}
+	s.managedInboundNames = map[int]string{}
 	s.loadNodes()
 	s.loadRemarkSettings()
 }
@@ -481,9 +486,10 @@ func (s *SubService) getInboundsBySubId(subId string) ([]*model.Inbound, error) 
 }
 
 // applyManagedLineBranding replaces the private upstream node remark on every
-// managed commercial line before any raw, JSON or Clash renderer sees it.
-// LineSource names, provider domains and imported fragments remain available
-// to administrators, but are never part of a customer's subscription.
+// managed commercial line with the administrator-selected public name before
+// any raw, JSON or Clash renderer sees it. Source names, provider domains and
+// imported fragments remain private, while the public name is preserved
+// exactly as entered instead of being prefixed with the site name.
 func (s *SubService) applyManagedLineBranding(inbounds []*model.Inbound) error {
 	if len(inbounds) == 0 {
 		return nil
@@ -513,13 +519,6 @@ func (s *SubService) applyManagedLineBranding(inbounds []*model.Inbound) error {
 		return nil
 	}
 
-	siteName := "NOVA"
-	var setting model.CommercialSetting
-	if err := db.Select("value", "encrypted").Where("key = ?", "site.name").First(&setting).Error; err == nil && !setting.Encrypted {
-		if value := strings.TrimSpace(setting.Value); value != "" {
-			siteName = value
-		}
-	}
 	for _, node := range nodes {
 		if node.InboundID == nil {
 			continue
@@ -536,7 +535,11 @@ func (s *SubService) applyManagedLineBranding(inbounds []*model.Inbound) error {
 			}
 			publicName = protocol + " 线路"
 		}
-		inbound.Remark = fmt.Sprintf("%s · %s", siteName, publicName)
+		inbound.Remark = publicName
+		if s.managedInboundNames == nil {
+			s.managedInboundNames = map[int]string{}
+		}
+		s.managedInboundNames[inbound.Id] = publicName
 	}
 	return nil
 }
@@ -979,9 +982,15 @@ func (s *SubService) genShadowsocksLink(inbound *model.Inbound, email string) st
 	}
 
 	settings := s.linkSettings(inbound)
-	inboundPassword := settings["password"].(string)
-	method := settings["method"].(string)
-	streamNetwork := stream["network"].(string)
+	inboundPassword, _ := settings["password"].(string)
+	method, _ := settings["method"].(string)
+	streamNetwork, _ := stream["network"].(string)
+	if streamNetwork == "" {
+		streamNetwork = "tcp"
+	}
+	if method == "" {
+		return ""
+	}
 	params := make(map[string]string)
 	params["type"] = streamNetwork
 
@@ -1929,6 +1938,11 @@ func cloneStringMap(source map[string]string) map[string]string {
 // name-only part on displays); with no template it falls back to the inbound
 // remark, extra and email joined by "-".
 func (s *SubService) genRemark(inbound *model.Inbound, email string, extra string, transport string) string {
+	if inbound != nil {
+		if publicName, ok := s.managedInboundNames[inbound.Id]; ok && publicName != "" {
+			return publicName
+		}
+	}
 	if s.remarkTemplate != "" {
 		return s.genTemplatedRemark(inbound, s.lookupClient(inbound, email), extra, transport)
 	}

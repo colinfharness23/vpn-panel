@@ -153,8 +153,13 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 log "安装 Ubuntu 运行依赖…"
-apt-get update -y
-apt-get install -y --no-install-recommends ca-certificates curl jq tar openssl nginx postgresql postgresql-contrib postgresql-client certbot python3-certbot-nginx iproute2 sqlite3
+# Fresh Ubuntu hosts commonly start apt-daily/unattended-upgrades during the
+# first login. Let apt wait for dpkg's frontend lock instead of failing the
+# entire installation while that legitimate system update is still running.
+readonly APT_LOCK_TIMEOUT_SECONDS="${NOVA_APT_LOCK_TIMEOUT_SECONDS:-1800}"
+[[ $APT_LOCK_TIMEOUT_SECONDS =~ ^[0-9]+$ ]] || die "NOVA_APT_LOCK_TIMEOUT_SECONDS 必须是非负整数。"
+apt-get -o "DPkg::Lock::Timeout=$APT_LOCK_TIMEOUT_SECONDS" -o Acquire::Retries=5 update -y
+apt-get -o "DPkg::Lock::Timeout=$APT_LOCK_TIMEOUT_SECONDS" -o Acquire::Retries=5 install -y --no-install-recommends ca-certificates curl jq tar openssl nginx postgresql postgresql-contrib postgresql-client certbot python3-certbot-nginx iproute2 sqlite3
 systemctl enable --now postgresql
 systemctl enable --now nginx
 
@@ -329,7 +334,7 @@ tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 [[ -x $tmp_dir/x-ui/x-ui ]] || die "Release 缺少 x-ui。"
 [[ -f $tmp_dir/x-ui/bin/config.json ]] || die "Release 缺少 Xray 配置。"
 [[ -x $tmp_dir/x-ui/bin/xray-linux-$ARCH ]] || die "Release 缺少 $ARCH Xray。"
-for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain; do
+for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_script.sh ]] || die "Release 缺少运维脚本 $required_script.sh。"
 done
 
@@ -378,6 +383,8 @@ XUI_DEBUG=false
 XUI_LOG_LEVEL=info
 XUI_COMMERCIAL_DEMO=false
 XUI_COMMERCIAL_ENV=production
+XUI_LINE_CERT_FILE=/var/lib/x-ui/certs/fullchain.pem
+XUI_LINE_KEY_FILE=/var/lib/x-ui/certs/privkey.pem
 GIN_MODE=release
 EOF
 chown root:"$SERVICE_USER" /etc/default/x-ui
@@ -575,7 +582,7 @@ else
   log "同域名迁移预部署模式：暂不申请证书，待数据迁移完成后再切换 DNS。"
 fi
 
-for script in update rollback backup rotate-admin-path uninstall finalize-domain; do
+for script in update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f $INSTALL_DIR/deploy/ubuntu/$script.sh ]] && install -m 755 "$INSTALL_DIR/deploy/ubuntu/$script.sh" "/usr/local/sbin/nova-$script"
 done
 
@@ -599,6 +606,13 @@ NOVA_PREVIOUS_DNS_IPS=$NOVA_PREVIOUS_DNS_IPS
 NOVA_TLS_READY=$([[ $NOVA_DEFER_TLS == false ]] && printf true || printf false)
 EOF
 chmod 600 "$DEPLOY_FILE"
+
+install -d -m 755 /etc/letsencrypt/renewal-hooks/deploy
+ln -sfn /usr/local/sbin/nova-sync-line-cert /etc/letsencrypt/renewal-hooks/deploy/nova-sync-line-cert
+if [[ $NOVA_DEFER_TLS == false ]]; then
+  NOVA_SYNC_NO_RESTART=true /usr/local/sbin/nova-sync-line-cert
+  systemctl restart x-ui
+fi
 
 cat >/etc/systemd/system/nova-backup.service <<'EOF'
 [Unit]
@@ -664,7 +678,7 @@ cat >/root/nova-install-result.txt <<EOF
 备份命令: sudo nova-backup
 轮换后台入口: sudo nova-rotate-admin-path
 服务日志: sudo journalctl -u x-ui -f
-手工放行线路端口: TCP 20000-59999（安装器未修改 UFW 或云安全组）
+手工放行线路端口: TCP 与 UDP 20000-59999（安装器未修改 UFW 或云安全组）
 EOF
 if [[ $NOVA_DEFER_TLS == true ]]; then
   cat >>/root/nova-install-result.txt <<EOF

@@ -7,6 +7,7 @@ package link
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/url"
@@ -34,20 +35,33 @@ type ParseResult struct {
 // It returns the list of successfully parsed outbounds (in order) and their
 // corresponding identities.
 func ParseSubscriptionBody(body []byte) ([]Outbound, []string, error) {
-	text := strings.TrimSpace(string(body))
+	text := strings.TrimSpace(strings.TrimPrefix(string(body), "\ufeff"))
 	if text == "" {
-		return nil, nil, nil
+		return nil, nil, errors.New("subscription response is empty")
 	}
 
-	// Try base64 decode first (standard and URL-safe variants).
+	// Try base64 decode first (standard and URL-safe variants). A decoded
+	// document may itself be a URI list, Clash YAML or a JSON envelope.
 	if decoded, ok := tryBase64(text); ok {
-		text = strings.TrimSpace(decoded)
+		decoded = strings.TrimSpace(strings.TrimPrefix(decoded, "\ufeff"))
+		if decoded != "" {
+			text = decoded
+		}
 	}
 
-	lines := splitLines(text)
-	var outbounds []Outbound
-	var identities []string
+	if outbounds, identities := parseShareLinkList(text); len(outbounds) > 0 {
+		return outbounds, identities, nil
+	}
+	if outbounds, identities := parseStructuredSubscription(text, 0); len(outbounds) > 0 {
+		return outbounds, identities, nil
+	}
+	return nil, nil, errors.New("subscription contains no supported VMess, VLESS, Trojan, Shadowsocks, Hysteria2 or WireGuard nodes")
+}
 
+func parseShareLinkList(text string) ([]Outbound, []string) {
+	lines := splitLines(text)
+	outbounds := make([]Outbound, 0, len(lines))
+	identities := make([]string, 0, len(lines))
 	for _, ln := range lines {
 		ln = strings.TrimSpace(ln)
 		if ln == "" || strings.HasPrefix(ln, "#") {
@@ -55,13 +69,12 @@ func ParseSubscriptionBody(body []byte) ([]Outbound, []string, error) {
 		}
 		res, err := ParseLink(ln)
 		if err != nil || res == nil {
-			// Ignore unparseable lines (comments, unsupported protocols, etc.)
 			continue
 		}
 		outbounds = append(outbounds, res.Outbound)
 		identities = append(identities, res.Identity)
 	}
-	return outbounds, identities, nil
+	return outbounds, identities
 }
 
 func tryBase64(s string) (string, bool) {

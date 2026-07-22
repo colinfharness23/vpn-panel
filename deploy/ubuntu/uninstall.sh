@@ -105,7 +105,8 @@ fi
 rm -f -- /etc/systemd/system/x-ui.service /etc/systemd/system/nova-backup.service /etc/systemd/system/nova-backup.timer
 rm -f -- /etc/nginx/sites-enabled/nova.conf /etc/nginx/sites-available/nova.conf
 rm -f -- /etc/default/x-ui /root/nova-install-result.txt
-rm -f -- /usr/local/sbin/nova-update /usr/local/sbin/nova-rollback /usr/local/sbin/nova-backup /usr/local/sbin/nova-rotate-admin-path /usr/local/sbin/nova-uninstall /usr/local/sbin/nova-finalize-domain
+rm -f -- /usr/local/sbin/nova-update /usr/local/sbin/nova-rollback /usr/local/sbin/nova-backup /usr/local/sbin/nova-rotate-admin-path /usr/local/sbin/nova-uninstall /usr/local/sbin/nova-finalize-domain /usr/local/sbin/nova-sync-line-cert
+rm -f -- /etc/letsencrypt/renewal-hooks/deploy/nova-sync-line-cert
 
 [[ $INSTALL_DIR == /usr/local/x-ui ]] || die "程序目录安全检查失败。"
 [[ $CONFIG_DIR == /etc/nova ]] || die "配置目录安全检查失败。"

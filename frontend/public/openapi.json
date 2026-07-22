@@ -401,6 +401,9 @@
           "smtpEncryptionType": {
             "type": "string"
           },
+          "smtpFrom": {
+            "type": "string"
+          },
           "smtpHost": {
             "type": "string"
           },
@@ -640,6 +643,7 @@
           "smtpEnable",
           "smtpEnabledEvents",
           "smtpEncryptionType",
+          "smtpFrom",
           "smtpHost",
           "smtpMemory",
           "smtpPassword",
@@ -840,6 +844,9 @@
             "type": "string"
           },
           "smtpEncryptionType": {
+            "type": "string"
+          },
+          "smtpFrom": {
             "type": "string"
           },
           "smtpHost": {
@@ -1088,6 +1095,7 @@
           "smtpEnable",
           "smtpEnabledEvents",
           "smtpEncryptionType",
+          "smtpFrom",
           "smtpHost",
           "smtpMemory",
           "smtpPassword",

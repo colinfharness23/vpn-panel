@@ -92,6 +92,7 @@ export class AllSetting {
   smtpHost = '';
   smtpPort = 587;
   smtpUsername = '';
+  smtpFrom = '';
   smtpPassword = '';
   smtpTo = '';
   smtpEncryptionType = 'starttls';

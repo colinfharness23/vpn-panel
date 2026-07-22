@@ -239,6 +239,143 @@ func TestParseSubscriptionBody_Base64(t *testing.T) {
 	}
 }
 
+func TestParseSubscriptionBody_JSONEnvelope(t *testing.T) {
+	links := "\ufeffvless://11111111-2222-4333-8444-555555555555@203.0.113.10:443?type=tcp&security=none#Provider"
+	body := `{"status":"success","data":"` + base64.StdEncoding.EncodeToString([]byte(links)) + `"}`
+	outbounds, identities, err := ParseSubscriptionBody([]byte(body))
+	if err != nil {
+		t.Fatalf("parse JSON envelope: %v", err)
+	}
+	if len(outbounds) != 1 || len(identities) != 1 || outbounds[0]["protocol"] != "vless" {
+		t.Fatalf("unexpected JSON envelope result: outbounds=%v identities=%v", outbounds, identities)
+	}
+}
+
+func TestParseSubscriptionBody_JSONNodeArray(t *testing.T) {
+	body := `{"status":"success","data":[{"name":"Provider","type":"trojan","server":"203.0.113.40","port":443,"password":"secret","sni":"www.example.com"},{"link":"vless://11111111-2222-4333-8444-555555555555@203.0.113.41:443?type=tcp&security=none#Provider"}]}`
+	outbounds, identities, err := ParseSubscriptionBody([]byte(body))
+	if err != nil {
+		t.Fatalf("parse JSON node array: %v", err)
+	}
+	if len(outbounds) != 2 || len(identities) != 2 || outbounds[0]["protocol"] != "trojan" || outbounds[1]["protocol"] != "vless" {
+		t.Fatalf("unexpected JSON node array result: outbounds=%v identities=%v", outbounds, identities)
+	}
+}
+
+func TestParseSubscriptionBody_ClashYAMLSixProtocols(t *testing.T) {
+	body := `proxies:
+  - name: Provider VMess
+    type: vmess
+    server: 203.0.113.11
+    port: 443
+    uuid: 11111111-2222-4333-8444-555555555551
+    cipher: auto
+    tls: true
+    servername: edge.example.com
+    network: ws
+    ws-opts:
+      path: /ws
+      headers:
+        Host: edge.example.com
+  - name: Provider VLESS
+    type: vless
+    server: 203.0.113.12
+    port: 443
+    uuid: 11111111-2222-4333-8444-555555555552
+    flow: xtls-rprx-vision
+    tls: true
+    servername: www.example.com
+    reality-opts:
+      public-key: test-public-key
+      short-id: abcd
+  - name: Provider Trojan
+    type: trojan
+    server: 203.0.113.13
+    port: 443
+    password: trojan-secret
+    sni: www.example.com
+    skip-cert-verify: true
+  - name: Provider SS
+    type: ss
+    server: 203.0.113.14
+    port: 8388
+    cipher: aes-256-gcm
+    password: ss-secret
+  - name: Provider HY2
+    type: hysteria2
+    server: 203.0.113.15
+    port: 443
+    password: hy2-secret
+    sni: www.example.com
+    skip-cert-verify: true
+  - name: Provider WG
+    type: wireguard
+    server: 203.0.113.16
+    port: 51820
+    private-key: private-key
+    public-key: public-key
+    ip: 10.0.0.2/32
+`
+	outbounds, identities, err := ParseSubscriptionBody([]byte(body))
+	if err != nil {
+		t.Fatalf("parse Clash YAML: %v", err)
+	}
+	if len(outbounds) != 6 || len(identities) != 6 {
+		t.Fatalf("Clash YAML parsed %d outbounds and %d identities, want 6", len(outbounds), len(identities))
+	}
+	want := []string{"vmess", "vless", "trojan", "shadowsocks", "hysteria", "wireguard"}
+	for index, protocol := range want {
+		if got := outbounds[index]["protocol"]; got != protocol {
+			t.Fatalf("outbound %d protocol = %v, want %s", index, got, protocol)
+		}
+		if identities[index] == "" {
+			t.Fatalf("outbound %d has no stable identity", index)
+		}
+	}
+	stream := outbounds[1]["streamSettings"].(map[string]any)
+	if stream["security"] != "reality" {
+		t.Fatalf("VLESS security = %v, want reality", stream["security"])
+	}
+	reality := stream["realitySettings"].(map[string]any)
+	if reality["publicKey"] != "test-public-key" || reality["shortId"] != "abcd" {
+		t.Fatalf("VLESS reality options were lost: %#v", reality)
+	}
+}
+
+func TestParseSubscriptionBody_ClashIdentityIgnoresProviderName(t *testing.T) {
+	first := "proxies:\n  - {name: Provider A, type: vless, server: 203.0.113.20, port: 443, uuid: 11111111-2222-4333-8444-555555555555}"
+	second := strings.Replace(first, "Provider A", "Provider B", 1)
+	_, firstIDs, firstErr := ParseSubscriptionBody([]byte(first))
+	_, secondIDs, secondErr := ParseSubscriptionBody([]byte(second))
+	if firstErr != nil || secondErr != nil || len(firstIDs) != 1 || len(secondIDs) != 1 {
+		t.Fatalf("parse renamed Clash proxy: first=%v second=%v ids=%v/%v", firstErr, secondErr, firstIDs, secondIDs)
+	}
+	if firstIDs[0] != secondIDs[0] {
+		t.Fatalf("provider rename changed identity:\n%s\n%s", firstIDs[0], secondIDs[0])
+	}
+}
+
+func TestParseSubscriptionBody_SingBoxJSON(t *testing.T) {
+	body := `{"outbounds":[{"type":"vless","tag":"Provider","server":"203.0.113.30","server_port":443,"uuid":"11111111-2222-4333-8444-555555555555","flow":"xtls-rprx-vision","tls":{"enabled":true,"server_name":"www.example.com","reality":{"enabled":true,"public_key":"public","short_id":"1234"},"utls":{"enabled":true,"fingerprint":"chrome"}}}]}`
+	outbounds, _, err := ParseSubscriptionBody([]byte(body))
+	if err != nil || len(outbounds) != 1 {
+		t.Fatalf("parse sing-box JSON: outbounds=%v err=%v", outbounds, err)
+	}
+	stream := outbounds[0]["streamSettings"].(map[string]any)
+	if stream["security"] != "reality" {
+		t.Fatalf("sing-box security = %v", stream["security"])
+	}
+}
+
+func TestParseSubscriptionBody_UnsupportedIsAnError(t *testing.T) {
+	if _, _, err := ParseSubscriptionBody([]byte(`{"status":"success","data":"not a subscription"}`)); err == nil {
+		t.Fatal("unsupported non-empty subscription returned success")
+	}
+	if _, _, err := ParseSubscriptionBody(nil); err == nil {
+		t.Fatal("empty subscription returned success")
+	}
+}
+
 func TestParseTLSLinksPreserveAllowInsecure(t *testing.T) {
 	cases := []struct {
 		name string

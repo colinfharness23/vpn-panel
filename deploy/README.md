@@ -21,7 +21,7 @@ Operational helpers installed by the script:
 - `nova-uninstall`
 
 The installer does not modify UFW or cloud security groups. Allow TCP 80 and
-443 for the site and ACME challenge, plus TCP 20000-59999 for managed lines.
+443 for the site and ACME challenge, plus TCP and UDP 20000-59999 for managed lines.
 
 Legacy upstream Docker, cloud-init, root-level installers and prebuilt Windows
 utilities are intentionally not distributed by NOVA.

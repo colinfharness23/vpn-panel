@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/entity"
 	webservice "github.com/mhsanaei/3x-ui/v3/internal/web/service"
+	"gorm.io/gorm"
 )
 
 func TestWaitManagedLineListenerRequiresRealTCPListener(t *testing.T) {
@@ -31,6 +33,68 @@ func TestWaitManagedLineListenerRequiresRealTCPListener(t *testing.T) {
 	}
 	if err := waitManagedLineListener(context.Background(), port, 600*time.Millisecond); err == nil {
 		t.Fatal("closed listener was accepted")
+	}
+}
+
+func TestManagedLineInboundPreservesImportedProtocolAndAliasInputs(t *testing.T) {
+	initCommercialTestDB(t)
+	if err := NewConfigStore().SetManyProtected(map[string]string{
+		"line.reality_private_key": "private-key",
+		"line.reality_public_key":  "public-key",
+	}, map[string]bool{"line.reality_private_key": true}); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certFile := dir + "/fullchain.pem"
+	keyFile := dir + "/privkey.pem"
+	if err := os.WriteFile(certFile, []byte("certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, []byte("private key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XUI_LINE_CERT_FILE", certFile)
+	t.Setenv("XUI_LINE_KEY_FILE", keyFile)
+
+	tests := []struct {
+		imported string
+		want     model.Protocol
+		network  string
+	}{
+		{"vmess", model.VMESS, "tcp"},
+		{"vless", model.VLESS, "tcp"},
+		{"trojan", model.Trojan, "tcp"},
+		{"shadowsocks", model.Shadowsocks, "tcp"},
+		{"hysteria", model.Hysteria, "hysteria"},
+		{"wireguard", model.WireGuard, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.imported, func(t *testing.T) {
+			protocol := managedLineInboundProtocol(tc.imported)
+			if protocol != tc.want {
+				t.Fatalf("protocol = %q, want %q", protocol, tc.want)
+			}
+			node := &model.LineNode{Fingerprint: strings.Repeat("a", 64), Protocol: tc.imported, PublicName: "IPLC"}
+			settingsJSON, streamJSON, err := managedLineInboundJSON(node, protocol, "vpn.pheero.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var settings, stream map[string]any
+			if err := json.Unmarshal(settingsJSON, &settings); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(streamJSON, &stream); err != nil {
+				t.Fatal(err)
+			}
+			if tc.want != model.WireGuard {
+				if _, ok := settings["clients"]; !ok {
+					t.Fatalf("%s settings have no clients array: %s", tc.imported, settingsJSON)
+				}
+			}
+			if got, _ := stream["network"].(string); got != tc.network {
+				t.Fatalf("%s network = %q, want %q", tc.imported, got, tc.network)
+			}
+		})
 	}
 }
 
@@ -111,6 +175,79 @@ func TestManualLineDefaultAliasDoesNotLeakShareLinkRemark(t *testing.T) {
 	entry := preparedLineEntry{Protocol: "trojan", Remark: "A机场 香港 IPLC"}
 	if got, want := defaultPublicLineName(source, entry, 2), "TROJAN 线路 #3"; got != want {
 		t.Fatalf("manual default alias = %q, want %q", got, want)
+	}
+}
+
+func TestURLLineDefaultAliasDoesNotLeakSourceOrProviderBrand(t *testing.T) {
+	source := model.LineSource{Kind: lineSourceURL, Name: "A机场 Premium"}
+	entry := preparedLineEntry{Protocol: "vless", Remark: "A机场 香港 IPLC"}
+	got := defaultPublicLineName(source, entry, 0)
+	if got != "VLESS 线路 #1" {
+		t.Fatalf("URL default alias = %q", got)
+	}
+	if strings.Contains(got, source.Name) || strings.Contains(got, entry.Remark) {
+		t.Fatalf("URL default alias leaked upstream metadata: %q", got)
+	}
+}
+
+func TestURLRefreshScrubsLegacyGeneratedAliasAndPreservesCustomAlias(t *testing.T) {
+	initCommercialTestDB(t)
+	db := database.GetDB()
+	source := model.LineSource{ID: uuid.NewString(), Kind: lineSourceURL, Name: "A机场", SecretCiphertext: "encrypted", RefreshInterval: 1800, Status: "ready"}
+	if err := db.Create(&source).Error; err != nil {
+		t.Fatal(err)
+	}
+	entry := preparedLineEntry{
+		Fingerprint: strings.Repeat("9", 64), Remark: "A机场 香港", Protocol: "vless",
+		OutboundTag: lineTagPrefix + "legacy", OutboundCiphertext: "encrypted",
+	}
+	legacy := model.LineNode{
+		ID: uuid.NewString(), Fingerprint: entry.Fingerprint, Remark: entry.Remark,
+		PublicName: "A机场 · VLESS #1", Protocol: entry.Protocol, OutboundTag: entry.OutboundTag,
+		OutboundCiphertext: entry.OutboundCiphertext, Status: lineStatusUnassigned, HealthStatus: lineHealthUnchecked,
+	}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := NewLineService()
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.upsertPreparedLines(tx, source.ID, []preparedLineEntry{entry}, nil, time.Now().UTC())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&legacy, "id = ?", legacy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacy.PublicName != "VLESS 线路 #1" || legacy.PublicNameCustom {
+		t.Fatalf("legacy generated alias was not scrubbed: %+v", legacy)
+	}
+	if _, err := service.UpdateNode(legacy.ID, entity.CommercialLineNodeUpdateRequest{PublicName: "香港高速线路"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return service.upsertPreparedLines(tx, source.ID, []preparedLineEntry{entry}, nil, time.Now().UTC())
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&legacy, "id = ?", legacy.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if legacy.PublicName != "香港高速线路" || !legacy.PublicNameCustom {
+		t.Fatalf("custom alias was overwritten by refresh: %+v", legacy)
+	}
+}
+
+func TestLineSourceUpstreamErrorsArePreciseAndSafe(t *testing.T) {
+	body := []byte(`{"status":"fail","message":"token is error","data":null,"error":null}`)
+	if got := lineSourceHTTPError(403, body).Error(); got != "获取订阅失败：订阅令牌无效或已失效（HTTP 403）" {
+		t.Fatalf("HTTP error = %q", got)
+	}
+	if got := lineSourcePayloadError(body); got == nil || got.Error() != "获取订阅失败：订阅令牌无效或已失效" {
+		t.Fatalf("200 error envelope = %v", got)
+	}
+	secretEcho := []byte(`{"status":"fail","message":"denied https://provider.example/s/secret-token"}`)
+	if got := lineSourceHTTPError(403, secretEcho).Error(); strings.Contains(got, "secret-token") || got != "获取订阅失败：上游订阅服务拒绝访问（HTTP 403）" {
+		t.Fatalf("HTTP error leaked upstream response: %q", got)
 	}
 }
 
@@ -271,6 +408,27 @@ func TestLineSourceSSRFAndStableFingerprint(t *testing.T) {
 	}
 }
 
+func TestLiveLineSourceURL(t *testing.T) {
+	rawURL := strings.TrimSpace(os.Getenv("NOVA_TEST_LIVE_SUBSCRIPTION_URL"))
+	if rawURL == "" {
+		t.Skip("set NOVA_TEST_LIVE_SUBSCRIPTION_URL to run the live subscription integration test")
+	}
+	_, entries, err := NewLineService().fetchURLSource(context.Background(), rawURL)
+	if err != nil {
+		t.Fatalf("live subscription fetch failed: %v", err)
+	}
+	valid := 0
+	for _, entry := range entries {
+		if entry.Valid {
+			valid++
+		}
+	}
+	if valid == 0 {
+		t.Fatal("live subscription returned no valid supported nodes")
+	}
+	t.Logf("live subscription parsed %d supported nodes", valid)
+}
+
 func TestLineHealthIsAdvisoryAndDoesNotUnpublish(t *testing.T) {
 	initCommercialTestDB(t)
 	db := database.GetDB()
@@ -318,7 +476,7 @@ func TestLineHealthIsAdvisoryAndDoesNotUnpublish(t *testing.T) {
 	}
 }
 
-func TestRestoreManagedLinePublicationUpgradesLegacyOfflineState(t *testing.T) {
+func TestRestoreManagedLinePublicationQueuesLegacyVLESSWrapperForProtocolMigration(t *testing.T) {
 	initCommercialTestDB(t)
 	db := database.GetDB()
 	group := model.LineGroup{ID: uuid.NewString(), Name: "Published", Active: true}
@@ -343,8 +501,8 @@ func TestRestoreManagedLinePublicationUpgradesLegacyOfflineState(t *testing.T) {
 	if err := db.First(&node, "id = ?", node.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if node.Status != lineStatusReady || node.HealthStatus != lineHealthOffline {
-		t.Fatalf("legacy state not upgraded correctly: status=%s health=%s", node.Status, node.HealthStatus)
+	if node.Status != lineStatusChecking || node.HealthStatus != lineHealthChecking {
+		t.Fatalf("legacy wrapper was not queued for protocol migration: status=%s health=%s", node.Status, node.HealthStatus)
 	}
 }
 

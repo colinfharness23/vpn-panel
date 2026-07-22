@@ -207,6 +207,7 @@ type LineNode struct {
 	Fingerprint        string     `json:"fingerprint" gorm:"uniqueIndex;size:64;not null"`
 	Remark             string     `json:"remark" gorm:"size:160;not null"`
 	PublicName         string     `json:"publicName" gorm:"size:160;not null;default:''"`
+	PublicNameCustom   bool       `json:"-" gorm:"not null;default:false"`
 	Protocol           string     `json:"protocol" gorm:"size:24;index;not null"`
 	OutboundTag        string     `json:"outboundTag" gorm:"uniqueIndex;size:96;not null"`
 	OutboundCiphertext string     `json:"-" gorm:"type:text;not null"`
@@ -219,6 +220,7 @@ type LineNode struct {
 	ConsecutiveFails   int        `json:"consecutiveFails" gorm:"default:0"`
 	ConsecutivePasses  int        `json:"consecutivePasses" gorm:"default:0"`
 	ProvisionAttempts  int        `json:"provisionAttempts" gorm:"default:0"`
+	ProvisionVersion   int        `json:"-" gorm:"not null;default:0"`
 	ProvisionLockedAt  *time.Time `json:"-" gorm:"index"`
 	NextProvisionAt    *time.Time `json:"-" gorm:"index"`
 	LastProbeAt        *time.Time `json:"lastProbeAt,omitempty"`

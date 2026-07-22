@@ -43,6 +43,7 @@ const (
 	lineTagPrefix                = "commercial-line-"
 	lineSourceMaxBytes     int64 = 8 << 20
 	lineImportMaxEntries         = 500
+	lineSourceUserAgent          = "v2rayN/7.15.0"
 )
 
 var supportedLineProtocols = map[string]struct{}{
@@ -225,7 +226,7 @@ func (s *LineService) UpdateNode(id string, request entity.CommercialLineNodeUpd
 	if id == "" || publicName == "" || len([]rune(publicName)) > 160 || strings.ContainsAny(publicName, "\r\n\x00") {
 		return nil, errors.New("线路别名无效")
 	}
-	result := s.db.Model(&model.LineNode{}).Where("id = ?", id).Update("public_name", publicName)
+	result := s.db.Model(&model.LineNode{}).Where("id = ?", id).Updates(map[string]any{"public_name": publicName, "public_name_custom": true})
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -622,7 +623,12 @@ func (s *LineService) fetchURLSource(ctx context.Context, rawURL string) (string
 	if err != nil {
 		return "", nil, err
 	}
-	req.Header.Set("User-Agent", "NOVA-line-source/1.0")
+	// A number of subscription gateways choose their output format (or reject
+	// the request entirely) based on a known client User-Agent. Request the
+	// broadly supported URI-list representation; the parser also accepts Clash
+	// YAML and JSON responses when a provider ignores this preference.
+	req.Header.Set("User-Agent", lineSourceUserAgent)
+	req.Header.Set("Accept", "text/plain, application/yaml, application/json, application/octet-stream, */*")
 	// cleanURL is restricted to public HTTP(S) targets above. NewPublicHTTPClient
 	// resolves and rejects private/link-local addresses again at connect time,
 	// and CheckRedirect repeats URL validation for every redirect hop. This
@@ -632,9 +638,6 @@ func (s *LineService) fetchURLSource(ctx context.Context, rawURL string) (string
 		return "", nil, errors.New("获取订阅失败，请检查地址、证书和网络")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("获取订阅失败: HTTP %d", resp.StatusCode)
-	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, lineSourceMaxBytes+1))
 	if err != nil {
 		return "", nil, err
@@ -642,9 +645,15 @@ func (s *LineService) fetchURLSource(ctx context.Context, rawURL string) (string
 	if int64(len(body)) > lineSourceMaxBytes {
 		return "", nil, errors.New("订阅内容超过 8 MiB")
 	}
+	if resp.StatusCode != http.StatusOK {
+		return "", nil, lineSourceHTTPError(resp.StatusCode, body)
+	}
+	if err := lineSourcePayloadError(body); err != nil {
+		return "", nil, err
+	}
 	outbounds, identities, err := link.ParseSubscriptionBody(body)
 	if err != nil {
-		return "", nil, err
+		return "", nil, fmt.Errorf("无法解析订阅内容: %w", err)
 	}
 	if len(outbounds) > lineImportMaxEntries {
 		return "", nil, fmt.Errorf("订阅节点超过 %d 条上限", lineImportMaxEntries)
@@ -658,6 +667,51 @@ func (s *LineService) fetchURLSource(ctx context.Context, rawURL string) (string
 		entries = append(entries, buildLineImportEntry(i+1, outbounds[i], identity))
 	}
 	return cleanURL, entries, nil
+}
+
+func lineSourceHTTPError(status int, body []byte) error {
+	message := lineSourceJSONMessage(body)
+	lower := strings.ToLower(message)
+	switch {
+	case strings.Contains(lower, "token") && (strings.Contains(lower, "error") || strings.Contains(lower, "invalid") || strings.Contains(lower, "expired")):
+		return fmt.Errorf("获取订阅失败：订阅令牌无效或已失效（HTTP %d）", status)
+	case status == http.StatusUnauthorized || status == http.StatusForbidden:
+		return fmt.Errorf("获取订阅失败：上游订阅服务拒绝访问（HTTP %d）", status)
+	case status == http.StatusTooManyRequests:
+		return errors.New("获取订阅失败：上游请求过于频繁（HTTP 429），请稍后重试")
+	default:
+		return fmt.Errorf("获取订阅失败：上游返回 HTTP %d", status)
+	}
+}
+
+func lineSourcePayloadError(body []byte) error {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return nil
+	}
+	status := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["status"])))
+	success, hasSuccess := payload["success"].(bool)
+	if status != "fail" && status != "failed" && status != "error" && !(hasSuccess && !success) {
+		return nil
+	}
+	message := strings.ToLower(lineSourceJSONMessage(body))
+	if strings.Contains(message, "token") && (strings.Contains(message, "error") || strings.Contains(message, "invalid") || strings.Contains(message, "expired")) {
+		return errors.New("获取订阅失败：订阅令牌无效或已失效")
+	}
+	return errors.New("获取订阅失败：上游订阅服务返回错误")
+}
+
+func lineSourceJSONMessage(body []byte) string {
+	var payload map[string]any
+	if json.Unmarshal(body, &payload) != nil {
+		return ""
+	}
+	for _, key := range []string{"message", "msg", "error"} {
+		if value, ok := payload[key].(string); ok {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func parseLineEntries(raw string) ([]LineImportEntry, error) {
@@ -769,11 +823,22 @@ func (s *LineService) upsertPreparedLines(tx *gorm.DB, sourceID string, entries 
 		if err := tx.Where("fingerprint = ?", entry.Fingerprint).First(&node).Error; err != nil {
 			return err
 		}
-		if strings.TrimSpace(node.PublicName) == "" {
-			if err := tx.Model(&node).Update("public_name", publicName).Error; err != nil {
-				return err
+		if !node.PublicNameCustom {
+			currentName := strings.TrimSpace(node.PublicName)
+			if currentName != "" && currentName != publicName && !isLegacyGeneratedPublicName(source, entry, i, currentName) {
+				// Rows created before PublicNameCustom existed have false here even
+				// when an administrator edited the alias. Preserve those edits and
+				// mark them explicitly on the first refresh after upgrading.
+				if err := tx.Model(&node).Update("public_name_custom", true).Error; err != nil {
+					return err
+				}
+				node.PublicNameCustom = true
+			} else {
+				if err := tx.Model(&node).Update("public_name", publicName).Error; err != nil {
+					return err
+				}
+				node.PublicName = publicName
 			}
-			node.PublicName = publicName
 		}
 		if len(groupIDs) > 0 && (node.Status == lineStatusUnassigned || node.Status == lineStatusStale || node.InboundID == nil) {
 			if err := tx.Model(&node).Updates(map[string]any{"status": lineStatusChecking, "health_status": lineHealthChecking, "provision_locked_at": nil, "next_provision_at": nil}).Error; err != nil {
@@ -806,22 +871,37 @@ func outboundNeedsTLSAutoPin(outbound map[string]any) bool {
 	return value
 }
 
-func defaultPublicLineName(source model.LineSource, entry preparedLineEntry, index int) string {
+func defaultPublicLineName(_ model.LineSource, entry preparedLineEntry, index int) string {
 	protocol := strings.ToUpper(strings.TrimSpace(entry.Protocol))
 	if protocol == "HYSTERIA" {
 		protocol = "Hysteria2"
 	}
-	if source.Kind == lineSourceManual {
-		// A share-link fragment is controlled by the upstream provider and may
-		// contain its brand. Never publish it by default. The administrator can
-		// replace this neutral, stable label from the node-pool alias editor.
-		return truncateRunes(fmt.Sprintf("%s 线路 #%d", protocol, index+1), 160)
+	// Both the imported fragment and the source name may contain an upstream
+	// provider's brand. Keep them private to the administrator and publish a
+	// neutral alias by default. The node-pool alias editor is the only place
+	// that controls the customer-visible name.
+	return truncateRunes(fmt.Sprintf("%s 线路 #%d", protocol, index+1), 160)
+}
+
+func isLegacyGeneratedPublicName(source model.LineSource, entry preparedLineEntry, index int, current string) bool {
+	protocol := strings.ToUpper(strings.TrimSpace(entry.Protocol))
+	if protocol == "HYSTERIA" {
+		protocol = "Hysteria2"
 	}
 	name := strings.TrimSpace(source.Name)
 	if name == "" {
 		name = "订阅线路"
 	}
-	return truncateRunes(fmt.Sprintf("%s · %s #%d", name, protocol, index+1), 160)
+	legacy := []string{
+		fmt.Sprintf("%s · %s #%d", name, protocol, index+1),
+		fmt.Sprintf("%s 路 %s #%d", name, protocol, index+1),
+	}
+	for _, candidate := range legacy {
+		if current == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func truncateRunes(value string, limit int) string {

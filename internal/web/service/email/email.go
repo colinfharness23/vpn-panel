@@ -71,7 +71,8 @@ func (s *EmailService) SendTo(recipients []string, subject, body string) error {
 	password, _ := s.settingService.GetSmtpPassword()
 	encryptionType, _ := s.settingService.GetSmtpEncryptionType()
 
-	from, err := normalizeSMTPAddress(username)
+	fromValue, _ := s.settingService.GetSmtpFrom()
+	from, err := normalizeSMTPAddress(fromValue)
 	if err != nil {
 		return fmt.Errorf("smtp from not configured")
 	}
@@ -182,7 +183,8 @@ func (s *EmailService) TestConnection() SMTPTestResult {
 	toStr, _ := s.settingService.GetSmtpTo()
 	encryptionType, _ := s.settingService.GetSmtpEncryptionType()
 
-	from, fromErr := normalizeSMTPAddress(username)
+	fromValue, _ := s.settingService.GetSmtpFrom()
+	from, fromErr := normalizeSMTPAddress(fromValue)
 	if fromErr != nil {
 		return SMTPTestResult{false, "send", "smtpFromNotConfigured"}
 	}

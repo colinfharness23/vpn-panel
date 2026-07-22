@@ -273,7 +273,8 @@ jobs:
             x-ui/deploy/ubuntu/backup.sh \
             x-ui/deploy/ubuntu/rotate-admin-path.sh \
             x-ui/deploy/ubuntu/uninstall.sh \
-            x-ui/deploy/ubuntu/finalize-domain.sh; do
+            x-ui/deploy/ubuntu/finalize-domain.sh \
+            x-ui/deploy/ubuntu/sync-line-cert.sh; do
             grep -Fxq "$required" /tmp/release-files.txt || {
               echo "missing release file: $required" >&2
               exit 1

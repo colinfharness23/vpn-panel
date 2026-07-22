@@ -3,12 +3,14 @@ package commercial
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"net"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +18,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
 	linkutil "github.com/mhsanaei/3x-ui/v3/internal/util/link"
+	wgutil "github.com/mhsanaei/3x-ui/v3/internal/util/wireguard"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	outboundservice "github.com/mhsanaei/3x-ui/v3/internal/web/service/outbound"
 
@@ -24,6 +27,8 @@ import (
 )
 
 const lineStatusRetry = "retry"
+
+const managedLineProvisionVersion = 2
 
 func (w *Worker) HandleLineHealthEvent(event eventbus.Event) {
 	if event.Type != eventbus.EventOutboundSample || !strings.HasPrefix(event.Source, lineTagPrefix) {
@@ -108,7 +113,7 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 	if node.PublicPort == nil {
 		return errors.New("托管线路没有公网端口")
 	}
-	if err := waitManagedLineListener(ctx, *node.PublicPort, 8*time.Second); err != nil {
+	if err := waitManagedLineListenerForProtocol(ctx, managedLineInboundProtocol(node.Protocol), *node.PublicPort, 8*time.Second); err != nil {
 		_ = w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", false).Error
 		_ = (&service.XrayService{}).RestartXray(true)
 		return err
@@ -158,21 +163,51 @@ func waitManagedLineListener(ctx context.Context, port int, timeout time.Duratio
 	return fmt.Errorf("托管线路端口 %d 未成功监听，已停止发布并等待自动重试", port)
 }
 
+func waitManagedLineListenerForProtocol(ctx context.Context, protocol model.Protocol, port int, timeout time.Duration) error {
+	if protocol != model.Hysteria && protocol != model.WireGuard {
+		return waitManagedLineListener(ctx, port, timeout)
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		listener, err := net.ListenPacket("udp", net.JoinHostPort("0.0.0.0", fmt.Sprint(port)))
+		if err != nil {
+			return nil
+		}
+		_ = listener.Close()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("托管线路 UDP 端口 %d 未成功监听，已停止发布并等待自动重试", port)
+}
+
 func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
+	expectedProtocol := managedLineInboundProtocol(node.Protocol)
 	if node.InboundID != nil && node.PublicPort != nil {
-		var count int64
-		if err := w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Count(&count).Error; err != nil {
+		var existing model.Inbound
+		if err := w.db.Select("id", "protocol").First(&existing, "id = ?", *node.InboundID).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if count == 1 {
+		if existing.Id > 0 && existing.Protocol == expectedProtocol && node.ProvisionVersion >= managedLineProvisionVersion {
 			return nil
+		}
+		if existing.Id > 0 {
+			oldInboundID := *node.InboundID
+			oldPort := *node.PublicPort
+			if err := w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{"inbound_id": nil, "public_port": nil}).Error; err != nil {
+				return err
+			}
+			if _, err := w.inbounds.DelInbound(oldInboundID); err != nil {
+				_ = w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{"inbound_id": oldInboundID, "public_port": oldPort}).Error
+				return fmt.Errorf("migrate managed line protocol: %w", err)
+			}
+			node.InboundID = nil
+			node.PublicPort = nil
 		}
 	}
 	port, err := allocateManagedLinePort(w.db)
-	if err != nil {
-		return err
-	}
-	privateKey, publicKey, err := lineRealityKeys()
 	if err != nil {
 		return err
 	}
@@ -181,36 +216,145 @@ func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
 	if err != nil || parsed.Hostname() == "" {
 		return errors.New("请先在商业设置中配置站点域名")
 	}
-	settings, _ := json.Marshal(map[string]any{"clients": []any{}, "decryption": "none", "encryption": "none", "fallbacks": []any{}})
-	stream, _ := json.Marshal(map[string]any{
-		"network":     "tcp",
-		"security":    "reality",
-		"tcpSettings": map[string]any{"header": map[string]any{"type": "none"}},
-		"realitySettings": map[string]any{
-			"show": false, "xver": 0, "target": "127.0.0.1:443", "serverNames": []string{parsed.Hostname()},
-			"privateKey": privateKey, "minClientVer": "", "maxClientVer": "", "maxTimediff": 0,
-			"shortIds": []string{node.Fingerprint[:16]}, "mldsa65Seed": "",
-			"settings": map[string]any{"publicKey": publicKey, "fingerprint": "chrome", "serverName": parsed.Hostname(), "spiderX": "/", "mldsa65Verify": ""},
-		},
-	})
+	settings, stream, err := managedLineInboundJSON(node, expectedProtocol, parsed.Hostname())
+	if err != nil {
+		return err
+	}
 	sniffing := `{"enabled":true,"destOverride":["http","tls","quic"],"metadataOnly":false,"routeOnly":false}`
-	siteName := NewConfigStore().GetDefault("site.name", "NOVA")
 	publicName := strings.TrimSpace(node.PublicName)
 	if publicName == "" {
 		publicName = strings.ToUpper(strings.TrimSpace(node.Protocol)) + " 线路"
 	}
-	inbound := &model.Inbound{UserId: 1, Remark: fmt.Sprintf("%s · %s", siteName, publicName), SubSortIndex: 1, Enable: false, Listen: "0.0.0.0", Port: port, Protocol: model.VLESS, Settings: string(settings), StreamSettings: string(stream), Tag: "commercial-in-" + strings.ReplaceAll(node.ID, "-", "")[:20], Sniffing: sniffing, ShareAddrStrategy: "custom", ShareAddr: parsed.Hostname()}
+	inbound := &model.Inbound{UserId: 1, Remark: publicName, SubSortIndex: 1, Enable: false, Listen: "0.0.0.0", Port: port, Protocol: expectedProtocol, Settings: string(settings), StreamSettings: string(stream), Tag: "commercial-in-" + strings.ReplaceAll(node.ID, "-", "")[:20], Sniffing: sniffing, ShareAddrStrategy: "custom", ShareAddr: parsed.Hostname()}
 	created, _, err := w.inbounds.AddInbound(inbound)
 	if err != nil {
 		return err
 	}
-	if err := w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{"public_port": port, "inbound_id": created.Id}).Error; err != nil {
+	if err := w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{"public_port": port, "inbound_id": created.Id, "provision_version": managedLineProvisionVersion}).Error; err != nil {
 		_, _ = w.inbounds.DelInbound(created.Id)
 		return err
 	}
 	node.PublicPort = &port
 	node.InboundID = &created.Id
+	node.ProvisionVersion = managedLineProvisionVersion
 	return nil
+}
+
+func managedLineInboundProtocol(protocol string) model.Protocol {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "vmess":
+		return model.VMESS
+	case "trojan":
+		return model.Trojan
+	case "shadowsocks", "ss":
+		return model.Shadowsocks
+	case "hysteria", "hysteria2", "hy2":
+		return model.Hysteria
+	case "wireguard", "wg":
+		return model.WireGuard
+	default:
+		return model.VLESS
+	}
+}
+
+func managedLineInboundJSON(node *model.LineNode, protocol model.Protocol, hostname string) ([]byte, []byte, error) {
+	var settings map[string]any
+	stream := map[string]any{}
+	switch protocol {
+	case model.VLESS:
+		privateKey, publicKey, err := lineRealityKeys()
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(node.Fingerprint) < 16 {
+			return nil, nil, errors.New("线路节点指纹无效")
+		}
+		settings = map[string]any{"clients": []any{}, "decryption": "none", "encryption": "none", "fallbacks": []any{}}
+		stream = map[string]any{
+			"network": "tcp", "security": "reality", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}},
+			"realitySettings": map[string]any{
+				"show": false, "xver": 0, "target": "127.0.0.1:443", "serverNames": []string{hostname},
+				"privateKey": privateKey, "minClientVer": "", "maxClientVer": "", "maxTimediff": 0,
+				"shortIds": []string{node.Fingerprint[:16]}, "mldsa65Seed": "",
+				"settings": map[string]any{"publicKey": publicKey, "fingerprint": "chrome", "serverName": hostname, "spiderX": "/", "mldsa65Verify": ""},
+			},
+		}
+	case model.VMESS, model.Trojan, model.Hysteria:
+		certFile, keyFile, err := managedLineTLSFiles()
+		if err != nil {
+			return nil, nil, err
+		}
+		tlsSettings := map[string]any{
+			"serverName": hostname,
+			"alpn":       []string{"h3", "h2", "http/1.1"},
+			"certificates": []any{map[string]any{
+				"certificateFile": certFile,
+				"keyFile":         keyFile,
+			}},
+			"settings": map[string]any{"fingerprint": "chrome", "verifyPeerCertByName": hostname},
+		}
+		switch protocol {
+		case model.VMESS:
+			settings = map[string]any{"clients": []any{}}
+			stream = map[string]any{"network": "tcp", "security": "tls", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}}, "tlsSettings": tlsSettings}
+		case model.Trojan:
+			settings = map[string]any{"clients": []any{}, "fallbacks": []any{}}
+			stream = map[string]any{"network": "tcp", "security": "tls", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}}, "tlsSettings": tlsSettings}
+		case model.Hysteria:
+			settings = map[string]any{"version": 2, "clients": []any{}}
+			stream = map[string]any{"network": "hysteria", "security": "tls", "tlsSettings": tlsSettings, "hysteriaSettings": map[string]any{"version": 2, "udpIdleTimeout": 60}}
+		}
+	case model.Shadowsocks:
+		masterKey, err := randomManagedLineKey(32)
+		if err != nil {
+			return nil, nil, err
+		}
+		settings = map[string]any{"method": "2022-blake3-aes-256-gcm", "password": masterKey, "network": "tcp,udp", "clients": []any{}, "ivCheck": false}
+		stream = map[string]any{"network": "tcp", "security": "none"}
+	case model.WireGuard:
+		privateKey, _, err := wgutil.GenerateWireguardKeypair()
+		if err != nil {
+			return nil, nil, err
+		}
+		settings = map[string]any{"secretKey": privateKey, "peers": []any{}, "mtu": 1420}
+	default:
+		return nil, nil, fmt.Errorf("unsupported managed line protocol %q", protocol)
+	}
+	settingsJSON, err := json.Marshal(settings)
+	if err != nil {
+		return nil, nil, err
+	}
+	streamJSON, err := json.Marshal(stream)
+	if err != nil {
+		return nil, nil, err
+	}
+	return settingsJSON, streamJSON, nil
+}
+
+func managedLineTLSFiles() (string, string, error) {
+	certFile := strings.TrimSpace(os.Getenv("XUI_LINE_CERT_FILE"))
+	keyFile := strings.TrimSpace(os.Getenv("XUI_LINE_KEY_FILE"))
+	if certFile == "" {
+		certFile = "/var/lib/x-ui/certs/fullchain.pem"
+	}
+	if keyFile == "" {
+		keyFile = "/var/lib/x-ui/certs/privkey.pem"
+	}
+	if _, err := os.Stat(certFile); err != nil {
+		return "", "", fmt.Errorf("本站线路 TLS 证书不可用: %w", err)
+	}
+	if _, err := os.Stat(keyFile); err != nil {
+		return "", "", fmt.Errorf("本站线路 TLS 私钥不可用: %w", err)
+	}
+	return certFile, keyFile, nil
+}
+
+func randomManagedLineKey(size int) (string, error) {
+	value := make([]byte, size)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(value), nil
 }
 
 func lineRealityKeys() (string, string, error) {
@@ -265,6 +409,12 @@ func allocateManagedLinePort(db *gorm.DB) (int, error) {
 		if err != nil {
 			continue
 		}
+		packet, packetErr := (&net.ListenConfig{}).ListenPacket(context.Background(), "udp", fmt.Sprintf(":%d", port))
+		if packetErr != nil {
+			_ = listener.Close()
+			continue
+		}
+		_ = packet.Close()
 		_ = listener.Close()
 		return port, nil
 	}
@@ -395,7 +545,15 @@ func (w *Worker) restoreManagedLinePublication() error {
 			}
 		}
 		var inbound model.Inbound
-		if err := w.db.Select("id", "enable").First(&inbound, "id = ?", *nodes[i].InboundID).Error; err != nil {
+		if err := w.db.Select("id", "enable", "protocol").First(&inbound, "id = ?", *nodes[i].InboundID).Error; err != nil {
+			continue
+		}
+		if inbound.Protocol != managedLineInboundProtocol(nodes[i].Protocol) || nodes[i].ProvisionVersion < managedLineProvisionVersion {
+			if err := w.db.Model(&model.LineNode{}).Where("id = ?", nodes[i].ID).Updates(map[string]any{
+				"status": lineStatusChecking, "health_status": lineHealthChecking, "provision_locked_at": nil, "next_provision_at": nil, "last_error": "",
+			}).Error; err != nil {
+				return err
+			}
 			continue
 		}
 		if !inbound.Enable {

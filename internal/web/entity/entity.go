@@ -51,6 +51,7 @@ type AllSetting struct {
 	SmtpHost           string `json:"smtpHost" form:"smtpHost"`
 	SmtpPort           int    `json:"smtpPort" form:"smtpPort" validate:"gte=1,lte=65535"`
 	SmtpUsername       string `json:"smtpUsername" form:"smtpUsername"`
+	SmtpFrom           string `json:"smtpFrom" form:"smtpFrom"`
 	SmtpPassword       string `json:"smtpPassword" form:"smtpPassword"`
 	SmtpTo             string `json:"smtpTo" form:"smtpTo"`
 	SmtpEncryptionType string `json:"smtpEncryptionType" form:"smtpEncryptionType"`

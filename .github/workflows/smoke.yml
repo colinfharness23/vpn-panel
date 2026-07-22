@@ -67,7 +67,7 @@ jobs:
 
       - name: Validate update, backup, rollback and rotation helpers
         run: |
-          for helper in update rollback backup rotate-admin-path uninstall finalize-domain; do
+          for helper in update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
             test -s "deploy/ubuntu/${helper}.sh"
           done
           grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/update.sh

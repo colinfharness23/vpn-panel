@@ -32,6 +32,7 @@ func TestCommercialLineLiveLinks_E2E(t *testing.T) {
 	}
 
 	decoy := newRealityDecoy(t)
+	certFile, keyFile, certPin := writeProtocolTestCertificate(t)
 	for index, rawLink := range links {
 		parsed, err := linkutil.ParseLink(strings.TrimSpace(rawLink))
 		if err != nil {
@@ -102,6 +103,76 @@ func TestCommercialLineLiveLinks_E2E(t *testing.T) {
 			serverProcess := startProtocolXray(t, bin, server, "live-managed-server")
 			waitForProtocolPort(t, serverPort, serverProcess)
 			clientProcess := startProtocolXray(t, bin, client, "live-managed-client")
+			waitForProtocolPort(t, proxyPort, clientProcess)
+			requestGenerate204(t, proxyPort, clientProcess)
+		})
+		t.Run(name+"_managed_same_protocol", func(t *testing.T) {
+			proxyPort := freePort(t)
+			serverPort := freePort(t)
+			udpServer := false
+			var serverInbound, clientOutbound map[string]any
+			switch protocol {
+			case "vless":
+				privateKey, publicKey := realityTestKeyPair(t)
+				shortID := fmt.Sprintf("%016x", index+101)
+				clientID := fmt.Sprintf("44444444-5555-4666-8777-%012d", index+1)
+				serverInbound = map[string]any{
+					"listen": "127.0.0.1", "port": serverPort, "protocol": "vless", "tag": "commercial-managed-in",
+					"settings": map[string]any{"clients": []any{map[string]any{"id": clientID, "email": "e2e"}}, "decryption": "none", "encryption": "none", "fallbacks": []any{}},
+					"streamSettings": map[string]any{
+						"network": "tcp", "security": "reality", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}},
+						"realitySettings": map[string]any{"show": false, "target": decoy.host, "serverNames": []string{"e2e.local"}, "privateKey": privateKey, "shortIds": []string{shortID}},
+					},
+				}
+				clientOutbound = map[string]any{
+					"protocol": "vless", "tag": "managed-native-out",
+					"settings":       map[string]any{"vnext": []any{map[string]any{"address": "127.0.0.1", "port": serverPort, "users": []any{map[string]any{"id": clientID, "encryption": "none"}}}}},
+					"streamSettings": map[string]any{"network": "tcp", "security": "reality", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}}, "realitySettings": map[string]any{"fingerprint": "chrome", "serverName": "e2e.local", "publicKey": publicKey, "shortId": shortID, "spiderX": "/"}},
+				}
+			case "trojan":
+				password := fmt.Sprintf("native-trojan-%d", index+1)
+				serverInbound = map[string]any{
+					"listen": "127.0.0.1", "port": serverPort, "protocol": "trojan", "tag": "commercial-managed-in",
+					"settings":       map[string]any{"clients": []any{map[string]any{"password": password, "email": "e2e"}}, "fallbacks": []any{}},
+					"streamSettings": map[string]any{"network": "tcp", "security": "tls", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}}, "tlsSettings": protocolTestTLSServerSettings(certFile, keyFile)},
+				}
+				clientOutbound = map[string]any{
+					"protocol": "trojan", "tag": "managed-native-out", "settings": map[string]any{"servers": []any{map[string]any{"address": "127.0.0.1", "port": serverPort, "password": password}}},
+					"streamSettings": map[string]any{"network": "tcp", "security": "tls", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}}, "tlsSettings": protocolTestTLSClientSettings(certPin)},
+				}
+			case "hysteria":
+				serverPort = freeUDPPort(t)
+				udpServer = true
+				auth := fmt.Sprintf("native-hysteria-%d", index+1)
+				serverInbound = map[string]any{
+					"listen": "127.0.0.1", "port": serverPort, "protocol": "hysteria", "tag": "commercial-managed-in",
+					"settings":       map[string]any{"version": 2, "clients": []any{map[string]any{"auth": auth, "email": "e2e"}}},
+					"streamSettings": map[string]any{"network": "hysteria", "security": "tls", "tlsSettings": protocolTestTLSServerSettings(certFile, keyFile), "hysteriaSettings": map[string]any{"version": 2, "udpIdleTimeout": 60}},
+				}
+				clientOutbound = map[string]any{
+					"protocol": "hysteria", "tag": "managed-native-out", "settings": map[string]any{"address": "127.0.0.1", "port": serverPort, "version": 2},
+					"streamSettings": map[string]any{"network": "hysteria", "security": "tls", "tlsSettings": protocolTestTLSClientSettings(certPin), "hysteriaSettings": map[string]any{"version": 2, "auth": auth, "udpIdleTimeout": 60}},
+				}
+			default:
+				t.Skipf("same-protocol live wrapper is not implemented for %s", protocol)
+			}
+			parsed.Outbound["tag"] = "live-upstream"
+			server := map[string]any{
+				"log":       map[string]any{"loglevel": "warning"},
+				"inbounds":  []any{serverInbound},
+				"outbounds": []any{parsed.Outbound},
+				"routing": map[string]any{"domainStrategy": "AsIs", "rules": []any{map[string]any{
+					"type": "field", "inboundTag": []string{"commercial-managed-in"}, "outboundTag": "live-upstream",
+				}}},
+			}
+			client := protocolTestHTTPClientConfig(proxyPort, clientOutbound)
+			serverProcess := startProtocolXray(t, bin, server, "live-native-server")
+			if udpServer {
+				time.Sleep(500 * time.Millisecond)
+			} else {
+				waitForProtocolPort(t, serverPort, serverProcess)
+			}
+			clientProcess := startProtocolXray(t, bin, client, "live-native-client")
 			waitForProtocolPort(t, proxyPort, clientProcess)
 			requestGenerate204(t, proxyPort, clientProcess)
 		})
