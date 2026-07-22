@@ -79,6 +79,8 @@ import {
   WifiOutlined,
 } from "@ant-design/icons";
 
+import { applySiteBranding } from "@/hooks/useSiteBranding";
+
 import { portalAsset, PortalApiError, portalRequest } from "./api";
 import { buildPortalNavigation } from "./navigation";
 import {
@@ -945,6 +947,14 @@ function PortalContent() {
     document.documentElement.dir = rtl ? "rtl" : "ltr";
     localStorage.setItem("nova-locale", locale);
   }, [locale, rtl]);
+
+  useEffect(() => {
+    if (loading && !preview) return;
+    applySiteBranding(
+      bootstrap.site.siteName || "NOVA",
+      bootstrap.site.logoUrl || "",
+    );
+  }, [bootstrap.site.logoUrl, bootstrap.site.siteName, loading, preview]);
 
   const nav = buildPortalNavigation<Section>(copy, Boolean(dashboard));
 

@@ -43,6 +43,7 @@ import { activateOnKey } from '@/utils/a11y';
 import { useTheme } from '@/hooks/useTheme';
 import { useStatusQuery } from '@/api/queries/useStatusQuery';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
+import { useSiteBranding } from '@/hooks/useSiteBranding';
 import AppSidebar from '@/layouts/AppSidebar';
 import { LazyMount } from '@/components/utility';
 import { setMessageInstance } from '@/utils/messageBus';
@@ -64,6 +65,7 @@ export default function IndexPage() {
   const { isDark, isUltra, antdThemeConfig } = useTheme();
   const { status, fetched, fetchError, refresh } = useStatusQuery();
   const { isMobile } = useMediaQuery();
+  const { siteName } = useSiteBranding();
   const [messageApi, messageContextHolder] = message.useMessage();
   useEffect(() => { setMessageInstance(messageApi); }, [messageApi]);
 
@@ -233,7 +235,7 @@ export default function IndexPage() {
                     <Card
                       title={
                         <Space>
-                          <span>NOVA</span>
+                          <span>{siteName}</span>
                           {isMobile && displayVersion && (
                             <Tag color={panelUpdateInfo.updateAvailable ? 'orange' : 'green'}>
                               {panelUpdateInfo.updateAvailable

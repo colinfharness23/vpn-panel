@@ -32,6 +32,7 @@ const (
 	lineStatusUnassigned         = "unassigned"
 	lineStatusChecking           = "checking"
 	lineStatusProvisioning       = "provisioning"
+	lineStatusReady              = "ready"
 	lineStatusHealthy            = "healthy"
 	lineStatusOffline            = "offline"
 	lineStatusStale              = "stale"
@@ -55,23 +56,26 @@ var supportedLineProtocols = map[string]struct{}{
 
 type LineSourceView struct {
 	model.LineSource
-	GroupIDs     []string `json:"groupIds"`
-	NodeCount    int64    `json:"nodeCount"`
-	HealthyCount int64    `json:"healthyCount"`
-	HasSecret    bool     `json:"hasSecret"`
+	GroupIDs       []string `json:"groupIds"`
+	NodeCount      int64    `json:"nodeCount"`
+	HealthyCount   int64    `json:"healthyCount"`
+	PublishedCount int64    `json:"publishedCount"`
+	HasSecret      bool     `json:"hasSecret"`
 }
 
 type LineGroupView struct {
 	model.LineGroup
-	PlanIDs      []string `json:"planIds"`
-	NodeCount    int64    `json:"nodeCount"`
-	HealthyCount int64    `json:"healthyCount"`
+	PlanIDs        []string `json:"planIds"`
+	NodeCount      int64    `json:"nodeCount"`
+	HealthyCount   int64    `json:"healthyCount"`
+	PublishedCount int64    `json:"publishedCount"`
 }
 
 type LineNodeView struct {
 	model.LineNode
 	SourceIDs []string `json:"sourceIds"`
 	GroupIDs  []string `json:"groupIds"`
+	Published bool     `json:"published"`
 }
 
 type LineOverview struct {
@@ -138,7 +142,10 @@ func (s *LineService) Sources() ([]LineSourceView, error) {
 		if err := s.db.Model(&model.LineSourceNode{}).Where("source_id = ? AND missing_since IS NULL", rows[i].ID).Count(&view.NodeCount).Error; err != nil {
 			return nil, err
 		}
-		if err := s.db.Table(model.LineSourceNode{}.TableName()+" AS links").Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = links.node_id").Where("links.source_id = ? AND links.missing_since IS NULL AND nodes.status = ?", rows[i].ID, lineStatusHealthy).Count(&view.HealthyCount).Error; err != nil {
+		if err := s.db.Table(model.LineSourceNode{}.TableName()+" AS links").Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = links.node_id").Where("links.source_id = ? AND links.missing_since IS NULL AND nodes.health_status = ?", rows[i].ID, lineHealthHealthy).Count(&view.HealthyCount).Error; err != nil {
+			return nil, err
+		}
+		if err := s.db.Table(model.LineSourceNode{}.TableName()+" AS links").Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = links.node_id").Joins("JOIN inbounds ON inbounds.id = nodes.inbound_id").Where("links.source_id = ? AND links.missing_since IS NULL AND nodes.inbound_id IS NOT NULL AND inbounds.enable = ?", rows[i].ID, true).Count(&view.PublishedCount).Error; err != nil {
 			return nil, err
 		}
 		views = append(views, view)
@@ -160,7 +167,10 @@ func (s *LineService) Groups() ([]LineGroupView, error) {
 		if err := s.db.Model(&model.LineGroupNode{}).Where("group_id = ?", rows[i].ID).Count(&view.NodeCount).Error; err != nil {
 			return nil, err
 		}
-		if err := s.db.Table(model.LineGroupNode{}.TableName()+" AS memberships").Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = memberships.node_id").Where("memberships.group_id = ? AND nodes.status = ?", rows[i].ID, lineStatusHealthy).Count(&view.HealthyCount).Error; err != nil {
+		if err := s.db.Table(model.LineGroupNode{}.TableName()+" AS memberships").Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = memberships.node_id").Where("memberships.group_id = ? AND nodes.health_status = ?", rows[i].ID, lineHealthHealthy).Count(&view.HealthyCount).Error; err != nil {
+			return nil, err
+		}
+		if err := s.db.Table(model.LineGroupNode{}.TableName()+" AS memberships").Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = memberships.node_id").Joins("JOIN inbounds ON inbounds.id = nodes.inbound_id").Where("memberships.group_id = ? AND nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL AND inbounds.enable = ?", rows[i].ID, true).Count(&view.PublishedCount).Error; err != nil {
 			return nil, err
 		}
 		views = append(views, view)
@@ -191,6 +201,16 @@ func (s *LineService) Nodes(sourceID, groupID, status string) ([]LineNodeView, e
 		}
 		if err := s.db.Model(&model.LineGroupNode{}).Where("node_id = ?", rows[i].ID).Pluck("group_id", &view.GroupIDs).Error; err != nil {
 			return nil, err
+		}
+		if rows[i].InboundID != nil && rows[i].MissingSince == nil {
+			var inbound model.Inbound
+			err := s.db.Select("id", "enable").First(&inbound, "id = ?", *rows[i].InboundID).Error
+			switch {
+			case err == nil:
+				view.Published = inbound.Enable
+			case !errors.Is(err, gorm.ErrRecordNotFound):
+				return nil, err
+			}
 		}
 		sort.Strings(view.SourceIDs)
 		sort.Strings(view.GroupIDs)

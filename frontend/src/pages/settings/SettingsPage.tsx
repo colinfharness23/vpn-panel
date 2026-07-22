@@ -9,14 +9,12 @@ import {
   ConfigProvider,
   FloatButton,
   Layout,
-  Modal,
   Row,
   Space,
   Spin,
   message,
 } from 'antd';
 
-import { HttpUtil, PromiseUtil } from '@/utils';
 import { setMessageInstance } from '@/utils/messageBus';
 import { useTheme } from '@/hooks/useTheme';
 import { useMediaQuery } from '@/hooks/useMediaQuery';
@@ -33,12 +31,7 @@ import SubscriptionTemplateTab from './SubscriptionTemplateTab';
 import { useSiteSettings } from './useSiteSettings';
 import { useSecuritySettings } from './useSecuritySettings';
 import { useSubscriptionSettings } from './useSubscriptionSettings';
-import { buildPanelRestartURL } from './panelRestartUrl';
 import './SettingsPage.css';
-
-interface ApiMsg {
-  success?: boolean;
-}
 
 const tabSlugs = ['general', 'security', 'telegram', 'email', 'subscription', 'subscription-formats', 'subscription-template'];
 
@@ -50,7 +43,6 @@ export default function SettingsPage() {
   const { t } = useTranslation();
   const { isDark, isUltra, antdThemeConfig } = useTheme();
   const { isMobile } = useMediaQuery();
-  const [modal, modalContextHolder] = Modal.useModal();
   const [messageApi, messageContextHolder] = message.useMessage();
 
   useEffect(() => {
@@ -62,7 +54,6 @@ export default function SettingsPage() {
     updateSetting,
     fetched: settingsFetched,
     spinning: settingsSpinning,
-    setSpinning,
     saveDisabled: settingsSaveDisabled,
     saveAll,
     savePayload,
@@ -103,10 +94,6 @@ export default function SettingsPage() {
   const slug = location.hash.replace(/^#/, '');
   const activeSlug = tabSlugs.includes(slug) ? slug : 'general';
 
-  function rebuildUrlAfterRestart(): string {
-    return buildPanelRestartURL(window.location.href, allSetting);
-  }
-
   async function onSave() {
     const saves: Promise<unknown>[] = [];
     if (!settingsSaveDisabled) {
@@ -125,27 +112,6 @@ export default function SettingsPage() {
     if (!subscriptionSettingsSaveDisabled) saves.push(saveSubscriptionSettings());
     await Promise.all(saves);
     messageApi.success('设置已保存');
-  }
-
-  function restartPanel() {
-    modal.confirm({
-      title: t('pages.settings.restartPanel'),
-      content: t('pages.settings.restartPanelDesc'),
-      okText: t('pages.settings.restartPanel'),
-      okButtonProps: { danger: true },
-      cancelText: t('cancel'),
-      onOk: async () => {
-        setSpinning(true);
-        try {
-          const msg = await HttpUtil.post('/panel/api/setting/restartPanel') as ApiMsg;
-          if (!msg?.success) return;
-          await PromiseUtil.sleep(5000);
-          window.location.replace(rebuildUrlAfterRestart());
-        } finally {
-          setSpinning(false);
-        }
-      },
-    });
   }
 
   const confAlerts = useMemo<string[]>(() => {
@@ -231,7 +197,6 @@ export default function SettingsPage() {
   return (
     <ConfigProvider theme={antdThemeConfig}>
       {messageContextHolder}
-      {modalContextHolder}
       <Layout className={pageClass}>
         <AppSidebar />
 
@@ -267,16 +232,17 @@ export default function SettingsPage() {
                           <Col xs={24} sm={10} className="header-actions">
                             <Space>
                               <Button type="primary" disabled={settingsSaveDisabled && siteSettingsSaveDisabled && securitySettingsSaveDisabled && subscriptionSettingsSaveDisabled} onClick={onSave}>
-                                {t('pages.settings.save')}
-                              </Button>
-                              <Button type="primary" danger disabled={!settingsSaveDisabled} onClick={restartPanel}>
-                                {t('pages.settings.restartPanel')}
+                                保存全部修改
                               </Button>
                             </Space>
                           </Col>
                           <Col xs={24} sm={14} className="header-info">
                             <FloatButton.BackTop target={scrollTarget} visibilityHeight={200} />
-                            <Alert type="warning" showIcon title={t('pages.settings.infoDesc')} />
+                            <Alert
+                              type="info"
+                              showIcon
+                              title="修改完成后点击一次“保存全部修改”即可，站点内容会立即生效，无需重启面板。"
+                            />
                           </Col>
                         </Row>
                       </Card>

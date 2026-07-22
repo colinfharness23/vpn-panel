@@ -20,6 +20,7 @@ import { FormField, rhfZodValidate } from '@/components/form/rhf';
 import { LoginFormSchema, TotpCodeSchema, type LoginFormValues } from '@/schemas/login';
 import { HttpUtil } from '@/utils';
 import { setMessageInstance } from '@/utils/messageBus';
+import { applySiteBranding } from '@/hooks/useSiteBranding';
 import './LoginPage.css';
 
 type LoginForm = LoginFormValues;
@@ -51,6 +52,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [twoFactorEnable, setTwoFactorEnable] = useState(false);
   const [siteName, setSiteName] = useState('NOVA');
+  const [logoUrl, setLogoUrl] = useState('');
   const methods = useForm<LoginForm>({ defaultValues: { username: '', password: '', twoFactorCode: '' } });
 
   useEffect(() => { setMessageInstance(messageApi); }, [messageApi]);
@@ -66,11 +68,17 @@ export default function LoginPage() {
       if (cancelled) return;
       if (twoFactorResult.success) setTwoFactorEnable(Boolean(twoFactorResult.obj));
       const configuredName = bootstrapResult?.obj?.site?.siteName?.trim();
+      const configuredLogo = bootstrapResult?.obj?.site?.logoUrl?.trim();
       if (configuredName) setSiteName(configuredName);
+      if (configuredLogo) setLogoUrl(configuredLogo);
       setFetched(true);
     });
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    applySiteBranding(siteName, logoUrl, '管理员登录');
+  }, [logoUrl, siteName]);
 
   const onSubmit = useCallback(async (values: LoginForm) => {
     setSubmitting(true);
@@ -89,7 +97,9 @@ export default function LoginPage() {
         <Layout.Content className="login-content">
           <header className="login-header">
             <a className="login-brand" href={publicBasePath} aria-label={`${siteName} 用户前台`}>
-              <span className="login-brand-mark"><SafetyCertificateFilled /></span>
+              <span className="login-brand-mark">
+                {logoUrl ? <img src={logoUrl} alt="" /> : <SafetyCertificateFilled />}
+              </span>
               <span>{siteName}</span>
             </a>
             <span className="login-console-label">管理员控制台</span>

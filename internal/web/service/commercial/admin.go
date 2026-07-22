@@ -676,12 +676,12 @@ func (s *AdminService) SavePlan(request entity.CommercialPlanRequest) (*model.Pl
 		if activePrices == 0 {
 			return nil, errors.New("上架套餐前必须启用至少一个价格")
 		}
-		hasLine, err := hasHealthyLineForGroupsDB(s.db, lineGroupIDs, uniqueInboundIDs)
+		hasLine, err := hasPublishedLineForGroupsDB(s.db, lineGroupIDs, uniqueInboundIDs)
 		if err != nil {
 			return nil, err
 		}
 		if !hasLine {
-			return nil, errors.New("上架套餐前必须至少有一条健康线路")
+			return nil, errors.New("上架套餐前必须至少有一条已发布线路")
 		}
 	}
 	if len(uniqueInboundIDs) > 0 {
@@ -1423,7 +1423,31 @@ func validLocalizedContent(titleRaw, contentRaw string) bool {
 	if json.Unmarshal([]byte(titleRaw), &titles) != nil || json.Unmarshal([]byte(contentRaw), &contents) != nil {
 		return false
 	}
-	return strings.TrimSpace(titles["zh-CN"]) != "" && strings.TrimSpace(titles["en-US"]) != "" && strings.TrimSpace(contents["zh-CN"]) != "" && strings.TrimSpace(contents["en-US"]) != ""
+	languages := make(map[string]struct{}, len(titles)+len(contents))
+	for locale := range titles {
+		languages[locale] = struct{}{}
+	}
+	for locale := range contents {
+		languages[locale] = struct{}{}
+	}
+	hasCompleteLocale := false
+	for locale := range languages {
+		if strings.TrimSpace(locale) == "" {
+			return false
+		}
+		title := strings.TrimSpace(titles[locale])
+		content := strings.TrimSpace(contents[locale])
+		if (title == "") != (content == "") {
+			return false
+		}
+		if len([]rune(title)) > 200 || len([]rune(content)) > 50000 {
+			return false
+		}
+		if title != "" {
+			hasCompleteLocale = true
+		}
+	}
+	return hasCompleteLocale
 }
 
 func validHTTPSURL(raw string) bool {

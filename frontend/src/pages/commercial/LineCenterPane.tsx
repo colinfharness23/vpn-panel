@@ -46,6 +46,7 @@ interface LineSource {
   groupIds: string[];
   nodeCount: number;
   healthyCount: number;
+  publishedCount: number;
 }
 
 interface LineGroup {
@@ -56,6 +57,7 @@ interface LineGroup {
   planIds: string[];
   nodeCount: number;
   healthyCount: number;
+  publishedCount: number;
 }
 
 interface LineNode {
@@ -66,6 +68,7 @@ interface LineNode {
   publicPort?: number;
   status: string;
   healthStatus: string;
+  published: boolean;
   latencyMs: number;
   lastError?: string;
   missingSince?: string;
@@ -122,6 +125,27 @@ function healthColor(status: string): string {
   if (status === "healthy") return "success";
   if (["checking", "provisioning"].includes(status)) return "processing";
   if (["offline", "stale"].includes(status)) return "error";
+  return "default";
+}
+
+function publicationLabel(status: string, published: boolean): string {
+  if (published) return "已发布";
+  if (["checking", "provisioning", "retry"].includes(status)) return "配置中";
+  if (status === "stale") return "已停止";
+  return "待分组";
+}
+
+function connectivityLabel(status: string): string {
+  if (status === "healthy") return "探测正常";
+  if (status === "offline") return "探测未通过";
+  if (status === "checking") return "探测中";
+  return "尚未探测";
+}
+
+function connectivityColor(status: string): string {
+  if (status === "healthy") return "success";
+  if (status === "checking") return "processing";
+  if (status === "offline") return "warning";
   return "default";
 }
 
@@ -275,7 +299,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
       jsonOptions(),
     );
     if (!result.success) return;
-    messageApi.success("节点分组已更新，托管入站已进入自动探测队列");
+    messageApi.success("节点分组已更新；托管线路将立即发布，连通探测仅作为参考");
     setSelectedNodeIds([]);
     await load();
   };
@@ -298,7 +322,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
       jsonOptions(),
     );
     if (!result.success) return;
-    messageApi.success("已加入真实出站探测队列");
+    messageApi.success("已加入真实出站探测队列；探测结果不会停止线路发布");
     await load();
   };
 
@@ -417,8 +441,8 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
       <Alert
         type="warning"
         showIcon
-        title="服务器防火墙与云安全组需要手工放行 TCP 20000-59999"
-        description="每个已分组节点会获得稳定的随机公网端口。安装器不会修改 UFW 或云厂商规则。"
+        title="必须在服务器防火墙和云安全组放行 TCP 20000-59999"
+        description="导入协议会转换为本站 VLESS Reality 线路并立即发布；上游连通探测只用于诊断，不会再把节点移出用户订阅。若客户端延迟为 -1，优先检查这段 TCP 端口范围是否已同时放行。"
       />
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}>
@@ -431,7 +455,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
           <Card size="small"><Statistic title="全部节点" value={nodes.length} /></Card>
         </Col>
         <Col xs={12} lg={6}>
-          <Card size="small"><Statistic title="健康节点" value={nodes.filter((node) => node.status === "healthy").length} /></Card>
+          <Card size="small"><Statistic title="已发布线路" value={nodes.filter((node) => node.published).length} /></Card>
         </Col>
       </Row>
       <Tabs
@@ -473,7 +497,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                         { title: "名称", dataIndex: "name" },
                         { title: "类型", dataIndex: "kind", render: (value: string) => <Tag>{value === "url" ? "URL" : "手动"}</Tag> },
                         { title: "域名", dataIndex: "urlHost", render: (value?: string) => value || "—" },
-                        { title: "健康/全部", render: (_, row) => `${row.healthyCount}/${row.nodeCount}` },
+                        { title: "已发布/全部", render: (_, row) => `${row.publishedCount || 0}/${row.nodeCount}` },
                         { title: "状态", dataIndex: "status", render: (value: string) => <Tag color={healthColor(value)}>{value}</Tag> },
                         { title: "错误", dataIndex: "lastError", ellipsis: true, render: (value?: string) => value || "—" },
                         { title: "操作", render: (_, row) => <Space size={4}>{row.kind === "url" ? <Button size="small" icon={<EditOutlined />} onClick={() => editSource(row)}>编辑</Button> : null}{row.kind === "url" ? <Button size="small" icon={<ReloadOutlined />} onClick={() => refreshSource(row.id)}>刷新</Button> : null}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deleteSource(row)}>删除</Button></Space> },
@@ -547,7 +571,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                       columns={[
                         { title: "名称", dataIndex: "name" },
                         { title: "说明", dataIndex: "description", ellipsis: true },
-                        { title: "健康/全部", render: (_, row) => `${row.healthyCount}/${row.nodeCount}` },
+                        { title: "已发布/全部", render: (_, row) => `${row.publishedCount || 0}/${row.nodeCount}` },
                         { title: "套餐数", dataIndex: "planIds", render: (value: string[]) => value.length },
                         { title: "状态", dataIndex: "active", render: (value: boolean) => <Tag color={value ? "success" : "default"}>{value ? "启用" : "停用"}</Tag> },
                         { title: "操作", render: (_, row) => <Space size={4}><Button size="small" icon={<EditOutlined />} onClick={() => editGroup(row)}>编辑</Button><Button size="small" danger icon={<DeleteOutlined />} onClick={() => deleteGroup(row)}>删除</Button></Space> },
@@ -583,9 +607,10 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                     { title: "公网端口", dataIndex: "publicPort", render: (value?: number) => value || "待分配" },
                     { title: "延迟", dataIndex: "latencyMs", render: (value: number) => value > 0 ? `${value} ms` : "—" },
                     { title: "线路组", dataIndex: "groupIds", render: (values: string[]) => arrayOrEmpty(values).map((id) => <Tag key={id}>{groupById.get(id)?.name || id.slice(0, 8)}</Tag>) },
-                    { title: "状态", dataIndex: "status", render: (value: string) => <Tag color={healthColor(value)}>{value}</Tag> },
-                    { title: "错误", dataIndex: "lastError", ellipsis: true, render: (value?: string) => value || "—" },
-                    { title: "操作", fixed: "right", width: 100, render: (_, row) => <Button size="small" icon={<ThunderboltOutlined />} onClick={() => probeNode(row.id)}>探测</Button> },
+                    { title: "发布状态", dataIndex: "status", render: (value: string, row) => <Tag color={row.published ? "success" : healthColor(value)}>{publicationLabel(value, row.published)}</Tag> },
+                    { title: "连通参考", dataIndex: "healthStatus", render: (value: string) => <Tag color={connectivityColor(value)}>{connectivityLabel(value)}</Tag> },
+                    { title: "探测信息", dataIndex: "lastError", ellipsis: true, render: (value?: string) => value || "—" },
+                    { title: "操作", fixed: "right", width: 120, render: (_, row) => <Button size="small" icon={<ThunderboltOutlined />} onClick={() => probeNode(row.id)}>重新探测</Button> },
                   ]}
                 />
               </Space>

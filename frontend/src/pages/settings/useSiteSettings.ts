@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { HttpUtil } from '@/utils';
+import { updateSiteBranding } from '@/hooks/useSiteBranding';
 
 export interface SiteSettings {
   siteName: string;
@@ -98,7 +99,13 @@ export function useSiteSettings() {
       if (!msg.success) throw new Error(msg.msg || '站点设置保存失败');
       return msg;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: SITE_SETTINGS_QUERY_KEY }),
+    onSuccess: (_message, next) => {
+      updateSiteBranding({
+        siteName: next.siteName.trim() || 'NOVA',
+        logoUrl: next.logoUrl.trim(),
+      });
+      return queryClient.invalidateQueries({ queryKey: SITE_SETTINGS_QUERY_KEY });
+    },
   });
 
   const logoMutation = useMutation({
@@ -109,7 +116,13 @@ export function useSiteSettings() {
       if (!msg.success) throw new Error(msg.msg || 'LOGO 保存失败');
       return logoUrl;
     },
-    onSuccess: (logoUrl) => setDraft((current) => ({ ...current, logoUrl })),
+    onSuccess: (logoUrl) => {
+      setDraft((current) => ({ ...current, logoUrl }));
+      updateSiteBranding({
+        siteName: draft.siteName.trim() || 'NOVA',
+        logoUrl,
+      });
+    },
   });
 
   const saveSiteSettings = useCallback(() => saveMutation.mutateAsync(draft), [draft, saveMutation]);

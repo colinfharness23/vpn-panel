@@ -6,6 +6,7 @@ import * as OTPAuth from 'otpauth';
 import { ClipboardManager } from '@/utils';
 import { activateOnKey } from '@/utils/a11y';
 import { TotpCodeSchema } from '@/schemas/login';
+import { useSiteBranding } from '@/hooks/useSiteBranding';
 import './TwoFactorModal.css';
 
 type Type = 'set' | 'confirm';
@@ -30,6 +31,7 @@ export default function TwoFactorModal({
   onOpenChange,
 }: TwoFactorModalProps) {
   const { t } = useTranslation();
+  const { siteName } = useSiteBranding();
   const [messageApi, messageContextHolder] = message.useMessage();
   const [enteredCode, setEnteredCode] = useState('');
   const [qrValue, setQrValue] = useState('');
@@ -43,7 +45,7 @@ export default function TwoFactorModal({
     setQrValue('');
     if (token) {
       const totp = new OTPAuth.TOTP({
-        issuer: 'NOVA',
+        issuer: siteName,
         label: 'Administrator',
         algorithm: 'SHA1',
         digits: 6,
@@ -54,7 +56,7 @@ export default function TwoFactorModal({
       setQrValue(totp.toString());
     }
      
-  }, [open, token]);
+  }, [open, siteName, token]);
 
   function close(success: boolean, code = '') {
     onConfirm(success, code);

@@ -365,7 +365,7 @@ func injectCommercialLines(cfg *xray.Config) {
 	err := db.Table(model.LineNode{}.TableName()+" AS nodes").
 		Select("nodes.*, inbounds.tag AS inbound_tag").
 		Joins("JOIN inbounds ON inbounds.id = nodes.inbound_id").
-		Where("nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL AND nodes.status IN ?", []string{"checking", "provisioning", "retry", "healthy", "offline"}).
+		Where("nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL AND nodes.status IN ?", []string{"checking", "provisioning", "retry", "ready", "healthy", "offline"}).
 		Order("nodes.created_at asc").Scan(&rows).Error
 	if err != nil || len(rows) == 0 {
 		if err != nil {
