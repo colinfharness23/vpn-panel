@@ -1,5 +1,5 @@
 import i18next from 'i18next';
-import { httpRequest } from '@/api/http-init';
+import { httpRequest, httpUpload } from '@/api/http-init';
 import type { HttpResponse } from '@/api/http-init';
 import { getMessage } from './messageBus';
 
@@ -24,6 +24,10 @@ export interface HttpOptions {
   signal?: AbortSignal;
   silent?: boolean;
   silentSuccess?: boolean;
+}
+
+export interface UploadOptions extends HttpOptions {
+  onProgress?: (loaded: number, total: number) => void;
 }
 
 export interface HttpModal {
@@ -94,6 +98,27 @@ export class HttpUtil {
       console.error('POST request failed:', error);
       const err = error as { response?: { data?: { msg?: string; message?: string } }; message?: string };
       const errorMsg = new Msg<T>(false, err.response?.data?.msg || err.response?.data?.message || err.message || 'Request failed');
+      if (!silent) this._handleMsg(errorMsg);
+      return errorMsg;
+    }
+  }
+
+  static async upload<T = unknown>(url: string, data: FormData, options: UploadOptions = {}): Promise<Msg<T>> {
+    const { silent, silentSuccess, onProgress, ...rest } = options;
+    try {
+      const resp = await httpUpload(url, data, { ...rest, onProgress });
+      const msg = this._respToMsg(resp) as Msg<T>;
+      if (!silent) this._handleMsg(msg, silentSuccess);
+      return msg;
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        const aborted = new Msg<T>(false, '上传已取消');
+        if (!silent) this._handleMsg(aborted);
+        return aborted;
+      }
+      console.error('Upload request failed:', error);
+      const err = error as { response?: { data?: { msg?: string; message?: string } }; message?: string };
+      const errorMsg = new Msg<T>(false, err.response?.data?.msg || err.response?.data?.message || err.message || '上传失败');
       if (!silent) this._handleMsg(errorMsg);
       return errorMsg;
     }

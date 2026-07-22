@@ -237,7 +237,7 @@ func TestLineSourceSSRFAndStableFingerprint(t *testing.T) {
 	}
 }
 
-func TestLineHealthThresholds(t *testing.T) {
+func TestLineHealthIsAdvisoryAndDoesNotUnpublish(t *testing.T) {
 	initCommercialTestDB(t)
 	db := database.GetDB()
 	inbound := model.Inbound{Remark: "health", Enable: true, Port: 26666, Protocol: model.VLESS, Settings: `{}`, StreamSettings: `{}`, Tag: "health-line-test"}
@@ -256,12 +256,22 @@ func TestLineHealthThresholds(t *testing.T) {
 		if err := db.First(&node, "id = ?", node.ID).Error; err != nil {
 			t.Fatal(err)
 		}
-		if index < 3 && node.Status != lineStatusHealthy {
-			t.Fatalf("node went offline after %d failures", index)
-		}
 	}
-	if node.Status != lineStatusOffline {
-		t.Fatalf("node status after three failures = %s", node.Status)
+	if node.Status != lineStatusHealthy || node.HealthStatus != lineHealthOffline {
+		t.Fatalf("probe result changed publication status: status=%s health=%s", node.Status, node.HealthStatus)
+	}
+	if err := db.First(&inbound, "id = ?", inbound.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !inbound.Enable {
+		t.Fatal("three failed probes disabled a published inbound")
+	}
+	views, err := NewLineService().Nodes("", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(views) != 1 || !views[0].Published {
+		t.Fatalf("published API state no longer reflects the enabled inbound: %+v", views)
 	}
 	for index := 4; index <= 5; index++ {
 		_ = worker.applyLineHealthEvent(eventbus.Event{Source: node.OutboundTag, Data: &eventbus.OutboundHealthData{Alive: true, LastTryTime: base + int64(index)}})
@@ -269,8 +279,38 @@ func TestLineHealthThresholds(t *testing.T) {
 	if err := db.First(&node, "id = ?", node.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if node.Status != lineStatusHealthy {
-		t.Fatalf("node did not recover after two passes: %s", node.Status)
+	if node.Status != lineStatusHealthy || node.HealthStatus != lineHealthHealthy {
+		t.Fatalf("probe health did not recover without changing publication: status=%s health=%s", node.Status, node.HealthStatus)
+	}
+}
+
+func TestRestoreManagedLinePublicationUpgradesLegacyOfflineState(t *testing.T) {
+	initCommercialTestDB(t)
+	db := database.GetDB()
+	group := model.LineGroup{ID: uuid.NewString(), Name: "Published", Active: true}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	inbound := model.Inbound{Remark: "legacy", Enable: true, Port: 26667, Protocol: model.VLESS, Settings: `{}`, StreamSettings: `{}`, Tag: "legacy-line-test"}
+	if err := db.Create(&inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	port := inbound.Port
+	node := model.LineNode{ID: uuid.NewString(), Fingerprint: strings.Repeat("d", 64), Remark: "legacy", Protocol: "trojan", OutboundTag: lineTagPrefix + "legacy", OutboundCiphertext: "encrypted", PublicPort: &port, InboundID: &inbound.Id, Status: lineStatusOffline, HealthStatus: lineHealthOffline}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.LineGroupNode{GroupID: group.ID, NodeID: node.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := NewWorker().restoreManagedLinePublication(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&node, "id = ?", node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if node.Status != lineStatusReady || node.HealthStatus != lineHealthOffline {
+		t.Fatalf("legacy state not upgraded correctly: status=%s health=%s", node.Status, node.HealthStatus)
 	}
 }
 

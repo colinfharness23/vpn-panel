@@ -46,6 +46,9 @@ func NewWorker() *Worker {
 }
 
 func (w *Worker) Run(ctx context.Context) {
+	if err := w.restoreManagedLinePublication(); err != nil {
+		logger.Warning("commercial line publication restore:", err)
+	}
 	fast := time.NewTicker(3 * time.Second)
 	slow := time.NewTicker(time.Minute)
 	defer fast.Stop()

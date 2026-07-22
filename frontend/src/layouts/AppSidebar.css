@@ -37,6 +37,33 @@
   line-height: 1.1;
 }
 
+.sidebar-site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sidebar-site-brand img,
+.drawer-brand-logo {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.sidebar-site-brand span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.drawer-brand-logo {
+  margin-right: 8px;
+}
+
 .sider-brand-collapsed .brand-block {
   flex: 0 0 auto;
 }

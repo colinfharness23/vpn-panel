@@ -32,6 +32,10 @@ export interface HttpRequestOptions {
   signal?: AbortSignal;
 }
 
+export interface HttpUploadOptions extends HttpRequestOptions {
+  onProgress?: (loaded: number, total: number) => void;
+}
+
 function readMetaToken(): string | null {
   return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || null;
 }
@@ -140,6 +144,91 @@ async function parseBody(res: Response): Promise<unknown> {
     }
   }
   return text;
+}
+
+function parseXHRBody(xhr: XMLHttpRequest): unknown {
+  const text = xhr.responseText || '';
+  if (text === '') return '';
+  const contentType = (xhr.getResponseHeader('content-type') || '').toLowerCase();
+  if (contentType.includes('application/json') || text[0] === '{' || text[0] === '[') {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  }
+  return text;
+}
+
+function uploadOnce(
+  url: string,
+  data: FormData,
+  options: HttpUploadOptions,
+  token: string | null,
+): Promise<HttpResponse> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', basePathPrefix + url, true);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    if (token) xhr.setRequestHeader('X-CSRF-Token', token);
+    const customHeaders = new Headers(options.headers);
+    customHeaders.forEach((value, key) => {
+      if (key.toLowerCase() !== 'content-type') xhr.setRequestHeader(key, value);
+    });
+    if (options.timeout && options.timeout > 0) xhr.timeout = options.timeout;
+
+    const abort = () => xhr.abort();
+    if (options.signal?.aborted) {
+      reject(new DOMException('Upload aborted', 'AbortError'));
+      return;
+    }
+    options.signal?.addEventListener('abort', abort, { once: true });
+
+    xhr.upload.onprogress = (event) => {
+      const total = event.lengthComputable ? event.total : data.get('package') instanceof File
+        ? (data.get('package') as File).size
+        : 0;
+      options.onProgress?.(event.loaded, total);
+    };
+    xhr.onerror = () => reject(new Error('网络中断，安装包上传失败'));
+    xhr.ontimeout = () => reject(new Error('安装包上传超时'));
+    xhr.onabort = () => reject(new DOMException('Upload aborted', 'AbortError'));
+    xhr.onload = () => {
+      options.signal?.removeEventListener('abort', abort);
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        statusText: xhr.statusText,
+        data: parseXHRBody(xhr),
+      });
+    };
+    xhr.onloadend = () => options.signal?.removeEventListener('abort', abort);
+    xhr.send(data);
+  });
+}
+
+export async function httpUpload(
+  url: string,
+  data: FormData,
+  options: HttpUploadOptions = {},
+): Promise<HttpResponse> {
+  let token = await ensureCsrfToken();
+  let response = await uploadOnce(url, data, options, token);
+  if (response.status === 403) {
+    csrfToken = null;
+    token = await ensureCsrfToken();
+    if (token) response = await uploadOnce(url, data, options, token);
+  }
+  if (response.status === 401) {
+    if (!sessionExpired) {
+      sessionExpired = true;
+      window.location.replace(window.X_UI_BASE_PATH || basePathPrefix || '/');
+    }
+    throw new HttpError(response.status, response.statusText, response.data);
+  }
+  if (!response.ok) throw new HttpError(response.status, response.statusText, response.data);
+  return response;
 }
 
 export async function httpRequest(

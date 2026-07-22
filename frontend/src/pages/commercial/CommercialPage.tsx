@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
@@ -13,6 +13,7 @@ import {
   Layout,
   Modal,
   Popconfirm,
+  Progress,
   Row,
   Select,
   Space,
@@ -366,6 +367,14 @@ type ApplicationFormValues = Pick<
   Application,
   "slug" | "name" | "platform" | "description" | "active" | "sortOrder"
 >;
+type ApplicationUploadState = {
+  status: "idle" | "uploading" | "success" | "error";
+  percent: number;
+  loaded: number;
+  total: number;
+  speedBps: number;
+  message: string;
+};
 type CouponFormValues = {
   code: string;
   kind: string;
@@ -400,6 +409,14 @@ function fileSize(bytes?: number): string {
   );
   return `${(bytes / 1024 ** unit).toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
+const emptyApplicationUpload = (): ApplicationUploadState => ({
+  status: "idle",
+  percent: 0,
+  loaded: 0,
+  total: 0,
+  speedBps: 0,
+  message: "",
+});
 function statusColor(status: string): string {
   if (
     [
@@ -521,6 +538,9 @@ export default function CommercialPage() {
   const [applicationPackageFiles, setApplicationPackageFiles] = useState<
     UploadFile[]
   >([]);
+  const [applicationSaving, setApplicationSaving] = useState(false);
+  const [applicationUpload, setApplicationUpload] = useState<ApplicationUploadState>(emptyApplicationUpload);
+  const applicationUploadAbort = useRef<AbortController | null>(null);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null | undefined>(
     undefined,
   );
@@ -1103,8 +1123,11 @@ export default function CommercialPage() {
   };
 
   const openApplication = (row?: Application) => {
+    applicationUploadAbort.current?.abort();
+    applicationUploadAbort.current = null;
     setEditingApplication(row || null);
     setApplicationPackageFiles([]);
+    setApplicationUpload(emptyApplicationUpload());
     applicationForm.setFieldsValue(
       row || {
         slug: "",
@@ -1123,30 +1146,83 @@ export default function CommercialPage() {
       messageApi.error("请选择要提供给用户下载的安装包");
       return;
     }
-    const result = await HttpUtil.post<Application>(
-      "/panel/api/commercial/applications",
-      { ...values, id: editingApplication?.id || "" },
-      jsonOptions(),
-    );
-    if (!result.success || !result.obj) return;
-    if (packageFile) {
-      const formData = new FormData();
-      formData.append("package", packageFile, packageFile.name);
-      const uploadResult = await HttpUtil.post<Application>(
-        `/panel/api/commercial/applications/${result.obj.id}/package`,
-        formData,
-      );
-      if (!uploadResult.success) {
-        setEditingApplication(result.obj);
-        return;
-      }
+    if (packageFile && packageFile.size > 1024 ** 3) {
+      messageApi.error("安装包不能超过 1 GB");
+      return;
     }
-    messageApi.success(
-      editingApplication ? "客户端与安装包已更新" : "客户端与安装包已创建",
-    );
-    setApplicationPackageFiles([]);
-    setEditingApplication(undefined);
-    loadTab("content");
+    setApplicationSaving(true);
+    try {
+      const result = await HttpUtil.post<Application>(
+        "/panel/api/commercial/applications",
+        { ...values, id: editingApplication?.id || "" },
+        jsonOptions(),
+      );
+      if (!result.success || !result.obj) return;
+      if (packageFile) {
+        const formData = new FormData();
+        formData.append("package", packageFile, packageFile.name);
+        const controller = new AbortController();
+        applicationUploadAbort.current = controller;
+        const startedAt = Date.now();
+        setApplicationUpload({
+          status: "uploading",
+          percent: 0,
+          loaded: 0,
+          total: packageFile.size,
+          speedBps: 0,
+          message: "正在上传，请不要关闭此窗口",
+        });
+        const uploadResult = await HttpUtil.upload<Application>(
+          `/panel/api/commercial/applications/${result.obj.id}/package`,
+          formData,
+          {
+            signal: controller.signal,
+            timeout: 60 * 60 * 1000,
+            silent: true,
+            onProgress: (loaded, total) => {
+              const elapsedSeconds = Math.max((Date.now() - startedAt) / 1000, 0.25);
+              setApplicationUpload({
+                status: "uploading",
+                percent: total > 0 ? Math.min(99, Math.round((loaded / total) * 100)) : 0,
+                loaded,
+                total: total || packageFile.size,
+                speedBps: loaded / elapsedSeconds,
+                message: "正在上传，请不要关闭此窗口",
+              });
+            },
+          },
+        );
+        applicationUploadAbort.current = null;
+        if (!uploadResult.success || !uploadResult.obj) {
+          setEditingApplication(result.obj);
+          setApplicationUpload((current) => ({
+            ...current,
+            status: "error",
+            message: uploadResult.msg || "安装包上传失败，请重试",
+          }));
+          messageApi.error(uploadResult.msg || "安装包上传失败，请重试");
+          await loadTab("content");
+          return;
+        }
+        setApplicationUpload({
+          status: "success",
+          percent: 100,
+          loaded: uploadResult.obj.packageSize || packageFile.size,
+          total: uploadResult.obj.packageSize || packageFile.size,
+          speedBps: 0,
+          message: `上传完成，SHA-256：${uploadResult.obj.packageSha256 || "已计算"}`,
+        });
+      }
+      messageApi.success(
+        editingApplication ? "客户端与安装包已更新" : "客户端与安装包已创建",
+      );
+      setApplicationPackageFiles([]);
+      setEditingApplication(undefined);
+      await loadTab("content");
+    } finally {
+      applicationUploadAbort.current = null;
+      setApplicationSaving(false);
+    }
   };
 
   const openTicket = async (ticket: Ticket) => {
@@ -2140,7 +2216,7 @@ export default function CommercialPage() {
               <Form.Item
                 name="lineGroupIds"
                 label="套餐线路组"
-                extra="用户自动获得已选线路组内的全部健康节点。"
+                extra="用户自动获得已选线路组内的全部已发布节点；连通探测仅作诊断，不影响订阅下发。"
               >
                 <Select
                   mode="multiple"
@@ -2425,22 +2501,14 @@ export default function CommercialPage() {
                   <Form.Item
                     name={["titles", locale]}
                     label={`${locale} 标题`}
-                    rules={
-                      locale === "zh-CN" || locale === "en-US"
-                        ? [{ required: true }]
-                        : undefined
-                    }
+                    rules={locale === "zh-CN" ? [{ required: true }] : undefined}
                   >
                     <Input />
                   </Form.Item>
                   <Form.Item
                     name={["contents", locale]}
                     label={`${locale} 正文`}
-                    rules={
-                      locale === "zh-CN" || locale === "en-US"
-                        ? [{ required: true }]
-                        : undefined
-                    }
+                    rules={locale === "zh-CN" ? [{ required: true }] : undefined}
                   >
                     <Input.TextArea rows={7} />
                   </Form.Item>
@@ -2456,9 +2524,13 @@ export default function CommercialPage() {
         title={editingApplication ? "编辑客户端下载" : "新建客户端下载"}
         okText="保存"
         onOk={saveApplication}
+        confirmLoading={applicationSaving}
         onCancel={() => {
+          applicationUploadAbort.current?.abort();
+          applicationUploadAbort.current = null;
           setEditingApplication(undefined);
           setApplicationPackageFiles([]);
+          setApplicationUpload(emptyApplicationUpload());
         }}
         width={680}
         destroyOnHidden
@@ -2512,7 +2584,10 @@ export default function CommercialPage() {
               beforeUpload={() => false}
               fileList={applicationPackageFiles}
               onChange={({ fileList }) =>
-                setApplicationPackageFiles(fileList.slice(-1))
+                {
+                  setApplicationPackageFiles(fileList.slice(-1));
+                  setApplicationUpload(emptyApplicationUpload());
+                }
               }
             >
               <Button icon={<UploadOutlined />}>
@@ -2528,6 +2603,30 @@ export default function CommercialPage() {
                   {fileSize(editingApplication.packageSize)}）
                 </Text>
               )}
+            {applicationUpload.status !== "idle" ? (
+              <div className="application-upload-progress" role="status" aria-live="polite">
+                <Progress
+                  percent={applicationUpload.percent}
+                  status={applicationUpload.status === "error" ? "exception" : applicationUpload.status === "success" ? "success" : "active"}
+                />
+                <Space wrap>
+                  <Text type={applicationUpload.status === "error" ? "danger" : "secondary"}>
+                    {applicationUpload.message}
+                  </Text>
+                  {applicationUpload.status === "uploading" ? (
+                    <>
+                      <Text type="secondary">
+                        {fileSize(applicationUpload.loaded)} / {fileSize(applicationUpload.total)}
+                        {applicationUpload.speedBps > 0 ? ` · ${fileSize(applicationUpload.speedBps)}/s` : ""}
+                      </Text>
+                      <Button size="small" danger onClick={() => applicationUploadAbort.current?.abort()}>
+                        取消上传
+                      </Button>
+                    </>
+                  ) : null}
+                </Space>
+              </div>
+            ) : null}
           </Form.Item>
           <Form.Item name="description" label="用户端说明">
             <Input.TextArea rows={3} />

@@ -36,6 +36,7 @@ import {
 import { HttpUtil } from '@/utils';
 import { formatPanelVersion } from '@/lib/panel-version';
 import { useTheme } from '@/hooks/useTheme';
+import { useSiteBranding } from '@/hooks/useSiteBranding';
 import './AppSidebar.css';
 
 const SIDEBAR_COLLAPSED_KEY = 'isSidebarCollapsed';
@@ -43,7 +44,6 @@ const REPO_URL = 'https://github.com/colinfharness23/vpn-panel';
 const LOGOUT_KEY = '__logout__';
 const PORTAL_KEY = '__portal__';
 const INVITATION_COMMISSION_KEY = '__invitation_commission__';
-const PANEL_BRAND = 'NOVA';
 
 type SidebarSection = 'xui' | 'system' | 'utility';
 type IconName = 'dashboard' | 'inbound' | 'team' | 'groups' | 'setting' | 'tool' | 'cluster' | 'hosts' | 'logout' | 'website' | 'apidocs' | 'outbound' | 'routing' | 'commercial' | 'migration' | 'siteSettings' | 'securitySettings' | 'subscriptionSettings' | 'invitationSettings' | 'emailSettings' | 'telegramSettings' | 'subscriptionTemplate' | 'subscriptionFormats';
@@ -105,6 +105,7 @@ export default function AppSidebar() {
   const { isDark } = useTheme();
   const navigate = useNavigate();
   const { pathname, hash } = useLocation();
+  const { siteName, logoUrl } = useSiteBranding();
 
   const [collapsed, setCollapsed] = useState<boolean>(() => readCollapsed());
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -181,7 +182,12 @@ export default function AppSidebar() {
     {
       type: 'group',
       key: '__xui_group__',
-      label: collapsed ? null : PANEL_BRAND,
+      label: collapsed ? null : (
+        <span className="sidebar-site-brand">
+          {logoUrl ? <img src={logoUrl} alt="" /> : null}
+          <span>{siteName}</span>
+        </span>
+      ),
       children: toMenuItems(xuiItems),
     },
     {
@@ -190,13 +196,13 @@ export default function AppSidebar() {
       label: collapsed ? null : t('menu.systemManagement'),
       children: toMenuItems(systemItems),
     },
-  ], [collapsed, systemItems, t, toMenuItems, xuiItems]);
+  ], [collapsed, logoUrl, siteName, systemItems, t, toMenuItems, xuiItems]);
 
   const drawerNavItems = useMemo<MenuProps['items']>(() => [
     {
       type: 'group',
       key: '__drawer_xui_group__',
-      label: PANEL_BRAND,
+      label: siteName,
       children: toMenuItems(xuiItems),
     },
     {
@@ -205,7 +211,7 @@ export default function AppSidebar() {
       label: t('menu.systemManagement'),
       children: toMenuItems(systemItems),
     },
-  ], [systemItems, t, toMenuItems, xuiItems]);
+  ], [siteName, systemItems, t, toMenuItems, xuiItems]);
 
   const openLink = useCallback(async (key: string) => {
     if (key === PORTAL_KEY) {
@@ -286,7 +292,8 @@ export default function AppSidebar() {
       >
         <div className="drawer-header">
           <div className="brand-block">
-            <span className="drawer-brand">{PANEL_BRAND}</span>
+            {logoUrl ? <img className="drawer-brand-logo" src={logoUrl} alt="" /> : null}
+            <span className="drawer-brand">{siteName}</span>
           </div>
           <div className="drawer-header-actions">
             <button

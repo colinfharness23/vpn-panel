@@ -60,11 +60,11 @@ func (s *OrderService) Catalog(publicOnly bool) ([]PlanCatalogItem, error) {
 					return nil, errors.New("套餐入站配置无效")
 				}
 			}
-			healthy, err := planHasHealthyLineDB(s.db, plan.ID, manualInboundIDs)
+			published, err := planHasPublishedLineDB(s.db, plan.ID, manualInboundIDs)
 			if err != nil {
 				return nil, err
 			}
-			if !healthy {
+			if !published {
 				continue
 			}
 		}
@@ -123,7 +123,7 @@ func (s *OrderService) CreateFor(customerID, priceID, orderKind, entitlementID, 
 				return errors.New("套餐入站配置无效")
 			}
 		}
-		hasLine, err := planHasHealthyLineDB(tx, plan.ID, manualInboundIDs)
+		hasLine, err := planHasPublishedLineDB(tx, plan.ID, manualInboundIDs)
 		if err != nil {
 			return err
 		}

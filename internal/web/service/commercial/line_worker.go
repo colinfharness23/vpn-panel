@@ -70,35 +70,42 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 	if err != nil {
 		return err
 	}
-	results, err := (&outboundservice.OutboundService{}).TestOutbounds("["+plain+"]", "", "", "real")
-	if err != nil {
-		return err
-	}
-	if len(results) != 1 || !results[0].Success {
-		message := "线路真实出站探测失败"
-		if len(results) == 1 && strings.TrimSpace(results[0].Error) != "" {
-			message = results[0].Error
-		}
-		if node.InboundID != nil {
-			_ = w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", false).Error
-		}
-		_ = w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{"status": lineStatusOffline, "health_status": lineHealthOffline, "consecutive_fails": 1, "consecutive_passes": 0, "provision_locked_at": nil, "next_provision_at": nil, "last_error": message}).Error
-		_ = (&service.XrayService{}).RestartXray(false)
-		return nil
-	}
-	now := time.Now().UTC()
 	if node.InboundID == nil {
 		return errors.New("托管入站创建后未返回标识")
 	}
+	now := time.Now().UTC()
 	if err := w.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", true).Error; err != nil {
 			return err
 		}
-		return tx.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{"status": lineStatusHealthy, "health_status": lineHealthHealthy, "latency_ms": results[0].Delay, "consecutive_fails": 0, "consecutive_passes": 1, "last_probe_at": now, "provision_locked_at": nil, "next_provision_at": nil, "last_error": ""}).Error
+		return tx.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{
+			"status": lineStatusReady, "health_status": lineHealthChecking, "provision_locked_at": nil,
+			"next_provision_at": nil, "last_error": "",
+		}).Error
 	}); err != nil {
 		return err
 	}
-	return (&service.XrayService{}).RestartXray(false)
+	if err := (&service.XrayService{}).RestartXray(false); err != nil {
+		return err
+	}
+
+	results, err := (&outboundservice.OutboundService{}).TestOutbounds("["+plain+"]", "", "", "real")
+	if err != nil || len(results) != 1 || !results[0].Success {
+		message := "线路真实出站探测失败"
+		if err != nil {
+			message = err.Error()
+		} else if len(results) == 1 && strings.TrimSpace(results[0].Error) != "" {
+			message = results[0].Error
+		}
+		return w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{
+			"status": lineStatusReady, "health_status": lineHealthOffline, "consecutive_fails": 1,
+			"consecutive_passes": 0, "last_probe_at": now, "last_error": message,
+		}).Error
+	}
+	return w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{
+		"status": lineStatusReady, "health_status": lineHealthHealthy, "latency_ms": results[0].Delay,
+		"consecutive_fails": 0, "consecutive_passes": 1, "last_probe_at": now, "last_error": "",
+	}).Error
 }
 
 func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
@@ -302,6 +309,43 @@ func (w *Worker) recoverLineLocks() {
 	_ = w.db.Model(&model.LineSource{}).Where("status = ? AND locked_at < ?", "refreshing", cutoff).Updates(map[string]any{"status": "error", "locked_at": nil, "next_refresh_at": now, "last_error": "recovered stale line refresh lock"}).Error
 }
 
+// restoreManagedLinePublication upgrades the previous health-gated behavior.
+// A failed external probe is monitoring information only: syntactically valid,
+// provisioned lines remain published until an administrator unassigns them or
+// their source enters the stale retention flow.
+func (w *Worker) restoreManagedLinePublication() error {
+	var nodes []model.LineNode
+	err := w.db.Model(&model.LineNode{}).
+		Where("missing_since IS NULL AND inbound_id IS NOT NULL").
+		Where("EXISTS (SELECT 1 FROM "+model.LineGroupNode{}.TableName()+" memberships JOIN "+model.LineGroup{}.TableName()+" groups ON groups.id = memberships.group_id WHERE memberships.node_id = "+model.LineNode{}.TableName()+".id AND groups.active = ?)", true).
+		Find(&nodes).Error
+	if err != nil {
+		return err
+	}
+	restart := false
+	for i := range nodes {
+		var inbound model.Inbound
+		if err := w.db.Select("id", "enable").First(&inbound, "id = ?", *nodes[i].InboundID).Error; err != nil {
+			continue
+		}
+		if !inbound.Enable {
+			if err := w.db.Model(&model.Inbound{}).Where("id = ?", inbound.Id).Update("enable", true).Error; err != nil {
+				return err
+			}
+			restart = true
+		}
+		if nodes[i].Status == lineStatusHealthy || nodes[i].Status == lineStatusOffline {
+			if err := w.db.Model(&model.LineNode{}).Where("id = ?", nodes[i].ID).Update("status", lineStatusReady).Error; err != nil {
+				return err
+			}
+		}
+	}
+	if restart {
+		return (&service.XrayService{}).RestartXray(false)
+	}
+	return nil
+}
+
 func (w *Worker) cleanupStaleLine() error {
 	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour)
 	var node model.LineNode
@@ -339,43 +383,25 @@ func (w *Worker) applyLineHealthEvent(event eventbus.Event) error {
 		return nil
 	}
 	updates := map[string]any{"last_probe_at": probeAt, "latency_ms": data.Delay}
-	restart := false
 	if data.Alive {
 		passes := node.ConsecutivePasses + 1
 		updates["consecutive_passes"] = passes
 		updates["consecutive_fails"] = 0
 		updates["last_error"] = ""
-		if node.Status == lineStatusOffline && passes >= 2 {
-			updates["status"] = lineStatusHealthy
+		if node.HealthStatus != lineHealthHealthy && (node.HealthStatus != lineHealthOffline || passes >= 2) {
 			updates["health_status"] = lineHealthHealthy
-			if node.InboundID != nil {
-				if err := w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", true).Error; err != nil {
-					return err
-				}
-				restart = true
-			}
 		}
 	} else {
 		fails := node.ConsecutiveFails + 1
 		updates["consecutive_fails"] = fails
 		updates["consecutive_passes"] = 0
 		updates["last_error"] = data.Error
-		if node.Status == lineStatusHealthy && fails >= 3 {
-			updates["status"] = lineStatusOffline
+		if node.HealthStatus != lineHealthOffline && fails >= 3 {
 			updates["health_status"] = lineHealthOffline
-			if node.InboundID != nil {
-				if err := w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", false).Error; err != nil {
-					return err
-				}
-				restart = true
-			}
 		}
 	}
 	if err := w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(updates).Error; err != nil {
 		return err
-	}
-	if restart {
-		return (&service.XrayService{}).RestartXray(false)
 	}
 	return nil
 }
@@ -431,7 +457,7 @@ func (w *Worker) reconcileActivePlanClients(planID string) error {
 	return nil
 }
 
-func planHasHealthyLineDB(db *gorm.DB, planID string, manualInboundIDs []int) (bool, error) {
+func planHasPublishedLineDB(db *gorm.DB, planID string, manualInboundIDs []int) (bool, error) {
 	if len(manualInboundIDs) > 0 {
 		var count int64
 		if err := db.Model(&model.Inbound{}).Where("id IN ? AND enable = ?", manualInboundIDs, true).Count(&count).Error; err != nil {
@@ -446,12 +472,13 @@ func planHasHealthyLineDB(db *gorm.DB, planID string, manualInboundIDs []int) (b
 		Joins("JOIN "+model.LineGroup{}.TableName()+" AS groups ON groups.id = plan_groups.group_id AND groups.active = true").
 		Joins("JOIN "+model.LineGroupNode{}.TableName()+" AS group_nodes ON group_nodes.group_id = plan_groups.group_id").
 		Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = group_nodes.node_id").
-		Where("plan_groups.plan_id = ? AND nodes.status = ? AND nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL", planID, lineStatusHealthy).
+		Joins("JOIN inbounds ON inbounds.id = nodes.inbound_id").
+		Where("plan_groups.plan_id = ? AND nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL AND inbounds.enable = ?", planID, true).
 		Count(&count).Error
 	return count > 0, err
 }
 
-func hasHealthyLineForGroupsDB(db *gorm.DB, groupIDs []string, manualInboundIDs []int) (bool, error) {
+func hasPublishedLineForGroupsDB(db *gorm.DB, groupIDs []string, manualInboundIDs []int) (bool, error) {
 	if len(manualInboundIDs) > 0 {
 		var count int64
 		if err := db.Model(&model.Inbound{}).Where("id IN ? AND enable = ?", manualInboundIDs, true).Count(&count).Error; err != nil {
@@ -468,7 +495,8 @@ func hasHealthyLineForGroupsDB(db *gorm.DB, groupIDs []string, manualInboundIDs 
 	err := db.Table(model.LineGroupNode{}.TableName()+" AS group_nodes").
 		Joins("JOIN "+model.LineGroup{}.TableName()+" AS groups ON groups.id = group_nodes.group_id AND groups.active = true").
 		Joins("JOIN "+model.LineNode{}.TableName()+" AS nodes ON nodes.id = group_nodes.node_id").
-		Where("group_nodes.group_id IN ? AND nodes.status = ? AND nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL", groupIDs, lineStatusHealthy).
+		Joins("JOIN inbounds ON inbounds.id = nodes.inbound_id").
+		Where("group_nodes.group_id IN ? AND nodes.missing_since IS NULL AND nodes.inbound_id IS NOT NULL AND inbounds.enable = ?", groupIDs, true).
 		Count(&count).Error
 	return count > 0, err
 }
