@@ -169,7 +169,7 @@ func waitManagedLineListenerForProtocol(ctx context.Context, protocol model.Prot
 	}
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		listener, err := net.ListenPacket("udp", net.JoinHostPort("0.0.0.0", fmt.Sprint(port)))
+		listener, err := (&net.ListenConfig{}).ListenPacket(ctx, "udp", net.JoinHostPort("0.0.0.0", fmt.Sprint(port)))
 		if err != nil {
 			return nil
 		}

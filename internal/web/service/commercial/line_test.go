@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/entity"
 	webservice "github.com/mhsanaei/3x-ui/v3/internal/web/service"
-	"gorm.io/gorm"
 )
 
 func TestWaitManagedLineListenerRequiresRealTCPListener(t *testing.T) {

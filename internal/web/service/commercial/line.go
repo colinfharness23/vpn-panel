@@ -691,7 +691,7 @@ func lineSourcePayloadError(body []byte) error {
 	}
 	status := strings.ToLower(strings.TrimSpace(fmt.Sprint(payload["status"])))
 	success, hasSuccess := payload["success"].(bool)
-	if status != "fail" && status != "failed" && status != "error" && !(hasSuccess && !success) {
+	if status != "fail" && status != "failed" && status != "error" && (!hasSuccess || success) {
 		return nil
 	}
 	message := strings.ToLower(lineSourceJSONMessage(body))
