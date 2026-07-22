@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -52,6 +53,7 @@ func (a *CommercialAdminController) initRouter(g *gin.RouterGroup) {
 	g.POST("/line-imports/preview", a.require("lines.read"), a.previewLineImport)
 	g.POST("/line-imports/commit", a.require("lines.manage"), a.commitLineImport)
 	g.GET("/line-nodes", a.require("lines.read"), a.lineNodes)
+	g.PUT("/line-nodes/:id", a.require("lines.manage"), a.updateLineNode)
 	g.PUT("/line-nodes/groups", a.require("lines.manage"), a.assignLineNodeGroups)
 	g.POST("/line-nodes/:id/probe", a.require("lines.manage"), a.probeLineNode)
 	g.GET("/line-groups", a.require("lines.read"), a.lineGroups)
@@ -299,6 +301,19 @@ func (a *CommercialAdminController) lineNodes(c *gin.Context) {
 	commercialJSON(c, rows, err)
 }
 
+func (a *CommercialAdminController) updateLineNode(c *gin.Context) {
+	var request entity.CommercialLineNodeUpdateRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		commercialJSON(c, nil, errors.New("请求格式无效"))
+		return
+	}
+	row, err := a.lineService.UpdateNode(c.Param("id"), request)
+	if err == nil && row != nil {
+		a.audit(c, "line_node.update", "line_node", row.ID, gin.H{"publicName": row.PublicName})
+	}
+	commercialJSON(c, row, err)
+}
+
 func (a *CommercialAdminController) assignLineNodeGroups(c *gin.Context) {
 	var request entity.CommercialLineNodeGroupsRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -406,24 +421,38 @@ func (a *CommercialAdminController) saveApplication(c *gin.Context) {
 }
 
 func (a *CommercialAdminController) uploadApplicationPackage(c *gin.Context) {
+	// The public HTTP server keeps strict 30-second defaults. Large authenticated
+	// package uploads are the only request bodies allowed to run longer.
+	extendRequestConnectionDeadline(c.Request.Context(), 2*time.Hour)
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, commercial.MaxClientPackageSize+(1<<20))
-	header, err := c.FormFile("package")
+	reader, err := c.Request.MultipartReader()
 	if err != nil {
 		commercialJSON(c, nil, errors.New("请选择要上传的安装包"))
 		return
 	}
-	file, err := header.Open()
-	if err != nil {
-		commercialJSON(c, nil, errors.New("读取安装包失败"))
+	for {
+		part, nextErr := reader.NextPart()
+		if errors.Is(nextErr, io.EOF) {
+			commercialJSON(c, nil, errors.New("请选择要上传的安装包"))
+			return
+		}
+		if nextErr != nil {
+			commercialJSON(c, nil, errors.New("读取安装包失败"))
+			return
+		}
+		if part.FormName() != "package" || strings.TrimSpace(part.FileName()) == "" {
+			_ = part.Close()
+			continue
+		}
+
+		row, saveErr := a.service.SaveApplicationPackage(c.Param("id"), part, part.FileName(), part.Header.Get("Content-Type"))
+		_ = part.Close()
+		if saveErr == nil {
+			a.audit(c, "application.package.upload", "client_application", c.Param("id"), gin.H{"fileName": row.PackageFileName, "size": row.PackageSize})
+		}
+		commercialJSON(c, row, saveErr)
 		return
 	}
-	defer file.Close()
-
-	row, err := a.service.SaveApplicationPackage(c.Param("id"), file, header)
-	if err == nil {
-		a.audit(c, "application.package.upload", "client_application", c.Param("id"), gin.H{"fileName": row.PackageFileName, "size": row.PackageSize})
-	}
-	commercialJSON(c, row, err)
 }
 
 func (a *CommercialAdminController) tickets(c *gin.Context) {

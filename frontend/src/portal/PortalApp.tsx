@@ -1205,10 +1205,12 @@ function PortalContent() {
 
   const logout = async () => {
     try {
-      await portalRequest("/api/v1/passport/logout", {
-        method: "POST",
-        body: "{}",
-      });
+      if (!preview) {
+        await portalRequest("/api/v1/passport/logout", {
+          method: "POST",
+          body: "{}",
+        });
+      }
     } finally {
       setDashboard(null);
       setBootstrap((current) => ({
@@ -1732,7 +1734,7 @@ function PortalContent() {
             if (dashboard) setAuthOpen(false);
           }}
           closable={Boolean(dashboard)}
-          maskClosable={Boolean(dashboard)}
+          mask={{ closable: Boolean(dashboard) }}
           keyboard={Boolean(dashboard)}
           footer={null}
           width={450}

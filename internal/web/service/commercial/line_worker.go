@@ -15,6 +15,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
+	linkutil "github.com/mhsanaei/3x-ui/v3/internal/util/link"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	outboundservice "github.com/mhsanaei/3x-ui/v3/internal/web/service/outbound"
 
@@ -70,6 +71,22 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 	if err != nil {
 		return err
 	}
+	secureOutbound, changed, err := linkutil.SecureTLSOutbound(ctx, plain, node.TLSAutoPinned)
+	if err != nil {
+		return err
+	}
+	if changed {
+		protected, protectErr := service.ProtectCredential(secureOutbound)
+		if protectErr != nil {
+			return protectErr
+		}
+		if updateErr := w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{"outbound_ciphertext": protected, "tls_auto_pinned": true}).Error; updateErr != nil {
+			return updateErr
+		}
+		node.OutboundCiphertext = protected
+		node.TLSAutoPinned = true
+		plain = secureOutbound
+	}
 	if node.InboundID == nil {
 		return errors.New("托管入站创建后未返回标识")
 	}
@@ -86,6 +103,14 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 		return err
 	}
 	if err := (&service.XrayService{}).RestartXray(false); err != nil {
+		return err
+	}
+	if node.PublicPort == nil {
+		return errors.New("托管线路没有公网端口")
+	}
+	if err := waitManagedLineListener(ctx, *node.PublicPort, 8*time.Second); err != nil {
+		_ = w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", false).Error
+		_ = (&service.XrayService{}).RestartXray(true)
 		return err
 	}
 
@@ -106,6 +131,31 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 		"status": lineStatusReady, "health_status": lineHealthHealthy, "latency_ms": results[0].Delay,
 		"consecutive_fails": 0, "consecutive_passes": 1, "last_probe_at": now, "last_error": "",
 	}).Error
+}
+
+func waitManagedLineListener(ctx context.Context, port int, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	consecutive := 0
+	for time.Now().Before(deadline) {
+		dialCtx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
+		conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", net.JoinHostPort("127.0.0.1", fmt.Sprint(port)))
+		cancel()
+		if err == nil {
+			_ = conn.Close()
+			consecutive++
+			if consecutive >= 2 {
+				return nil
+			}
+		} else {
+			consecutive = 0
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return fmt.Errorf("托管线路端口 %d 未成功监听，已停止发布并等待自动重试", port)
 }
 
 func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
@@ -144,12 +194,12 @@ func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
 		},
 	})
 	sniffing := `{"enabled":true,"destOverride":["http","tls","quic"],"metadataOnly":false,"routeOnly":false}`
-	stableID := strings.ToUpper(strings.ReplaceAll(node.ID, "-", ""))
-	if len(stableID) > 6 {
-		stableID = stableID[:6]
-	}
 	siteName := NewConfigStore().GetDefault("site.name", "NOVA")
-	inbound := &model.Inbound{UserId: 1, Remark: fmt.Sprintf("%s 线路 %s", siteName, stableID), SubSortIndex: 1, Enable: false, Listen: "", Port: port, Protocol: model.VLESS, Settings: string(settings), StreamSettings: string(stream), Tag: "commercial-in-" + strings.ReplaceAll(node.ID, "-", "")[:20], Sniffing: sniffing, ShareAddrStrategy: "custom", ShareAddr: parsed.Hostname()}
+	publicName := strings.TrimSpace(node.PublicName)
+	if publicName == "" {
+		publicName = strings.ToUpper(strings.TrimSpace(node.Protocol)) + " 线路"
+	}
+	inbound := &model.Inbound{UserId: 1, Remark: fmt.Sprintf("%s · %s", siteName, publicName), SubSortIndex: 1, Enable: false, Listen: "0.0.0.0", Port: port, Protocol: model.VLESS, Settings: string(settings), StreamSettings: string(stream), Tag: "commercial-in-" + strings.ReplaceAll(node.ID, "-", "")[:20], Sniffing: sniffing, ShareAddrStrategy: "custom", ShareAddr: parsed.Hostname()}
 	created, _, err := w.inbounds.AddInbound(inbound)
 	if err != nil {
 		return err
@@ -324,6 +374,26 @@ func (w *Worker) restoreManagedLinePublication() error {
 	}
 	restart := false
 	for i := range nodes {
+		// Nodes imported before certificate pinning was introduced may still
+		// contain allowInsecure=true. Queue every such node once at startup so
+		// existing installations repair themselves without a delete/re-import.
+		if !nodes[i].TLSAutoPinned {
+			plain, decryptErr := service.UnprotectCredential(nodes[i].OutboundCiphertext)
+			if decryptErr == nil {
+				var outbound map[string]any
+				if json.Unmarshal([]byte(plain), &outbound) == nil && outboundNeedsTLSAutoPin(outbound) {
+					if err := w.db.Model(&model.LineNode{}).Where("id = ?", nodes[i].ID).Updates(map[string]any{
+						"tls_auto_pinned": true, "status": lineStatusChecking, "health_status": lineHealthChecking,
+						"provision_locked_at": nil, "next_provision_at": nil, "last_error": "",
+					}).Error; err != nil {
+						return err
+					}
+					nodes[i].TLSAutoPinned = true
+					nodes[i].Status = lineStatusChecking
+					nodes[i].HealthStatus = lineHealthChecking
+				}
+			}
+		}
 		var inbound model.Inbound
 		if err := w.db.Select("id", "enable").First(&inbound, "id = ?", *nodes[i].InboundID).Error; err != nil {
 			continue

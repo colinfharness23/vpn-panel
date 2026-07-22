@@ -95,7 +95,7 @@ func TestAuthenticatedApplicationDownloadSupportsRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer file.Close()
-	if _, err := commercial.NewAdminService().SaveApplicationPackage(application.ID, file, header); err != nil {
+	if _, err := commercial.NewAdminService().SaveApplicationPackage(application.ID, file, header.Filename, header.Header.Get("Content-Type")); err != nil {
 		t.Fatal(err)
 	}
 	customer := model.Customer{ID: uuid.NewString(), Email: "range@example.com", PasswordHash: "unused", Status: "active", InviteCode: "RANGE001"}

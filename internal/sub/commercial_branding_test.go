@@ -36,7 +36,7 @@ func TestManagedLineSubscriptionHidesImportedProviderRemark(t *testing.T) {
 	lineID := "abcd1234-1111-4222-8333-abcdefabcdef"
 	if err := db.Create(&model.LineNode{
 		ID: lineID, Fingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		Remark: "A机场 香港 IPLC", Protocol: "vless", OutboundTag: "commercial-line-test",
+		Remark: "A机场 香港 IPLC", PublicName: "香港 IPLC", Protocol: "vless", OutboundTag: "commercial-line-test",
 		OutboundCiphertext: "encrypted", InboundID: &inbound.Id, Status: "healthy", HealthStatus: "healthy",
 	}).Error; err != nil {
 		t.Fatalf("seed line: %v", err)
@@ -49,7 +49,7 @@ func TestManagedLineSubscriptionHidesImportedProviderRemark(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("got %d inbounds, want 1", len(rows))
 	}
-	if got, want := rows[0].Remark, "Pheero VPN 线路 ABCD12"; got != want {
+	if got, want := rows[0].Remark, "Pheero VPN · 香港 IPLC"; got != want {
 		t.Fatalf("managed line remark = %q, want %q", got, want)
 	}
 
@@ -57,14 +57,14 @@ func TestManagedLineSubscriptionHidesImportedProviderRemark(t *testing.T) {
 	if err != nil || len(links) != 1 {
 		t.Fatalf("render managed subscription: links=%v err=%v", links, err)
 	}
-	if strings.Contains(links[0], "A机场") || strings.Contains(links[0], "IPLC") {
+	if strings.Contains(links[0], "A机场") {
 		t.Fatalf("rendered subscription leaked upstream branding: %q", links[0])
 	}
 	parsed, err := url.Parse(links[0])
 	if err != nil {
 		t.Fatalf("parse managed subscription link: %v", err)
 	}
-	if got, wantPrefix := parsed.Fragment, "Pheero VPN 线路 ABCD12"; !strings.HasPrefix(got, wantPrefix) {
+	if got, wantPrefix := parsed.Fragment, "Pheero VPN · 香港 IPLC"; !strings.HasPrefix(got, wantPrefix) {
 		t.Fatalf("rendered node name = %q, want prefix %q", got, wantPrefix)
 	}
 }

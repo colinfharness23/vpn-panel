@@ -80,6 +80,9 @@ func seedCommercialDefaults() error {
 				return err
 			}
 		}
+		if err := repairWelcomeNoticeEnglish(tx); err != nil {
+			return err
+		}
 
 		var user model.User
 		if err := tx.Order("id asc").First(&user).Error; err == nil {
@@ -372,4 +375,57 @@ func seedCommercialArticles(tx *gorm.DB) error {
 func localizedText(zh, en string) string {
 	value, _ := json.Marshal(map[string]string{"zh-CN": zh, "en-US": en})
 	return string(value)
+}
+
+// A lazy-tab bug in the commercial editor used to erase every locale except
+// the currently visible one. Repair only the recognizable built-in welcome
+// notice and never overwrite an administrator-authored English translation.
+func repairWelcomeNoticeEnglish(tx *gorm.DB) error {
+	var row model.Notice
+	if err := tx.Where("slug = ?", "welcome").First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	var titles, contents map[string]string
+	if json.Unmarshal([]byte(row.TitleI18n), &titles) != nil || json.Unmarshal([]byte(row.ContentI18n), &contents) != nil {
+		return nil
+	}
+	zh := strings.TrimSpace(contents["zh-CN"])
+	if !strings.Contains(zh, "选购前可先查看套餐说明与使用文档") || !strings.Contains(zh, "重要信息会集中显示在账户中") {
+		return nil
+	}
+	changed := false
+	if strings.TrimSpace(titles["en-US"]) == "" {
+		titles["en-US"] = "Service notice"
+		changed = true
+	}
+	if strings.TrimSpace(contents["en-US"]) == "" {
+		siteName := "NOVA"
+		var setting model.CommercialSetting
+		if err := tx.Where("key = ?", "site.name").First(&setting).Error; err == nil && strings.TrimSpace(setting.Value) != "" {
+			siteName = strings.TrimSpace(setting.Value)
+		} else if rest, ok := strings.CutPrefix(zh, "欢迎使用 "); ok {
+			if inferred, _, found := strings.Cut(rest, "。"); found && strings.TrimSpace(inferred) != "" {
+				siteName = strings.TrimSpace(inferred)
+			}
+		}
+		contents["en-US"] = fmt.Sprintf("Welcome to %s. Review the plan details and documentation before purchase; important setup information will stay available in your account.", siteName)
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	titleJSON, err := json.Marshal(titles)
+	if err != nil {
+		return err
+	}
+	contentJSON, err := json.Marshal(contents)
+	if err != nil {
+		return err
+	}
+	return tx.Model(&model.Notice{}).Where("id = ?", row.ID).Updates(map[string]any{
+		"title_i18n": string(titleJSON), "content_i18n": string(contentJSON),
+	}).Error
 }

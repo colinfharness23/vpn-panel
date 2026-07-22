@@ -1103,7 +1103,12 @@ export default function CommercialPage() {
   };
   const saveContent = async () => {
     if (!contentEditor) return;
-    const values = await contentForm.validateFields();
+    await contentForm.validateFields();
+    // Tabs mount lazily. validateFields() only returns fields whose panes have
+    // mounted, which previously erased every untouched locale when an admin
+    // edited only zh-CN. Read the complete form store after validation so all
+    // existing translations survive a save.
+    const values = contentForm.getFieldsValue(true);
     const endpoint = contentEditor.kind === "notice" ? "notices" : "articles";
     const result = await HttpUtil.post(
       `/panel/api/commercial/${endpoint}`,

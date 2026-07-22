@@ -206,9 +206,11 @@ type LineNode struct {
 	ID                 string     `json:"id" gorm:"primaryKey;size:36"`
 	Fingerprint        string     `json:"fingerprint" gorm:"uniqueIndex;size:64;not null"`
 	Remark             string     `json:"remark" gorm:"size:160;not null"`
+	PublicName         string     `json:"publicName" gorm:"size:160;not null;default:''"`
 	Protocol           string     `json:"protocol" gorm:"size:24;index;not null"`
 	OutboundTag        string     `json:"outboundTag" gorm:"uniqueIndex;size:96;not null"`
 	OutboundCiphertext string     `json:"-" gorm:"type:text;not null"`
+	TLSAutoPinned      bool       `json:"-" gorm:"not null;default:false"`
 	PublicPort         *int       `json:"publicPort,omitempty" gorm:"uniqueIndex"`
 	InboundID          *int       `json:"inboundId,omitempty" gorm:"uniqueIndex;index"`
 	Status             string     `json:"status" gorm:"size:24;index:idx_commercial_line_health,priority:1;not null"`

@@ -29,7 +29,7 @@ func TestApplicationPackageUploadAndDownload(t *testing.T) {
 
 	content := []byte("fake-apk-content")
 	file, header := newMultipartTestFile(t, "v2rayNG.apk", content)
-	saved, err := NewAdminService().SaveApplicationPackage(row.ID, file, header)
+	saved, err := NewAdminService().SaveApplicationPackage(row.ID, file, header.Filename, header.Header.Get("Content-Type"))
 	if err != nil {
 		t.Fatalf("SaveApplicationPackage: %v", err)
 	}

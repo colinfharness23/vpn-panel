@@ -202,6 +202,9 @@ func parseVmess(link string) (*ParseResult, error) {
 		tls := stream["tlsSettings"].(map[string]any)
 		tls["serverName"] = getString(j, "sni", "")
 		tls["fingerprint"] = getString(j, "fp", "")
+		if boolValue(j["allowInsecure"]) || boolValue(j["insecure"]) {
+			tls["allowInsecure"] = true
+		}
 		if alpn := getString(j, "alpn", ""); alpn != "" {
 			tls["alpn"] = splitComma(alpn)
 		}
@@ -454,6 +457,7 @@ func parseHysteria2(link string) (*ParseResult, error) {
 			"echConfigList":        params.Get("ech"),
 			"verifyPeerCertByName": "",
 			"pinnedPeerCertSha256": params.Get("pinSHA256"),
+			"allowInsecure":        queryBool(params, "allowInsecure", "insecure"),
 		},
 	}
 	applyFinalMask(stream, params)
@@ -657,6 +661,9 @@ func applySecurity(stream map[string]any, p url.Values) {
 		}
 		tls["echConfigList"] = p.Get("ech")
 		tls["pinnedPeerCertSha256"] = p.Get("pcs")
+		if queryBool(p, "allowInsecure", "insecure") {
+			tls["allowInsecure"] = true
+		}
 	case "reality":
 		re := stream["realitySettings"].(map[string]any)
 		re["serverName"] = p.Get("sni")
@@ -771,6 +778,30 @@ func firstParam(p url.Values, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func queryBool(values url.Values, keys ...string) bool {
+	for _, key := range keys {
+		if boolValue(values.Get(key)) {
+			return true
+		}
+	}
+	return false
+}
+
+func boolValue(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case float64:
+		return typed != 0
+	case string:
+		switch strings.ToLower(strings.TrimSpace(typed)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	}
+	return false
 }
 
 func canonicalQuery(p url.Values) string {

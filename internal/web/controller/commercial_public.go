@@ -141,6 +141,9 @@ func (a *CommercialPublicController) authConfig(c *gin.Context) {
 }
 
 func (a *CommercialPublicController) downloadApplication(c *gin.Context) {
+	// Large authenticated packages may legitimately take longer than the
+	// server's ordinary 30-second write deadline.
+	extendRequestConnectionDeadline(c.Request.Context(), 2*time.Hour)
 	row, file, info, err := a.portal.OpenApplicationPackage(c.Param("id"))
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusNotFound, entity.Msg{Success: false, Msg: err.Error()})

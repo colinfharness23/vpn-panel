@@ -3,6 +3,7 @@ package commercial
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,25 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/entity"
+	webservice "github.com/mhsanaei/3x-ui/v3/internal/web/service"
 )
+
+func TestWaitManagedLineListenerRequiresRealTCPListener(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := waitManagedLineListener(context.Background(), port, 2*time.Second); err != nil {
+		t.Fatalf("open listener rejected: %v", err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitManagedLineListener(context.Background(), port, 600*time.Millisecond); err == nil {
+		t.Fatal("closed listener was accepted")
+	}
+}
 
 const lineTestLinks = `vmess://eyJ2IjoiMiIsInBzIjoidGVzdCIsImFkZCI6IjEuMi4zLjQiLCJwb3J0Ijo0NDMsImlkIjoidXVpZCIsImFpZCI6IjAiLCJuZXQiOiJ3cyIsInR5cGUiOiIiLCJob3N0IjoiZXguY29tIiwicGF0aCI6Ii8iLCJ0bHMiOiJ0bHMifQ==
 vless://uuid@1.2.3.5:443?type=ws&security=tls&path=/&host=ex.com#VLESS
@@ -77,6 +96,21 @@ func TestLineImportSixProtocolsDeduplicatesAndEncrypts(t *testing.T) {
 		if node.OutboundCiphertext == "" || strings.Contains(node.OutboundCiphertext, "secret") {
 			t.Fatalf("node %s outbound was not encrypted", node.ID)
 		}
+		if strings.TrimSpace(node.PublicName) == "" {
+			t.Fatalf("node %s has no user-facing alias", node.ID)
+		}
+	}
+	updated, err := service.UpdateNode(nodes[0].ID, entity.CommercialLineNodeUpdateRequest{PublicName: "香港高速线路"})
+	if err != nil || updated.PublicName != "香港高速线路" {
+		t.Fatalf("update public alias: row=%+v err=%v", updated, err)
+	}
+}
+
+func TestManualLineDefaultAliasDoesNotLeakShareLinkRemark(t *testing.T) {
+	source := model.LineSource{Kind: lineSourceManual, Name: "Manual import"}
+	entry := preparedLineEntry{Protocol: "trojan", Remark: "A机场 香港 IPLC"}
+	if got, want := defaultPublicLineName(source, entry, 2), "TROJAN 线路 #3"; got != want {
+		t.Fatalf("manual default alias = %q, want %q", got, want)
 	}
 }
 
@@ -311,6 +345,42 @@ func TestRestoreManagedLinePublicationUpgradesLegacyOfflineState(t *testing.T) {
 	}
 	if node.Status != lineStatusReady || node.HealthStatus != lineHealthOffline {
 		t.Fatalf("legacy state not upgraded correctly: status=%s health=%s", node.Status, node.HealthStatus)
+	}
+}
+
+func TestRestoreManagedLinePublicationQueuesLegacyInsecureTLSNode(t *testing.T) {
+	initCommercialTestDB(t)
+	db := database.GetDB()
+	group := model.LineGroup{ID: uuid.NewString(), Name: "Legacy TLS", Active: true}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	inbound := model.Inbound{Remark: "legacy-tls", Enable: true, Port: 26668, Protocol: model.VLESS, Settings: `{}`, StreamSettings: `{}`, Tag: "legacy-tls-line-test"}
+	if err := db.Create(&inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	outbound := `{"protocol":"trojan","settings":{"servers":[{"address":"example.com","port":443}]},"streamSettings":{"security":"tls","tlsSettings":{"serverName":"example.com","allowInsecure":true}}}`
+	protected, err := webservice.ProtectCredential(outbound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := inbound.Port
+	node := model.LineNode{ID: uuid.NewString(), Fingerprint: strings.Repeat("e", 64), Remark: "legacy-tls", Protocol: "trojan", OutboundTag: lineTagPrefix + "legacy-tls", OutboundCiphertext: protected, PublicPort: &port, InboundID: &inbound.Id, Status: lineStatusOffline, HealthStatus: lineHealthOffline}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.LineGroupNode{GroupID: group.ID, NodeID: node.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewWorker().restoreManagedLinePublication(); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&node, "id = ?", node.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !node.TLSAutoPinned || node.Status != lineStatusChecking || node.HealthStatus != lineHealthChecking {
+		t.Fatalf("legacy insecure TLS node was not queued for certificate pinning: %+v", node)
 	}
 }
 

@@ -64,6 +64,7 @@ interface LineNode {
   id: string;
   fingerprint: string;
   remark: string;
+  publicName: string;
   protocol: string;
   publicPort?: number;
   status: string;
@@ -128,6 +129,10 @@ function healthColor(status: string): string {
   return "default";
 }
 
+interface NodeAliasValues {
+  publicName: string;
+}
+
 function publicationLabel(status: string, published: boolean): string {
   if (published) return "已发布";
   if (["checking", "provisioning", "retry"].includes(status)) return "配置中";
@@ -182,9 +187,11 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
   const [busy, setBusy] = useState(false);
   const [editingSourceId, setEditingSourceId] = useState("");
   const [editingGroupId, setEditingGroupId] = useState("");
+  const [editingNode, setEditingNode] = useState<LineNode | null>(null);
   const [urlForm] = Form.useForm<URLSourceValues>();
   const [groupForm] = Form.useForm<GroupValues>();
   const [manualForm] = Form.useForm<ManualImportValues>();
+  const [nodeAliasForm] = Form.useForm<NodeAliasValues>();
   const loadGeneration = useRef(0);
 
   const load = useCallback(async () => {
@@ -326,6 +333,27 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
     await load();
   };
 
+  const openNodeAlias = (node: LineNode) => {
+    setEditingNode(node);
+    nodeAliasForm.setFieldsValue({
+      publicName: node.publicName || node.remark || "",
+    });
+  };
+
+  const saveNodeAlias = async () => {
+    if (!editingNode) return;
+    const values = await nodeAliasForm.validateFields();
+    const result = await HttpUtil.put<LineNode>(
+      `/panel/api/commercial/line-nodes/${editingNode.id}`,
+      values,
+      jsonOptions(),
+    );
+    if (!result.success) return;
+    messageApi.success("用户线路别名已更新，订阅刷新后生效");
+    setEditingNode(null);
+    await load();
+  };
+
   const confirmDelete = (
     title: string,
     description: string,
@@ -438,11 +466,33 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
     <Space orientation="vertical" size="large" style={{ width: "100%" }}>
       {contextHolder}
       {modalHolder}
+      <Modal
+        open={Boolean(editingNode)}
+        title="修改用户看到的线路别名"
+        okText="保存"
+        onOk={saveNodeAlias}
+        onCancel={() => setEditingNode(null)}
+        destroyOnHidden
+      >
+        <Form form={nodeAliasForm} layout="vertical">
+          <Form.Item
+            name="publicName"
+            label="用户线路别名"
+            extra="订阅中会自动加上本站名称；上游机场名称和原始凭证不会展示给用户。"
+            rules={[
+              { required: true, message: "请输入用户线路别名" },
+              { max: 160, message: "线路别名不能超过 160 个字符" },
+            ]}
+          >
+            <Input placeholder="例如：香港高速线路" />
+          </Form.Item>
+        </Form>
+      </Modal>
       <Alert
-        type="warning"
+        type="info"
         showIcon
-        title="必须在服务器防火墙和云安全组放行 TCP 20000-59999"
-        description="导入协议会转换为本站 VLESS Reality 线路并立即发布；上游连通探测只用于诊断，不会再把节点移出用户订阅。若客户端延迟为 -1，优先检查这段 TCP 端口范围是否已同时放行。"
+        title="所有导入节点都会包装为本站 VLESS Reality 线路"
+        description="用户订阅只显示本站名称与可编辑别名，不会暴露上游凭证。系统会在发布前确认本机托管端口已经真实监听；上游连通探测仅作诊断，不会因为一次探测失败就把线路移出用户订阅。"
       />
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}>
@@ -602,15 +652,15 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                   pagination={{ pageSize: 50 }}
                   rowSelection={{ selectedRowKeys: selectedNodeIds, onChange: (keys) => setSelectedNodeIds(keys.map(String)) }}
                   columns={[
-                    { title: "节点", dataIndex: "remark", width: 220 },
-                    { title: "协议", dataIndex: "protocol", render: (value: string) => <Tag>{value}</Tag> },
+                    { title: "用户线路别名", dataIndex: "publicName", width: 220, render: (value: string, row) => value || row.remark || "—" },
+                    { title: "上游协议", dataIndex: "protocol", render: (value: string) => <Tag>{value === "hysteria" ? "hysteria2" : value}</Tag> },
                     { title: "公网端口", dataIndex: "publicPort", render: (value?: number) => value || "待分配" },
                     { title: "延迟", dataIndex: "latencyMs", render: (value: number) => value > 0 ? `${value} ms` : "—" },
                     { title: "线路组", dataIndex: "groupIds", render: (values: string[]) => arrayOrEmpty(values).map((id) => <Tag key={id}>{groupById.get(id)?.name || id.slice(0, 8)}</Tag>) },
                     { title: "发布状态", dataIndex: "status", render: (value: string, row) => <Tag color={row.published ? "success" : healthColor(value)}>{publicationLabel(value, row.published)}</Tag> },
                     { title: "连通参考", dataIndex: "healthStatus", render: (value: string) => <Tag color={connectivityColor(value)}>{connectivityLabel(value)}</Tag> },
                     { title: "探测信息", dataIndex: "lastError", ellipsis: true, render: (value?: string) => value || "—" },
-                    { title: "操作", fixed: "right", width: 120, render: (_, row) => <Button size="small" icon={<ThunderboltOutlined />} onClick={() => probeNode(row.id)}>重新探测</Button> },
+                    { title: "操作", fixed: "right", width: 190, render: (_, row) => <Space size={4}><Button size="small" icon={<EditOutlined />} onClick={() => openNodeAlias(row)}>改别名</Button><Button size="small" icon={<ThunderboltOutlined />} onClick={() => probeNode(row.id)}>重新探测</Button></Space> },
                   ]}
                 />
               </Space>

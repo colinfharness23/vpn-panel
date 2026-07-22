@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -67,22 +66,16 @@ func storedClientPackagePath(storedName string) (string, error) {
 	return filepath.Join(clientPackageDir(), storedName), nil
 }
 
-func (s *AdminService) SaveApplicationPackage(id string, source multipart.File, header *multipart.FileHeader) (*model.ClientApplication, error) {
-	if source == nil || header == nil {
+func (s *AdminService) SaveApplicationPackage(id string, source io.Reader, rawFileName, contentType string) (*model.ClientApplication, error) {
+	if source == nil {
 		return nil, errors.New("请选择要上传的安装包")
-	}
-	if header.Size <= 0 {
-		return nil, errors.New("安装包不能为空")
-	}
-	if header.Size > MaxClientPackageSize {
-		return nil, errors.New("安装包不能超过 1 GB")
 	}
 
 	var row model.ClientApplication
 	if err := s.db.First(&row, "id = ?", strings.TrimSpace(id)).Error; err != nil {
 		return nil, errors.New("客户端入口不存在")
 	}
-	fileName, suffix, err := normalizedClientPackageName(header.Filename)
+	fileName, suffix, err := normalizedClientPackageName(rawFileName)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +132,7 @@ func (s *AdminService) SaveApplicationPackage(id string, source multipart.File, 
 		"package_stored_name":  storedName,
 		"package_size":         written,
 		"package_sha256":       hex.EncodeToString(hash.Sum(nil)),
-		"package_content_type": strings.TrimSpace(header.Header.Get("Content-Type")),
+		"package_content_type": strings.TrimSpace(contentType),
 	}
 	result := s.db.Model(&model.ClientApplication{}).Where("id = ?", row.ID).Updates(updates)
 	if result.Error != nil || result.RowsAffected == 0 {

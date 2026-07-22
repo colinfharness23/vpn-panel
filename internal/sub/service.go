@@ -506,7 +506,7 @@ func (s *SubService) applyManagedLineBranding(inbounds []*model.Inbound) error {
 		return errors.New("subscription database is unavailable")
 	}
 	var nodes []model.LineNode
-	if err := db.Select("id", "inbound_id").Where("inbound_id IN ?", ids).Find(&nodes).Error; err != nil {
+	if err := db.Select("id", "inbound_id", "public_name", "protocol").Where("inbound_id IN ?", ids).Find(&nodes).Error; err != nil {
 		return fmt.Errorf("load managed line branding: %w", err)
 	}
 	if len(nodes) == 0 {
@@ -528,14 +528,15 @@ func (s *SubService) applyManagedLineBranding(inbounds []*model.Inbound) error {
 		if inbound == nil {
 			continue
 		}
-		stableID := strings.ToUpper(strings.ReplaceAll(node.ID, "-", ""))
-		if len(stableID) > 6 {
-			stableID = stableID[:6]
+		publicName := strings.TrimSpace(node.PublicName)
+		if publicName == "" {
+			protocol := strings.ToUpper(strings.TrimSpace(node.Protocol))
+			if protocol == "HYSTERIA" {
+				protocol = "Hysteria2"
+			}
+			publicName = protocol + " 线路"
 		}
-		if stableID == "" {
-			stableID = "NODE"
-		}
-		inbound.Remark = fmt.Sprintf("%s 线路 %s", siteName, stableID)
+		inbound.Remark = fmt.Sprintf("%s · %s", siteName, publicName)
 	}
 	return nil
 }

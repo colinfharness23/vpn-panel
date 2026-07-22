@@ -219,6 +219,26 @@ func (s *LineService) Nodes(sourceID, groupID, status string) ([]LineNodeView, e
 	return views, nil
 }
 
+func (s *LineService) UpdateNode(id string, request entity.CommercialLineNodeUpdateRequest) (*model.LineNode, error) {
+	id = strings.TrimSpace(id)
+	publicName := strings.TrimSpace(request.PublicName)
+	if id == "" || publicName == "" || len([]rune(publicName)) > 160 || strings.ContainsAny(publicName, "\r\n\x00") {
+		return nil, errors.New("线路别名无效")
+	}
+	result := s.db.Model(&model.LineNode{}).Where("id = ?", id).Update("public_name", publicName)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, errors.New("线路节点不存在")
+	}
+	var row model.LineNode
+	if err := s.db.First(&row, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &row, nil
+}
+
 func (s *LineService) SaveGroup(request entity.CommercialLineGroupRequest) (*model.LineGroup, error) {
 	request.Name = strings.TrimSpace(request.Name)
 	request.Description = strings.TrimSpace(request.Description)
@@ -698,6 +718,7 @@ type preparedLineEntry struct {
 	Protocol           string
 	OutboundTag        string
 	OutboundCiphertext string
+	TLSAutoPinned      bool
 }
 
 func prepareLineEntries(entries []LineImportEntry) ([]preparedLineEntry, error) {
@@ -718,27 +739,41 @@ func prepareLineEntries(entries []LineImportEntry) ([]preparedLineEntry, error) 
 			return nil, err
 		}
 		outboundTag, _ := entry.outbound["tag"].(string)
-		prepared = append(prepared, preparedLineEntry{Fingerprint: entry.Fingerprint, Remark: entry.Remark, Protocol: entry.Protocol, OutboundTag: outboundTag, OutboundCiphertext: protected})
+		prepared = append(prepared, preparedLineEntry{Fingerprint: entry.Fingerprint, Remark: entry.Remark, Protocol: entry.Protocol, OutboundTag: outboundTag, OutboundCiphertext: protected, TLSAutoPinned: outboundNeedsTLSAutoPin(entry.outbound)})
 	}
 	return prepared, nil
 }
 
 func (s *LineService) upsertPreparedLines(tx *gorm.DB, sourceID string, entries []preparedLineEntry, groupIDs []string, now time.Time) error {
 	groupIDs = uniqueStrings(groupIDs)
+	var source model.LineSource
+	if err := tx.Select("id", "name", "kind").First(&source, "id = ?", sourceID).Error; err != nil {
+		return err
+	}
 	seenNodeIDs := make([]string, 0, len(entries))
 	for i := range entries {
 		entry := entries[i]
-		candidate := model.LineNode{ID: uuid.NewString(), Fingerprint: entry.Fingerprint, Remark: entry.Remark, Protocol: entry.Protocol, OutboundTag: entry.OutboundTag, OutboundCiphertext: entry.OutboundCiphertext, Status: lineStatusUnassigned, HealthStatus: lineHealthUnchecked, LastSeenAt: &now}
+		publicName := defaultPublicLineName(source, entry, i)
+		candidate := model.LineNode{ID: uuid.NewString(), Fingerprint: entry.Fingerprint, Remark: entry.Remark, PublicName: publicName, Protocol: entry.Protocol, OutboundTag: entry.OutboundTag, OutboundCiphertext: entry.OutboundCiphertext, TLSAutoPinned: entry.TLSAutoPinned, Status: lineStatusUnassigned, HealthStatus: lineHealthUnchecked, LastSeenAt: &now}
 		if len(groupIDs) > 0 {
 			candidate.Status = lineStatusChecking
 			candidate.HealthStatus = lineHealthChecking
 		}
-		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "fingerprint"}}, DoUpdates: clause.Assignments(map[string]any{"remark": entry.Remark, "protocol": entry.Protocol, "outbound_ciphertext": entry.OutboundCiphertext, "last_seen_at": now, "missing_since": nil})}).Create(&candidate).Error; err != nil {
+		// The fingerprint already covers every connection parameter. Preserve an
+		// existing encrypted outbound so a refresh cannot overwrite the exact
+		// certificate pin learned during first provisioning with insecure=1.
+		if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "fingerprint"}}, DoUpdates: clause.Assignments(map[string]any{"remark": entry.Remark, "protocol": entry.Protocol, "last_seen_at": now, "missing_since": nil})}).Create(&candidate).Error; err != nil {
 			return err
 		}
 		var node model.LineNode
 		if err := tx.Where("fingerprint = ?", entry.Fingerprint).First(&node).Error; err != nil {
 			return err
+		}
+		if strings.TrimSpace(node.PublicName) == "" {
+			if err := tx.Model(&node).Update("public_name", publicName).Error; err != nil {
+				return err
+			}
+			node.PublicName = publicName
 		}
 		if len(groupIDs) > 0 && (node.Status == lineStatusUnassigned || node.Status == lineStatusStale || node.InboundID == nil) {
 			if err := tx.Model(&node).Updates(map[string]any{"status": lineStatusChecking, "health_status": lineHealthChecking, "provision_locked_at": nil, "next_provision_at": nil}).Error; err != nil {
@@ -762,6 +797,40 @@ func (s *LineService) upsertPreparedLines(tx *gorm.DB, sourceID string, entries 
 		missingQuery = missingQuery.Where("node_id NOT IN ?", seenNodeIDs)
 	}
 	return missingQuery.Update("missing_since", now).Error
+}
+
+func outboundNeedsTLSAutoPin(outbound map[string]any) bool {
+	stream, _ := outbound["streamSettings"].(map[string]any)
+	tlsSettings, _ := stream["tlsSettings"].(map[string]any)
+	value, _ := tlsSettings["allowInsecure"].(bool)
+	return value
+}
+
+func defaultPublicLineName(source model.LineSource, entry preparedLineEntry, index int) string {
+	protocol := strings.ToUpper(strings.TrimSpace(entry.Protocol))
+	if protocol == "HYSTERIA" {
+		protocol = "Hysteria2"
+	}
+	if source.Kind == lineSourceManual {
+		// A share-link fragment is controlled by the upstream provider and may
+		// contain its brand. Never publish it by default. The administrator can
+		// replace this neutral, stable label from the node-pool alias editor.
+		return truncateRunes(fmt.Sprintf("%s 线路 #%d", protocol, index+1), 160)
+	}
+	name := strings.TrimSpace(source.Name)
+	if name == "" {
+		name = "订阅线路"
+	}
+	return truncateRunes(fmt.Sprintf("%s · %s #%d", name, protocol, index+1), 160)
+}
+
+func truncateRunes(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit])
 }
 
 func (s *LineService) normalizeAssignmentStates(nodeIDs []string) error {

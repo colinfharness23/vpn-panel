@@ -1297,6 +1297,28 @@ textarea {
   scrollbar-gutter: stable;
 }
 
+/* Ant Design draws a browser focus rectangle around the tab label after a
+   mouse click. The active ink bar already identifies the selected auth mode;
+   keep keyboard focus visible as a second underline instead of a small box. */
+.portal-auth-modal .ant-tabs-tab-btn:focus,
+.portal-auth-modal .ant-tabs-tab-btn:focus-visible,
+.portal-auth-modal
+  .ant-tabs
+  .ant-tabs-tab.ant-tabs-tab-focus
+  .ant-tabs-tab-btn:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.portal-auth-modal
+  .ant-tabs
+  .ant-tabs-tab.ant-tabs-tab-focus
+  .ant-tabs-tab-btn:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+
 .payment-method-list {
   display: grid;
   gap: 12px;

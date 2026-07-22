@@ -489,7 +489,10 @@ server {
     }
     location ~ ^/$NOVA_ADMIN_PATH/panel/api/commercial/applications/[^/]+/package\$ {
         client_max_body_size 1025m;
+        client_body_timeout 3600s;
         proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_next_upstream off;
         proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;

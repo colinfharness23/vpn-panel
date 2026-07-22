@@ -222,6 +222,10 @@ type CommercialLineNodeGroupsRequest struct {
 	GroupIDs []string `json:"groupIds" validate:"max=100"`
 }
 
+type CommercialLineNodeUpdateRequest struct {
+	PublicName string `json:"publicName" validate:"required,max=160"`
+}
+
 type CommercialPlanPriceRequest struct {
 	ID            string `json:"id"`
 	PlanID        string `json:"planId" validate:"required"`

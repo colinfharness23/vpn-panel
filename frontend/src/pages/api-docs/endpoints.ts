@@ -337,6 +337,11 @@ export const sections: readonly Section[] = [
       },
       {
         method: "PUT",
+        path: "/panel/api/commercial/line-nodes/:id",
+        summary: "Update the customer-facing alias of an imported line node.",
+      },
+      {
+        method: "PUT",
         path: "/panel/api/commercial/line-nodes/groups",
         summary: "Replace group assignments for selected line nodes.",
       },

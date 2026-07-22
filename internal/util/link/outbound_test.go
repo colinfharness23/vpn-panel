@@ -239,6 +239,29 @@ func TestParseSubscriptionBody_Base64(t *testing.T) {
 	}
 }
 
+func TestParseTLSLinksPreserveAllowInsecure(t *testing.T) {
+	cases := []struct {
+		name string
+		link string
+	}{
+		{name: "trojan insecure", link: "trojan://password@example.com:443?security=tls&type=ws&allowInsecure=1#node"},
+		{name: "hysteria2 insecure", link: "hysteria2://password@example.com:443?sni=example.com&insecure=true#node"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := ParseLink(tc.link)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream := result.Outbound["streamSettings"].(map[string]any)
+			tlsSettings := stream["tlsSettings"].(map[string]any)
+			if tlsSettings["allowInsecure"] != true {
+				t.Fatalf("allowInsecure = %#v, want true", tlsSettings["allowInsecure"])
+			}
+		})
+	}
+}
+
 func TestSlugAndSuggest(t *testing.T) {
 	if SlugRemark("Hello World!") != "hello-world" {
 		t.Errorf("slug failed")

@@ -6830,6 +6830,47 @@
         }
       }
     },
+    "/panel/api/commercial/line-nodes/{id}": {
+      "put": {
+        "tags": [
+          "Commercial administration"
+        ],
+        "summary": "Update the customer-facing alias of an imported line node.",
+        "operationId": "put_panel_api_commercial_line_nodes_id",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/panel/api/commercial/line-nodes/groups": {
       "put": {
         "tags": [
