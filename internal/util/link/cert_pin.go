@@ -143,7 +143,9 @@ func fetchLineCertificatePin(ctx context.Context, request lineCertPinRequest) (s
 		if err != nil {
 			return "", err
 		}
-		defer connection.CloseWithError(0, "certificate pin captured")
+		defer func() {
+			_ = connection.CloseWithError(0, "certificate pin captured")
+		}()
 		return leafCertificatePin(connection.ConnectionState().TLS.PeerCertificates)
 	}
 

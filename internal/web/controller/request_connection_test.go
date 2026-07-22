@@ -25,6 +25,7 @@ func (c *deadlineRecordingConn) SetReadDeadline(value time.Time) error {
 	c.readDeadline = value
 	return nil
 }
+
 func (c *deadlineRecordingConn) SetWriteDeadline(value time.Time) error {
 	c.writeDeadline = value
 	return nil
