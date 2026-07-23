@@ -36,6 +36,44 @@ func TestWaitManagedLineListenerRequiresRealTCPListener(t *testing.T) {
 	}
 }
 
+func TestManagedAnyTLSWithoutSubscribersRemainsEnabled(t *testing.T) {
+	initCommercialTestDB(t)
+	db := database.GetDB()
+	inbound := &model.Inbound{
+		UserId: 1, Enable: true, Port: 34567, Protocol: model.AnyTLS,
+		Settings: `{"clients":[]}`, StreamSettings: `{"network":"tcp","security":"tls"}`,
+	}
+	if err := db.Create(inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	needsListener, err := managedAnyTLSNeedsListener(db, inbound.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if needsListener {
+		t.Fatal("subscriber-free managed AnyTLS line must not wait for a listener")
+	}
+	if !inbound.Enable {
+		t.Fatal("subscriber-free managed AnyTLS inbound must remain enabled for the first client")
+	}
+
+	client := &model.ClientRecord{Email: "anytls@example.com", Password: "secret", Enable: true}
+	if err := db.Create(client).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ClientInbound{ClientId: client.Id, InboundId: inbound.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+	needsListener, err = managedAnyTLSNeedsListener(db, inbound.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !needsListener {
+		t.Fatal("managed AnyTLS line with an enabled subscriber must verify its listener")
+	}
+}
+
 func TestManagedLineInboundPreservesImportedProtocolAndAliasInputs(t *testing.T) {
 	initCommercialTestDB(t)
 	if err := NewConfigStore().SetManyProtected(map[string]string{
@@ -177,6 +215,64 @@ func TestManagedLineUpgradeMovesVLESSBehindStandard443WebSocket(t *testing.T) {
 	}
 	if binding.FlowOverride != "" {
 		t.Fatalf("VLESS WebSocket retained incompatible flow %q", binding.FlowOverride)
+	}
+	if node.ProvisionVersion != managedLineProvisionVersion {
+		t.Fatalf("provision version = %d", node.ProvisionVersion)
+	}
+}
+
+func TestManagedLineUpgradeRepairsEmptyAnyTLSStreamSettings(t *testing.T) {
+	initCommercialTestDB(t)
+	if err := NewConfigStore().SetManyProtected(map[string]string{
+		"site.url": "https://vpn.pheero.com",
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certFile := dir + "/fullchain.pem"
+	keyFile := dir + "/privkey.pem"
+	if err := os.WriteFile(certFile, []byte("certificate"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, []byte("private key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XUI_LINE_CERT_FILE", certFile)
+	t.Setenv("XUI_LINE_KEY_FILE", keyFile)
+
+	db := database.GetDB()
+	inbound := model.Inbound{
+		UserId: 1, Remark: "AnyTLS", Enable: true, Listen: "0.0.0.0", Port: 34567,
+		Protocol: model.AnyTLS, Settings: `{"clients":[]}`, StreamSettings: "",
+		Tag: "commercial-in-anytls-upgrade",
+	}
+	if err := db.Create(&inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	port := inbound.Port
+	node := model.LineNode{
+		ID: uuid.NewString(), Fingerprint: strings.Repeat("b", 64), Remark: "provider",
+		PublicName: "AnyTLS", Protocol: "anytls", OutboundTag: lineTagPrefix + "anytls-upgrade",
+		OutboundCiphertext: "encrypted", PublicPort: &port, InboundID: &inbound.Id,
+		Status: lineStatusReady, HealthStatus: lineHealthHealthy, ProvisionVersion: managedLineProvisionVersion - 1,
+	}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewWorker().ensureManagedLineInbound(&node); err != nil {
+		t.Fatal(err)
+	}
+	var got model.Inbound
+	if err := db.First(&got, inbound.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	var stream map[string]any
+	if err := json.Unmarshal([]byte(got.StreamSettings), &stream); err != nil {
+		t.Fatalf("repaired AnyTLS stream settings are invalid: %v; raw=%q", err, got.StreamSettings)
+	}
+	if stream["network"] != "tcp" || stream["security"] != "tls" {
+		t.Fatalf("repaired AnyTLS stream = %#v", stream)
 	}
 	if node.ProvisionVersion != managedLineProvisionVersion {
 		t.Fatalf("provision version = %d", node.ProvisionVersion)

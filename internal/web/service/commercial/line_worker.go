@@ -32,7 +32,7 @@ import (
 const lineStatusRetry = "retry"
 
 const (
-	managedLineProvisionVersion = 5
+	managedLineProvisionVersion = 6
 	managedLinePublicPort       = 443
 	managedLineWSPathPrefix     = "/nova-line/"
 )
@@ -131,14 +131,29 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 	if node.PublicPort == nil {
 		return errors.New("托管线路没有公网端口")
 	}
-	if err := waitManagedLineListenerForProtocol(ctx, managedLineInboundProtocol(node.Protocol), *node.PublicPort, 8*time.Second); err != nil {
-		_ = w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", false).Error
-		if managedAnyTLS {
-			_ = service.ReconcileManagedAnyTLS()
-		} else {
-			_ = (&service.XrayService{}).RestartXray(true)
+	waitForListener := true
+	if managedAnyTLS {
+		var err error
+		waitForListener, err = managedAnyTLSNeedsListener(w.db, *node.InboundID)
+		if err != nil {
+			return err
 		}
-		return err
+		// sing-box requires at least one AnyTLS user. A newly imported line
+		// commonly has none until the first plan is purchased, so there is no
+		// listener to wait for yet. Keep the inbound enabled and complete the
+		// upstream probe; ClientService reconciles the sidecar as soon as the
+		// first enabled client is attached.
+	}
+	if waitForListener {
+		if err := waitManagedLineListenerForProtocol(ctx, managedLineInboundProtocol(node.Protocol), *node.PublicPort, 8*time.Second); err != nil {
+			_ = w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", false).Error
+			if managedAnyTLS {
+				_ = service.ReconcileManagedAnyTLS()
+			} else {
+				_ = (&service.XrayService{}).RestartXray(true)
+			}
+			return err
+		}
 	}
 
 	if managedAnyTLS {
@@ -172,6 +187,15 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 		"status": lineStatusReady, "health_status": lineHealthHealthy, "latency_ms": results[0].Delay,
 		"consecutive_fails": 0, "consecutive_passes": 1, "last_probe_at": now, "last_error": "",
 	}).Error
+}
+
+func managedAnyTLSNeedsListener(db *gorm.DB, inboundID int) (bool, error) {
+	var enabledClients int64
+	err := db.Table(model.ClientRecord{}.TableName()+" clients").
+		Joins("JOIN "+model.ClientInbound{}.TableName()+" bindings ON bindings.client_id = clients.id").
+		Where("bindings.inbound_id = ? AND clients.enable = ?", inboundID, true).
+		Count(&enabledClients).Error
+	return enabledClients > 0, err
 }
 
 func waitManagedLineListener(ctx context.Context, port int, timeout time.Duration) error {
@@ -288,7 +312,7 @@ func (w *Worker) upgradeManagedLineIngress(node *model.LineNode, inbound *model.
 		updates["port"] = port
 	}
 	switch protocol {
-	case model.VMESS, model.VLESS, model.Trojan, model.Hysteria:
+	case model.VMESS, model.VLESS, model.Trojan, model.Hysteria, model.AnyTLS:
 		_, stream, err := managedLineInboundJSON(node, protocol, hostname, port)
 		if err != nil {
 			return err
@@ -419,7 +443,7 @@ func managedLineInboundJSON(node *model.LineNode, protocol model.Protocol, hostn
 				"certificateFile": certFile,
 				"keyFile":         keyFile,
 			}},
-			"settings": map[string]any{"fingerprint": "chrome", "verifyPeerCertByName": hostname},
+			"settings": map[string]any{"verifyPeerCertByName": hostname},
 		}
 		settings = map[string]any{"version": 2, "clients": []any{}}
 		stream = map[string]any{"network": "hysteria", "security": "tls", "tlsSettings": tlsSettings, "hysteriaSettings": map[string]any{"version": 2, "udpIdleTimeout": 60}}

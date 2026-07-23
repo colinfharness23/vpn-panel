@@ -1101,9 +1101,10 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 
 	tlsSettings, _ := searchKey(tlsSetting, "settings")
 	if tlsSetting != nil {
-		if fpValue, ok := searchKey(tlsSettings, "fingerprint"); ok {
-			params["fp"], _ = fpValue.(string)
-		}
+		// Hysteria/Hysteria2 run TLS over QUIC, so TCP-oriented uTLS
+		// fingerprints do not apply. Emitting fp makes v2rayN translate the
+		// link into sing-box tls.utls and the connection then fails with
+		// "unsupported usage for uTLS".
 		if echValue, ok := searchKey(tlsSettings, "echConfigList"); ok {
 			if ech, _ := echValue.(string); ech != "" {
 				params["ech"] = ech
@@ -1661,7 +1662,7 @@ func applyExternalProxyTLSParams(ep map[string]any, params map[string]string, se
 // applyExternalProxyHysteriaParams overrides the cert pin for a single
 // external-proxy entry on a Hysteria link. Hysteria carries the pin as a hex
 // `pinSHA256` (not the `pcs` the URL-param protocols use), so each entry is
-// coerced through hysteriaPinHex like the main pin. sni/fp/alpn are left as
+// coerced through hysteriaPinHex like the main pin. SNI/ALPN are left as
 // the inbound's own — Hysteria external proxies are typically alternate
 // endpoints (port-hop / CDN) fronting the same certificate.
 func applyExternalProxyHysteriaParams(ep map[string]any, params map[string]string) {
@@ -1960,15 +1961,31 @@ func cloneStringMap(source map[string]string) map[string]string {
 // name-only part on displays); with no template it falls back to the inbound
 // remark, extra and email joined by "-".
 func (s *SubService) genRemark(inbound *model.Inbound, email string, extra string, transport string) string {
-	if inbound != nil {
-		if publicName, ok := s.managedInboundNames[inbound.Id]; ok && publicName != "" {
-			return publicName
-		}
+	if publicName, ok := s.managedRemark(inbound); ok {
+		return publicName
 	}
 	if s.remarkTemplate != "" {
 		return s.genTemplatedRemark(inbound, s.lookupClient(inbound, email), extra, transport)
 	}
 	return s.withProtocolName(inbound, fallbackRemark(inbound.Remark, extra, email))
+}
+
+func (s *SubService) managedRemark(inbound *model.Inbound) (string, bool) {
+	if inbound == nil {
+		return "", false
+	}
+	if publicName, ok := s.managedInboundNames[inbound.Id]; ok && strings.TrimSpace(publicName) != "" {
+		return strings.TrimSpace(publicName), true
+	}
+	// Managed commercial inbounds persist only their administrator-selected
+	// public name in Remark. Keep that sanitized value authoritative even if a
+	// renderer reaches this method without its request-local branding cache.
+	if strings.HasPrefix(inbound.Tag, "commercial-in-") {
+		if publicName := strings.TrimSpace(inbound.Remark); publicName != "" {
+			return publicName, true
+		}
+	}
+	return "", false
 }
 
 func (s *SubService) withProtocolName(inbound *model.Inbound, remark string) string {

@@ -76,7 +76,7 @@ func TestManagedWebSocketIngressPublishesStandardTLS443(t *testing.T) {
 	db := database.GetDB()
 	inbound := &model.Inbound{
 		UserId: 1, Remark: "IPLC", Enable: true, Listen: "127.0.0.1", Port: 23456,
-		Protocol: model.VLESS, Settings: `{"clients":[],"decryption":"none","encryption":"none"}`,
+		Protocol: model.Trojan, Settings: `{"clients":[],"fallbacks":[]}`,
 		StreamSettings: `{
 			"network":"ws",
 			"security":"none",
@@ -96,7 +96,7 @@ func TestManagedWebSocketIngressPublishesStandardTLS443(t *testing.T) {
 	}
 	client := &model.ClientRecord{
 		Email: "standard-port@example.com", SubID: "standard-port-sub",
-		UUID: "11111111-2222-4333-8444-555555555555", Enable: true,
+		UUID: "11111111-2222-4333-8444-555555555555", Password: "trojan-password", Enable: true,
 	}
 	if err := db.Create(client).Error; err != nil {
 		t.Fatal(err)
@@ -106,13 +106,13 @@ func TestManagedWebSocketIngressPublishesStandardTLS443(t *testing.T) {
 	}
 	if err := db.Create(&model.LineNode{
 		ID: "11111111-1111-4111-8111-111111111111", Fingerprint: strings.Repeat("a", 64),
-		Remark: "provider", PublicName: "IPLC", Protocol: "vless", OutboundTag: "commercial-line-standard-port",
+		Remark: "provider", PublicName: "IPLC", Protocol: "trojan", OutboundTag: "commercial-line-standard-port",
 		OutboundCiphertext: "encrypted", InboundID: &inbound.Id, Status: "ready", HealthStatus: "healthy",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
 
-	links, _, _, _, err := NewSubService("").GetSubs("standard-port-sub", "vpn.pheero.com")
+	links, _, _, _, err := NewSubService("{{INBOUND}}-{{EMAIL}}|📊{{TRAFFIC_LEFT}}|⏳{{DAYS_LEFT}}D").GetSubs("standard-port-sub", "vpn.pheero.com")
 	if err != nil || len(links) != 1 {
 		t.Fatalf("links=%v err=%v", links, err)
 	}
@@ -120,8 +120,11 @@ func TestManagedWebSocketIngressPublishesStandardTLS443(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parsed.Scheme != "vless" || parsed.Hostname() != "vpn.pheero.com" || parsed.Port() != "443" {
+	if parsed.Scheme != "trojan" || parsed.Hostname() != "vpn.pheero.com" || parsed.Port() != "443" {
 		t.Fatalf("public endpoint = %s://%s", parsed.Scheme, parsed.Host)
+	}
+	if parsed.Fragment != "IPLC" {
+		t.Fatalf("managed public alias = %q, want exact administrator value IPLC", parsed.Fragment)
 	}
 	for key, want := range map[string]string{
 		"type": "ws", "security": "tls", "sni": "vpn.pheero.com",
@@ -134,6 +137,22 @@ func TestManagedWebSocketIngressPublishesStandardTLS443(t *testing.T) {
 	}
 	if parsed.Fragment != "IPLC" {
 		t.Fatalf("alias = %q, want IPLC", parsed.Fragment)
+	}
+}
+
+func TestManagedRemarkFallsBackToSanitizedCommercialInboundAlias(t *testing.T) {
+	s := NewSubService("{{INBOUND}}-{{EMAIL}}|📊{{TRAFFIC_LEFT}}|⏳{{DAYS_LEFT}}D")
+	s.PrepareForRequest("vpn.pheero.com")
+	s.subscriptionBody = true
+	inbound := &model.Inbound{
+		Id: 3, Tag: "commercial-in-1234567890abcdef", Remark: "TROJAN",
+		Protocol: model.Trojan,
+	}
+	if got := s.endpointRemark(inbound, "private-account@example.com", nil, "ws"); got != "TROJAN" {
+		t.Fatalf("managed fallback alias = %q, want TROJAN", got)
+	}
+	if got := s.genHostRemark(inbound, model.Client{Email: "private-account@example.com"}, "", "ws"); got != "TROJAN" {
+		t.Fatalf("managed host alias = %q, want TROJAN", got)
 	}
 }
 
@@ -259,11 +278,14 @@ func TestManagedSubscriptionPreservesSevenProtocolTypesAndExactAliases(t *testin
 			}
 		case "hysteria2":
 			for key, want := range map[string]string{
-				"security": "tls", "sni": "vpn.pheero.com", "fp": "chrome",
+				"security": "tls", "sni": "vpn.pheero.com",
 			} {
 				if got := query.Get(key); got != want {
 					t.Fatalf("Hysteria2 %s = %q, want %q in %q", key, got, want, rawLink)
 				}
+			}
+			if got := query.Get("fp"); got != "" {
+				t.Fatalf("Hysteria2 must not emit unsupported uTLS fingerprint, got fp=%q in %q", got, rawLink)
 			}
 			if parsed.User.Username() != client.Auth {
 				t.Fatalf("Hysteria2 auth did not round-trip")
