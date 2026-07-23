@@ -26,23 +26,21 @@ import (
 )
 
 type Worker struct {
-	db         *gorm.DB
-	orders     *OrderService
-	config     *ConfigStore
-	clients    service.ClientService
-	inbounds   service.InboundService
-	xray       clientRuntimeConverger
+	db       *gorm.DB
+	orders   *OrderService
+	config   *ConfigStore
+	clients  service.ClientService
+	inbounds service.InboundService
+	xray     interface {
+		SetToNeedRestart()
+		RestartXray(isForce bool) error
+	}
 	mailer     customerEmailSender
 	lineEvents chan eventbus.Event
 }
 
 type customerEmailSender interface {
 	SendTo(recipients []string, subject, body string) error
-}
-
-type clientRuntimeConverger interface {
-	SetToNeedRestart()
-	RestartXray(isForce bool) error
 }
 
 // applyClientRuntimeMutation closes the gap between a successful database
