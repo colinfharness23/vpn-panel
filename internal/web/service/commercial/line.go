@@ -53,6 +53,7 @@ var supportedLineProtocols = map[string]struct{}{
 	"shadowsocks": {},
 	"hysteria":    {},
 	"wireguard":   {},
+	"anytls":      {},
 }
 
 type LineSourceView struct {
@@ -749,7 +750,7 @@ func buildLineImportEntry(index int, outbound link.Outbound, identity string) Li
 	protocol, _ := outbound["protocol"].(string)
 	protocol = strings.ToLower(strings.TrimSpace(protocol))
 	if _, supported := supportedLineProtocols[protocol]; !supported {
-		return LineImportEntry{Index: index, Protocol: protocol, Valid: false, Error: "仅支持 VMess、VLESS、Trojan、Shadowsocks、Hysteria2 和 WireGuard"}
+		return LineImportEntry{Index: index, Protocol: protocol, Valid: false, Error: "仅支持 VMess、VLESS、Trojan、Shadowsocks、Hysteria2、WireGuard 和 AnyTLS"}
 	}
 	remark, _ := outbound["tag"].(string)
 	identity = strings.TrimSpace(identity)

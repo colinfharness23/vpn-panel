@@ -57,8 +57,8 @@ tar -tzf "$tmp_dir/$asset" | awk '$0 ~ /(^\/|(^|\/)\.\.(\/|$))/ { found=1 } END 
 tar -tzf "$tmp_dir/$asset" | awk '$0 !~ /^x-ui(\/|$)/ { found=1 } END { exit !found }' && { echo "安装包包含 x-ui 目录之外的文件。" >&2; exit 1; }
 tar -tvzf "$tmp_dir/$asset" | awk 'substr($1,1,1) !~ /^[-d]$/ { found=1 } END { exit !found }' && { echo "安装包包含符号链接、硬链接或设备文件。" >&2; exit 1; }
 tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
-[[ -x $tmp_dir/x-ui/x-ui && -f $tmp_dir/x-ui/bin/config.json && -x $tmp_dir/x-ui/bin/xray-linux-$arch ]] ||
-  { echo "Release 缺少面板、Xray 或初始配置。" >&2; exit 1; }
+[[ -x $tmp_dir/x-ui/x-ui && -f $tmp_dir/x-ui/bin/config.json && -x $tmp_dir/x-ui/bin/xray-linux-$arch && -x $tmp_dir/x-ui/bin/sing-box-linux-$arch ]] ||
+  { echo "Release 缺少面板、Xray、AnyTLS 运行时或初始配置。" >&2; exit 1; }
 for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_script.sh ]] || { echo "Release 缺少运维脚本 $required_script.sh。" >&2; exit 1; }
 done

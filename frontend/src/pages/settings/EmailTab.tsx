@@ -34,6 +34,7 @@ const smtpPortPresets = [
 ] as const;
 
 const smtpProviderPresets = [
+  { key: 'resend', label: 'Resend', host: 'smtp.resend.com', port: 465, encryptionType: 'tls', username: 'resend' },
   { key: 'gmail', label: 'Gmail', host: 'smtp.gmail.com', port: 587, encryptionType: 'starttls' },
   { key: 'outlook', label: 'Outlook.com', host: 'smtp-mail.outlook.com', port: 587, encryptionType: 'starttls' },
   { key: 'microsoft365', label: 'Microsoft 365', host: 'smtp.office365.com', port: 587, encryptionType: 'starttls' },
@@ -92,6 +93,20 @@ export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
               description={t('pages.settings.smtpDeliverabilityHint')}
               style={{ marginBottom: 16 }}
             />
+            <Alert
+              type="success"
+              showIcon
+              title={t('pages.settings.smtpDomainGuideTitle')}
+              description={(
+                <Space orientation="vertical" size={4}>
+                  <span>{t('pages.settings.smtpDomainGuide')}</span>
+                  <a href="https://resend.com/docs/dashboard/domains/introduction" target="_blank" rel="noreferrer">
+                    {t('pages.settings.smtpDomainGuideLink')}
+                  </a>
+                </Space>
+              )}
+              style={{ marginBottom: 16 }}
+            />
             <SettingListItem paddings="small" title={t('pages.settings.smtpEnable')} description={t('pages.settings.smtpEnableDesc')}>
               <Switch checked={allSetting.smtpEnable} onChange={(v) => updateSetting({ smtpEnable: v })} />
             </SettingListItem>
@@ -112,6 +127,7 @@ export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
                         smtpHost: preset.host,
                         smtpPort: preset.port,
                         smtpEncryptionType: preset.encryptionType,
+                        ...('username' in preset ? { smtpUsername: preset.username } : {}),
                       });
                     }
                   }}

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -55,7 +56,7 @@ func ParseSubscriptionBody(body []byte) ([]Outbound, []string, error) {
 	if outbounds, identities := parseStructuredSubscription(text, 0); len(outbounds) > 0 {
 		return outbounds, identities, nil
 	}
-	return nil, nil, errors.New("subscription contains no supported VMess, VLESS, Trojan, Shadowsocks, Hysteria2 or WireGuard nodes")
+	return nil, nil, errors.New("subscription contains no supported VMess, VLESS, Trojan, Shadowsocks, Hysteria2, WireGuard or AnyTLS nodes")
 }
 
 func parseShareLinkList(text string) ([]Outbound, []string) {
@@ -120,6 +121,7 @@ func splitLines(s string) []string {
 //   - ss:// (modern and legacy)
 //   - hysteria2:// (also hy2://)
 //   - wireguard:// (also wg://)
+//   - anytls://
 func ParseLink(link string) (*ParseResult, error) {
 	link = strings.TrimSpace(link)
 	switch {
@@ -135,9 +137,63 @@ func ParseLink(link string) (*ParseResult, error) {
 		return parseHysteria2(link)
 	case strings.HasPrefix(link, "wireguard://"), strings.HasPrefix(link, "wg://"):
 		return parseWireguard(link)
+	case strings.HasPrefix(link, "anytls://"):
+		return parseAnyTLS(link)
 	default:
 		return nil, fmt.Errorf("unsupported link scheme")
 	}
+}
+
+func parseAnyTLS(link string) (*ParseResult, error) {
+	u, err := url.Parse(link)
+	if err != nil {
+		return nil, err
+	}
+	if u.Scheme != "anytls" {
+		return nil, fmt.Errorf("not anytls")
+	}
+	password := ""
+	if u.User != nil {
+		password = u.User.Username()
+	}
+	host := u.Hostname()
+	port := defaultPort(u.Port(), 443)
+	if password == "" || host == "" || port < 1 || port > 65535 {
+		return nil, errors.New("anytls link requires password, server and port")
+	}
+	params := u.Query()
+	serverName := firstParam(params, "sni", "serverName", "servername", "peer")
+	if serverName == "" && net.ParseIP(host) == nil {
+		serverName = host
+	}
+	tlsSettings := map[string]any{
+		"serverName":    serverName,
+		"allowInsecure": queryBool(params, "allowInsecure", "insecure"),
+	}
+	if fp := firstParam(params, "fp", "fingerprint"); fp != "" {
+		tlsSettings["fingerprint"] = fp
+	}
+	if alpn := splitComma(firstParam(params, "alpn")); len(alpn) > 0 {
+		tlsSettings["alpn"] = alpn
+	}
+	identity := "anytls:" + password + "@" + host + ":" + strconv.Itoa(port) + "?" + canonicalQuery(params)
+	return &ParseResult{
+		Outbound: Outbound{
+			"protocol": "anytls",
+			"tag":      decodeHash(u.Fragment),
+			"settings": map[string]any{
+				"server":     host,
+				"serverPort": port,
+				"password":   password,
+			},
+			"streamSettings": map[string]any{
+				"network":     "tcp",
+				"security":    "tls",
+				"tlsSettings": tlsSettings,
+			},
+		},
+		Identity: identity,
+	}, nil
 }
 
 // --- vmess ---

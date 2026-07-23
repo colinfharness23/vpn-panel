@@ -14,8 +14,9 @@ import (
 )
 
 type LocalDeps struct {
-	APIPort        func() int
-	SetNeedRestart func()
+	APIPort           func() int
+	SetNeedRestart    func()
+	ReconcileSidecars func() error
 }
 
 type Local struct {
@@ -28,6 +29,16 @@ func NewLocal(deps LocalDeps) *Local {
 }
 
 func (l *Local) Name() string { return "local" }
+
+func (l *Local) reconcileSidecar(ib *model.Inbound) error {
+	if ib == nil || ib.Protocol != model.AnyTLS {
+		return nil
+	}
+	if l.deps.ReconcileSidecars == nil {
+		return nil
+	}
+	return l.deps.ReconcileSidecars()
+}
 
 func (l *Local) withAPI(fn func(api *xray.XrayAPI) error) error {
 	l.mu.Lock()
@@ -46,6 +57,9 @@ func (l *Local) withAPI(fn func(api *xray.XrayAPI) error) error {
 }
 
 func (l *Local) AddInbound(_ context.Context, ib *model.Inbound) error {
+	if ib.Protocol == model.AnyTLS {
+		return l.reconcileSidecar(ib)
+	}
 	if ib.Protocol == model.MTProto {
 		inst, ok := mtproto.InstanceFromInbound(ib)
 		if !ok {
@@ -63,6 +77,9 @@ func (l *Local) AddInbound(_ context.Context, ib *model.Inbound) error {
 }
 
 func (l *Local) DelInbound(_ context.Context, ib *model.Inbound) error {
+	if ib.Protocol == model.AnyTLS {
+		return l.reconcileSidecar(ib)
+	}
 	if ib.Protocol == model.MTProto {
 		mtproto.GetManager().Remove(ib.Id)
 		return nil
@@ -73,6 +90,12 @@ func (l *Local) DelInbound(_ context.Context, ib *model.Inbound) error {
 }
 
 func (l *Local) UpdateInbound(ctx context.Context, oldIb, newIb *model.Inbound) error {
+	if oldIb.Protocol == model.AnyTLS || newIb.Protocol == model.AnyTLS {
+		if err := l.reconcileSidecar(oldIb); err != nil {
+			return err
+		}
+		return l.reconcileSidecar(newIb)
+	}
 	if oldIb.Protocol == model.MTProto || newIb.Protocol == model.MTProto {
 		return l.updateMtprotoInbound(ctx, oldIb, newIb)
 	}
@@ -113,6 +136,9 @@ func (l *Local) updateMtprotoInbound(ctx context.Context, oldIb, newIb *model.In
 }
 
 func (l *Local) AddUser(_ context.Context, ib *model.Inbound, userMap map[string]any) error {
+	if ib.Protocol == model.AnyTLS {
+		return l.reconcileSidecar(ib)
+	}
 	if ib.Protocol == model.MTProto {
 		return nil
 	}
@@ -122,6 +148,9 @@ func (l *Local) AddUser(_ context.Context, ib *model.Inbound, userMap map[string
 }
 
 func (l *Local) RemoveUser(_ context.Context, ib *model.Inbound, email string) error {
+	if ib.Protocol == model.AnyTLS {
+		return l.reconcileSidecar(ib)
+	}
 	if ib.Protocol == model.MTProto {
 		return nil
 	}

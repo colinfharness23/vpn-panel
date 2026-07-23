@@ -28,7 +28,7 @@ import (
 
 const lineStatusRetry = "retry"
 
-const managedLineProvisionVersion = 2
+const managedLineProvisionVersion = 3
 
 func (w *Worker) HandleLineHealthEvent(event eventbus.Event) {
 	if event.Type != eventbus.EventOutboundSample || !strings.HasPrefix(event.Source, lineTagPrefix) {
@@ -117,6 +117,20 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 		_ = w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", false).Error
 		_ = (&service.XrayService{}).RestartXray(true)
 		return err
+	}
+
+	if strings.EqualFold(strings.TrimSpace(node.Protocol), "anytls") {
+		delay, probeErr := service.ProbeManagedAnyTLSOutbound(ctx, plain)
+		if probeErr != nil {
+			return w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{
+				"status": lineStatusReady, "health_status": lineHealthOffline, "consecutive_fails": 1,
+				"consecutive_passes": 0, "last_probe_at": now, "last_error": probeErr.Error(),
+			}).Error
+		}
+		return w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{
+			"status": lineStatusReady, "health_status": lineHealthHealthy, "latency_ms": delay,
+			"consecutive_fails": 0, "consecutive_passes": 1, "last_probe_at": now, "last_error": "",
+		}).Error
 	}
 
 	results, err := (&outboundservice.OutboundService{}).TestOutbounds("["+plain+"]", "", "", "real")
@@ -252,6 +266,8 @@ func managedLineInboundProtocol(protocol string) model.Protocol {
 		return model.Hysteria
 	case "wireguard", "wg":
 		return model.WireGuard
+	case "anytls":
+		return model.AnyTLS
 	default:
 		return model.VLESS
 	}
@@ -317,6 +333,22 @@ func managedLineInboundJSON(node *model.LineNode, protocol model.Protocol, hostn
 			return nil, nil, err
 		}
 		settings = map[string]any{"secretKey": privateKey, "peers": []any{}, "mtu": 1420}
+	case model.AnyTLS:
+		certFile, keyFile, err := managedLineTLSFiles()
+		if err != nil {
+			return nil, nil, err
+		}
+		settings = map[string]any{"clients": []any{}}
+		stream = map[string]any{
+			"network": "tcp", "security": "tls",
+			"tlsSettings": map[string]any{
+				"serverName": hostname,
+				"certificates": []any{map[string]any{
+					"certificateFile": certFile,
+					"keyFile":         keyFile,
+				}},
+			},
+		}
 	default:
 		return nil, nil, fmt.Errorf("unsupported managed line protocol %q", protocol)
 	}

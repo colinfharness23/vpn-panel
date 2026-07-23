@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,7 +25,12 @@ type lineCertPinRequest struct {
 	QUIC       bool
 }
 
-type lineCertPinFetcher func(context.Context, lineCertPinRequest) (string, error)
+type lineCertPins struct {
+	CertificateSHA256 string
+	PublicKeySHA256   string
+}
+
+type lineCertPinFetcher func(context.Context, lineCertPinRequest) (lineCertPins, error)
 
 // secureTLSOutbound converts legacy insecure=1 links to certificate
 // pinning before their outbound is ever inserted into the running Xray config.
@@ -40,7 +46,12 @@ func secureTLSOutbound(ctx context.Context, raw string, refresh bool, fetch line
 	if tlsSettings == nil || (!lineBool(tlsSettings["allowInsecure"]) && !refresh) {
 		return raw, false, nil
 	}
-	if strings.TrimSpace(lineString(tlsSettings["pinnedPeerCertSha256"])) != "" && !refresh {
+	protocol := strings.ToLower(strings.TrimSpace(lineString(outbound["protocol"])))
+	pinField := "pinnedPeerCertSha256"
+	if protocol == "anytls" {
+		pinField = "pinnedPeerPublicKeySha256"
+	}
+	if strings.TrimSpace(lineString(tlsSettings[pinField])) != "" && !refresh {
 		delete(tlsSettings, "allowInsecure")
 		encoded, err := json.Marshal(outbound)
 		return string(encoded), true, err
@@ -50,16 +61,24 @@ func secureTLSOutbound(ctx context.Context, raw string, refresh bool, fetch line
 	if err != nil {
 		return "", false, err
 	}
-	pin, err := fetch(ctx, request)
+	pins, err := fetch(ctx, request)
 	if err != nil {
 		return "", false, fmt.Errorf("securely pin upstream certificate: %w", err)
 	}
-	normalizedPin := strings.ReplaceAll(strings.TrimSpace(pin), ":", "")
-	decodedPin, decodeErr := hex.DecodeString(normalizedPin)
-	if decodeErr != nil || len(decodedPin) != sha256.Size {
-		return "", false, errors.New("upstream certificate pin is not a valid SHA-256 value")
+	if protocol == "anytls" {
+		decodedPin, decodeErr := base64.StdEncoding.DecodeString(strings.TrimSpace(pins.PublicKeySHA256))
+		if decodeErr != nil || len(decodedPin) != sha256.Size {
+			return "", false, errors.New("upstream public-key pin is not a valid SHA-256 value")
+		}
+		tlsSettings[pinField] = base64.StdEncoding.EncodeToString(decodedPin)
+	} else {
+		normalizedPin := strings.ReplaceAll(strings.TrimSpace(pins.CertificateSHA256), ":", "")
+		decodedPin, decodeErr := hex.DecodeString(normalizedPin)
+		if decodeErr != nil || len(decodedPin) != sha256.Size {
+			return "", false, errors.New("upstream certificate pin is not a valid SHA-256 value")
+		}
+		tlsSettings[pinField] = hex.EncodeToString(decodedPin)
 	}
-	tlsSettings["pinnedPeerCertSha256"] = hex.EncodeToString(decodedPin)
 	delete(tlsSettings, "allowInsecure")
 	encoded, err := json.Marshal(outbound)
 	if err != nil {
@@ -87,6 +106,8 @@ func lineOutboundPinRequest(outbound, tlsSettings map[string]any) (lineCertPinRe
 	switch protocol {
 	case "vless", "hysteria":
 		host, port = lineString(settings["address"]), lineInt(settings["port"])
+	case "anytls":
+		host, port = lineString(settings["server"]), lineInt(settings["serverPort"])
 	case "vmess":
 		host, port = firstLineEndpoint(settings["vnext"])
 	case "trojan":
@@ -120,7 +141,7 @@ func firstLineEndpoint(value any) (string, int) {
 	return lineString(endpoint["address"]), lineInt(endpoint["port"])
 }
 
-func fetchLineCertificatePin(ctx context.Context, request lineCertPinRequest) (string, error) {
+func fetchLineCertificatePin(ctx context.Context, request lineCertPinRequest) (lineCertPins, error) {
 	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 	tlsConfig := &tls.Config{
@@ -141,33 +162,41 @@ func fetchLineCertificatePin(ctx context.Context, request lineCertPinRequest) (s
 			MaxIdleTimeout:       10 * time.Second,
 		})
 		if err != nil {
-			return "", err
+			return lineCertPins{}, err
 		}
 		defer func() {
 			_ = connection.CloseWithError(0, "certificate pin captured")
 		}()
-		return leafCertificatePin(connection.ConnectionState().TLS.PeerCertificates)
+		return leafCertificatePins(connection.ConnectionState().TLS.PeerCertificates)
 	}
 
 	rawConnection, err := (&net.Dialer{}).DialContext(ctx, "tcp", request.Address)
 	if err != nil {
-		return "", err
+		return lineCertPins{}, err
 	}
 	defer rawConnection.Close()
 	tlsConnection := tls.Client(rawConnection, tlsConfig)
 	if err := tlsConnection.HandshakeContext(ctx); err != nil {
-		return "", err
+		return lineCertPins{}, err
 	}
 	defer tlsConnection.Close()
-	return leafCertificatePin(tlsConnection.ConnectionState().PeerCertificates)
+	return leafCertificatePins(tlsConnection.ConnectionState().PeerCertificates)
 }
 
-func leafCertificatePin(certificates []*x509.Certificate) (string, error) {
+func leafCertificatePins(certificates []*x509.Certificate) (lineCertPins, error) {
 	if len(certificates) == 0 || certificates[0] == nil || len(certificates[0].Raw) == 0 {
-		return "", errors.New("upstream did not present a certificate")
+		return lineCertPins{}, errors.New("upstream did not present a certificate")
 	}
-	sum := sha256.Sum256(certificates[0].Raw)
-	return hex.EncodeToString(sum[:]), nil
+	certificateSum := sha256.Sum256(certificates[0].Raw)
+	publicKey, err := x509.MarshalPKIXPublicKey(certificates[0].PublicKey)
+	if err != nil {
+		return lineCertPins{}, err
+	}
+	publicKeySum := sha256.Sum256(publicKey)
+	return lineCertPins{
+		CertificateSHA256: hex.EncodeToString(certificateSum[:]),
+		PublicKeySHA256:   base64.StdEncoding.EncodeToString(publicKeySum[:]),
+	}, nil
 }
 
 func lineString(value any) string {

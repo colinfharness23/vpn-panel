@@ -218,6 +218,24 @@ func (s *SubClashService) buildProxy(subReq *SubService, inbound *model.Inbound,
 	if inbound.Protocol == model.WireGuard {
 		return s.buildWireguardProxy(subReq, inbound, client, ep)
 	}
+	if inbound.Protocol == model.AnyTLS {
+		proxy := map[string]any{
+			"name":     subReq.endpointRemark(inbound, client.Email, ep, "tcp"),
+			"type":     "anytls",
+			"server":   inbound.Listen,
+			"port":     inbound.Port,
+			"password": client.Password,
+			"udp":      true,
+		}
+		var rawStream map[string]any
+		_ = json.Unmarshal([]byte(inbound.StreamSettings), &rawStream)
+		if tlsSettings, ok := rawStream["tlsSettings"].(map[string]any); ok {
+			if serverName, _ := tlsSettings["serverName"].(string); serverName != "" {
+				proxy["sni"] = serverName
+			}
+		}
+		return proxy
+	}
 
 	network, _ := stream["network"].(string)
 

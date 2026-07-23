@@ -1,9 +1,11 @@
 package link
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -18,11 +20,11 @@ import (
 func TestPinInsecureLineOutboundReplacesAllowInsecure(t *testing.T) {
 	raw := `{"protocol":"trojan","settings":{"servers":[{"address":"203.0.113.8","port":443}]},"streamSettings":{"security":"tls","tlsSettings":{"serverName":"example.test","allowInsecure":true}}}`
 	const pin = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	result, changed, err := secureTLSOutbound(context.Background(), raw, false, func(_ context.Context, request lineCertPinRequest) (string, error) {
+	result, changed, err := secureTLSOutbound(context.Background(), raw, false, func(_ context.Context, request lineCertPinRequest) (lineCertPins, error) {
 		if request.Address != "203.0.113.8:443" || request.ServerName != "example.test" || request.QUIC {
 			t.Fatalf("unexpected pin request: %+v", request)
 		}
-		return pin, nil
+		return lineCertPins{CertificateSHA256: pin}, nil
 	})
 	if err != nil || !changed {
 		t.Fatalf("changed=%v err=%v", changed, err)
@@ -43,11 +45,11 @@ func TestPinInsecureLineOutboundReplacesAllowInsecure(t *testing.T) {
 func TestPinInsecureLineOutboundUsesHysteriaQUIC(t *testing.T) {
 	raw := `{"protocol":"hysteria","settings":{"address":"198.51.100.9","port":8443},"streamSettings":{"security":"tls","tlsSettings":{"serverName":"hy.test","alpn":["h3"],"allowInsecure":true}}}`
 	const pin = "abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd"
-	_, changed, err := secureTLSOutbound(context.Background(), raw, false, func(_ context.Context, request lineCertPinRequest) (string, error) {
+	_, changed, err := secureTLSOutbound(context.Background(), raw, false, func(_ context.Context, request lineCertPinRequest) (lineCertPins, error) {
 		if !request.QUIC || request.Address != "198.51.100.9:8443" || len(request.ALPN) != 1 || request.ALPN[0] != "h3" {
 			t.Fatalf("unexpected Hysteria pin request: %+v", request)
 		}
-		return pin, nil
+		return lineCertPins{CertificateSHA256: pin}, nil
 	})
 	if err != nil || !changed {
 		t.Fatalf("changed=%v err=%v", changed, err)
@@ -57,8 +59,8 @@ func TestPinInsecureLineOutboundUsesHysteriaQUIC(t *testing.T) {
 func TestSecureTLSOutboundRefreshesAnExistingAutomaticPin(t *testing.T) {
 	raw := `{"protocol":"trojan","settings":{"servers":[{"address":"203.0.113.8","port":443}]},"streamSettings":{"security":"tls","tlsSettings":{"serverName":"example.test","pinnedPeerCertSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}`
 	const replacement = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-	result, changed, err := secureTLSOutbound(context.Background(), raw, true, func(context.Context, lineCertPinRequest) (string, error) {
-		return replacement, nil
+	result, changed, err := secureTLSOutbound(context.Background(), raw, true, func(context.Context, lineCertPinRequest) (lineCertPins, error) {
+		return lineCertPins{CertificateSHA256: replacement}, nil
 	})
 	if err != nil || !changed {
 		t.Fatalf("changed=%v err=%v", changed, err)
@@ -71,8 +73,8 @@ func TestSecureTLSOutboundRefreshesAnExistingAutomaticPin(t *testing.T) {
 func TestSecureTLSOutboundRejectsNonHexCertificatePin(t *testing.T) {
 	raw := `{"protocol":"trojan","settings":{"servers":[{"address":"203.0.113.8","port":443}]},"streamSettings":{"security":"tls","tlsSettings":{"serverName":"example.test","allowInsecure":true}}}`
 	invalid := strings.Repeat("z", sha256.Size*2)
-	if _, _, err := secureTLSOutbound(context.Background(), raw, false, func(context.Context, lineCertPinRequest) (string, error) {
-		return invalid, nil
+	if _, _, err := secureTLSOutbound(context.Background(), raw, false, func(context.Context, lineCertPinRequest) (lineCertPins, error) {
+		return lineCertPins{CertificateSHA256: invalid}, nil
 	}); err == nil {
 		t.Fatal("non-hex certificate pin was accepted")
 	}
@@ -90,8 +92,8 @@ func TestFetchLineCertificatePinTCPAndQUIC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tcpPin != expected {
-		t.Fatalf("TCP pin = %s, want %s", tcpPin, expected)
+	if tcpPin.CertificateSHA256 != expected {
+		t.Fatalf("TCP pin = %s, want %s", tcpPin.CertificateSHA256, expected)
 	}
 
 	quicListener, err := quic.ListenAddr("127.0.0.1:0", &tls.Config{
@@ -115,7 +117,24 @@ func TestFetchLineCertificatePinTCPAndQUIC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if quicPin != expected {
-		t.Fatalf("QUIC pin = %s, want %s", quicPin, expected)
+	if quicPin.CertificateSHA256 != expected {
+		t.Fatalf("QUIC pin = %s, want %s", quicPin.CertificateSHA256, expected)
+	}
+}
+
+func TestPinInsecureAnyTLSUsesPublicKeyPin(t *testing.T) {
+	raw := `{"protocol":"anytls","settings":{"server":"203.0.113.9","serverPort":443,"password":"secret"},"streamSettings":{"security":"tls","tlsSettings":{"serverName":"example.test","allowInsecure":true}}}`
+	publicKeyPin := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x2a}, sha256.Size))
+	result, changed, err := secureTLSOutbound(context.Background(), raw, false, func(_ context.Context, request lineCertPinRequest) (lineCertPins, error) {
+		if request.Address != "203.0.113.9:443" || request.ServerName != "example.test" || request.QUIC {
+			t.Fatalf("unexpected AnyTLS pin request: %+v", request)
+		}
+		return lineCertPins{PublicKeySHA256: publicKeyPin}, nil
+	})
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	if !strings.Contains(result, `"pinnedPeerPublicKeySha256":"`+publicKeyPin+`"`) || strings.Contains(result, "allowInsecure") {
+		t.Fatalf("AnyTLS public-key pin was not persisted securely: %s", result)
 	}
 }

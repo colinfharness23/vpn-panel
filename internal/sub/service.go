@@ -472,7 +472,7 @@ func (s *SubService) getInboundsBySubId(subId string) ([]*model.Inbound, error) 
 		JOIN client_inbounds ON client_inbounds.inbound_id = inbounds.id
 		JOIN clients ON clients.id = client_inbounds.client_id
 		WHERE
-			inbounds.protocol in ('vmess','vless','trojan','shadowsocks','hysteria','wireguard','mtproto')
+			inbounds.protocol in ('vmess','vless','trojan','shadowsocks','hysteria','wireguard','anytls','mtproto')
 			AND clients.sub_id = ? AND inbounds.enable = ?
 	)`, subId, true).Order("sub_sort_index ASC").Order("id ASC").Find(&inbounds).Error
 	if err != nil {
@@ -685,8 +685,30 @@ func (s *SubService) GetLink(inbound *model.Inbound, email string) string {
 		return s.genMtprotoLink(inbound, email)
 	case "wireguard":
 		return s.genWireguardLink(inbound, email)
+	case "anytls":
+		return s.genAnyTLSLink(inbound, email)
 	}
 	return ""
+}
+
+func (s *SubService) genAnyTLSLink(inbound *model.Inbound, email string) string {
+	if inbound.Protocol != model.AnyTLS {
+		return ""
+	}
+	client, ok := s.clientForLink(inbound, email)
+	if !ok || client.Password == "" {
+		return ""
+	}
+	params := map[string]string{"security": "tls"}
+	var stream map[string]any
+	_ = json.Unmarshal([]byte(inbound.StreamSettings), &stream)
+	if tlsSettings, ok := stream["tlsSettings"].(map[string]any); ok {
+		if serverName, _ := tlsSettings["serverName"].(string); serverName != "" {
+			params["sni"] = serverName
+		}
+	}
+	link := fmt.Sprintf("anytls://%s@%s", encodeUserinfo(client.Password), joinHostPort(s.resolveInboundAddress(inbound), inbound.Port))
+	return buildLinkWithParams(link, params, s.genRemark(inbound, email, "", "tcp"))
 }
 
 // genWireguardLink builds a per-client wireguard:// share link mirroring the

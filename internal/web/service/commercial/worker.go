@@ -62,6 +62,9 @@ func (w *Worker) Run(ctx context.Context) {
 			if err := w.processNextProvisioning(ctx); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				logger.Warning("commercial provisioning:", err)
 			}
+			if err := service.ReconcileManagedAnyTLS(); err != nil {
+				logger.Warning("managed AnyTLS reconcile:", err)
+			}
 			if err := w.processNextOutbox(); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				logger.Warning("commercial outbox:", err)
 			}

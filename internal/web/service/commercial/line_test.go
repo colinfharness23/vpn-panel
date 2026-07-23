@@ -67,6 +67,7 @@ func TestManagedLineInboundPreservesImportedProtocolAndAliasInputs(t *testing.T)
 		{"shadowsocks", model.Shadowsocks, "tcp"},
 		{"hysteria", model.Hysteria, "hysteria"},
 		{"wireguard", model.WireGuard, ""},
+		{"anytls", model.AnyTLS, "tcp"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.imported, func(t *testing.T) {
@@ -104,17 +105,18 @@ trojan://secret@1.2.3.6:443?type=tcp&security=tls&sni=example.com#Trojan
 ss://YWVzLTI1Ni1nY206c2VjcmV0cGFzcw==@1.2.3.7:8388#SS
 hysteria2://auth-secret@1.2.3.8:443?sni=example.com#HY2
 wireguard://private-key@1.2.3.9:51820?publickey=public-key&address=10.0.0.2%2F32#WG
+anytls://anytls-secret@1.2.3.10:443?sni=example.com#AnyTLS
 vless://uuid@1.2.3.5:443?type=ws&security=tls&path=/&host=ex.com#Renamed
 invalid://value`
 
-func TestLineImportSixProtocolsDeduplicatesAndEncrypts(t *testing.T) {
+func TestLineImportSevenProtocolsDeduplicatesAndEncrypts(t *testing.T) {
 	initCommercialTestDB(t)
 	service := NewLineService()
 	preview, err := service.PreviewImport(lineTestLinks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.ValidCount != 6 || preview.DuplicateCount != 1 || preview.InvalidCount != 1 {
+	if preview.ValidCount != 7 || preview.DuplicateCount != 1 || preview.InvalidCount != 1 {
 		t.Fatalf("preview counts = valid %d duplicate %d invalid %d", preview.ValidCount, preview.DuplicateCount, preview.InvalidCount)
 	}
 	protocols := map[string]bool{}
@@ -123,16 +125,16 @@ func TestLineImportSixProtocolsDeduplicatesAndEncrypts(t *testing.T) {
 			protocols[entry.Protocol] = true
 		}
 	}
-	for _, protocol := range []string{"vmess", "vless", "trojan", "shadowsocks", "hysteria", "wireguard"} {
+	for _, protocol := range []string{"vmess", "vless", "trojan", "shadowsocks", "hysteria", "wireguard", "anytls"} {
 		if !protocols[protocol] {
 			t.Fatalf("protocol %s missing from preview: %#v", protocol, protocols)
 		}
 	}
-	source, err := service.CommitImport(entity.CommercialLineImportRequest{Name: "six protocols", Links: lineTestLinks})
+	source, err := service.CommitImport(entity.CommercialLineImportRequest{Name: "seven protocols", Links: lineTestLinks})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if source.NodeCount != 6 {
+	if source.NodeCount != 7 {
 		t.Fatalf("source counted incorrectly: %+v", source)
 	}
 	encodedView, _ := json.Marshal(source)
@@ -153,8 +155,8 @@ func TestLineImportSixProtocolsDeduplicatesAndEncrypts(t *testing.T) {
 	if err := database.GetDB().Order("protocol asc").Find(&nodes).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(nodes) != 6 {
-		t.Fatalf("stored nodes = %d, want 6", len(nodes))
+	if len(nodes) != 7 {
+		t.Fatalf("stored nodes = %d, want 7", len(nodes))
 	}
 	for _, node := range nodes {
 		if node.OutboundCiphertext == "" || strings.Contains(node.OutboundCiphertext, "secret") {

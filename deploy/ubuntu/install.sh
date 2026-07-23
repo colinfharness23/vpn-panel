@@ -129,6 +129,25 @@ wait_http() {
   done
   return 1
 }
+wait_xray_process() {
+  local timeout_seconds="${1:-60}"
+  for _ in $(seq 1 "$timeout_seconds"); do
+    if pgrep -u "$SERVICE_USER" -f "$INSTALL_DIR/bin/xray-linux-$ARCH" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+print_xray_diagnostics() {
+  printf '[NOVA] Xray 未在等待时间内进入运行状态，以下是诊断信息：\n' >&2
+  systemctl status x-ui --no-pager -l >&2 2>/dev/null || true
+  journalctl -u x-ui -n 160 --no-pager >&2 2>/dev/null || true
+  if [[ -x $INSTALL_DIR/bin/xray-linux-$ARCH && -f $INSTALL_DIR/bin/config.json ]]; then
+    runuser -u "$SERVICE_USER" -- "$INSTALL_DIR/bin/xray-linux-$ARCH" run -test \
+      -c "$INSTALL_DIR/bin/config.json" >&2 2>/dev/null || true
+  fi
+}
 
 if [[ ${NOVA_INSTALL_PORT_SELF_TEST:-0} == 1 ]]; then
   NOVA_PANEL_PORT=54321
@@ -334,6 +353,7 @@ tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 [[ -x $tmp_dir/x-ui/x-ui ]] || die "Release 缺少 x-ui。"
 [[ -f $tmp_dir/x-ui/bin/config.json ]] || die "Release 缺少 Xray 配置。"
 [[ -x $tmp_dir/x-ui/bin/xray-linux-$ARCH ]] || die "Release 缺少 $ARCH Xray。"
+[[ -x $tmp_dir/x-ui/bin/sing-box-linux-$ARCH ]] || die "Release 缺少 $ARCH AnyTLS 运行时。"
 for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_script.sh ]] || die "Release 缺少运维脚本 $required_script.sh。"
 done
@@ -612,6 +632,10 @@ ln -sfn /usr/local/sbin/nova-sync-line-cert /etc/letsencrypt/renewal-hooks/deplo
 if [[ $NOVA_DEFER_TLS == false ]]; then
   NOVA_SYNC_NO_RESTART=true /usr/local/sbin/nova-sync-line-cert
   systemctl restart x-ui
+  wait_http "http://127.0.0.1:$NOVA_PANEL_PORT/" "$NOVA_DOMAIN" 200 || {
+    print_xray_diagnostics
+    die "证书同步后面板未在 60 秒内恢复。"
+  }
 fi
 
 cat >/etc/systemd/system/nova-backup.service <<'EOF'
@@ -640,7 +664,10 @@ systemctl is-active --quiet postgresql
 systemctl is-active --quiet nginx
 systemctl is-active --quiet x-ui
 PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -tAc 'SELECT 1' | grep -qx 1
-pgrep -u "$SERVICE_USER" -f "$INSTALL_DIR/bin/xray-linux-$ARCH" >/dev/null || die "Xray 进程未运行。"
+wait_xray_process 60 || {
+  print_xray_diagnostics
+  die "Xray 未在 60 秒内启动；请保留上方诊断信息。"
+}
 if [[ $NOVA_DEFER_TLS == false ]]; then
   curl -fsS --max-time 15 "https://$NOVA_DOMAIN/" | grep -qi '<div id="portal"></div>' || die "HTTPS 根页面不是用户门户。"
   curl -fsS --max-time 15 "https://$NOVA_DOMAIN/$NOVA_ADMIN_PATH/" >/dev/null || die "HTTPS 管理后台不可用。"

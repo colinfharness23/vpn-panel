@@ -492,7 +492,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
         type="info"
         showIcon
         title="导入协议会转换为同类型的本站线路"
-        description="用户只连接本站域名并使用你设置的原样别名，上游地址、机场名称和凭证不会下发。VLESS 使用 Reality；VMess、Trojan 与 Hysteria2 使用本站 TLS 证书；Shadowsocks 与 WireGuard 使用各自的本站凭证。请同时放行 TCP 和 UDP 20000–59999。"
+        description="用户只连接本站域名并使用你设置的原样别名，上游地址、机场名称和凭证不会下发。VLESS 使用 Reality；VMess、Trojan、Hysteria2 与 AnyTLS 使用本站 TLS 证书；Shadowsocks 与 WireGuard 使用各自的本站凭证。请同时放行 TCP 和 UDP 20000–59999。"
       />
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}>
@@ -566,7 +566,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                 <Card>
                   <Form form={manualForm} layout="vertical">
                     <Form.Item name="name" label="导入批次名称"><Input /></Form.Item>
-                    <Form.Item name="links" label="VMess、VLESS、Trojan、Shadowsocks、Hysteria2 或 WireGuard 链接" rules={[{ required: true }]}>
+                    <Form.Item name="links" label="VMess、VLESS、Trojan、Shadowsocks、Hysteria2、WireGuard 或 AnyTLS 链接" rules={[{ required: true }]}>
                       <Input.TextArea rows={9} placeholder="每行一条协议链接" />
                     </Form.Item>
                     <Space>

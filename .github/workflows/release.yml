@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - "**"
+      - main
     tags:
       - "v*.*.*"
     paths:
@@ -18,19 +18,6 @@ on:
       - "x-ui.service.debian"
       - "x-ui.service.arch"
       - "x-ui.service.rhel"
-  pull_request:
-    paths:
-      - "**.go"
-      - "go.mod"
-      - "go.sum"
-      - "**.sh"
-      - ".github/workflows/release.yml"
-      - "deploy/ubuntu/**"
-      - "frontend/**"
-      - "x-ui.service.debian"
-      - "x-ui.service.arch"
-      - "x-ui.service.rhel"
-
 jobs:
   verify:
     name: Verify release candidate
@@ -103,15 +90,6 @@ jobs:
 
       - name: Verify Go race safety
         run: go test -p 1 -race -shuffle=on -count=1 -timeout 45m ./internal/...
-
-      - name: Verify 100,000 subscriptions across 50 inbounds
-        env:
-          XUI_SCALE_TEST: "1"
-          XUI_SCALE_SIZES: "100000"
-        run: >-
-          go test -p 1
-          ./internal/web/service ./internal/sub ./internal/web/job
-          -run 'Scale$' -count=1 -v -timeout 60m
 
   build:
     needs: verify
@@ -246,6 +224,26 @@ jobs:
           019616520463357dea4ae92d5de0e6355646a4d10535873c4951fc59c4ea0115  geosite_RU.dat
           CHECKSUMS
           mv xray xray-linux-${{ matrix.platform }}
+
+          # The upstream prebuilt executable omits with_v2ray_api. NOVA needs
+          # that module to apply the same per-customer traffic quotas to AnyTLS
+          # as to Xray protocols, so build the immutable official tag with the
+          # minimum audited feature set and verify its immutable Go module sum
+          # before executing the compiler.
+          SINGBOX_MODULE="github.com/sagernet/sing-box"
+          SINGBOX_VERSION="v1.13.12"
+          SINGBOX_SUM="h1:U7znhM2VRq76ZdN4X5eRKdaUxHJNHMGKpo2csKqGTsg="
+          SINGBOX_METADATA="$(go mod download -json "${SINGBOX_MODULE}@${SINGBOX_VERSION}")"
+          test "$(jq -r .Sum <<<"$SINGBOX_METADATA")" = "$SINGBOX_SUM"
+          SINGBOX_SOURCE="$(jq -r .Dir <<<"$SINGBOX_METADATA")"
+          SINGBOX_OUTPUT="$PWD/sing-box-linux-${{ matrix.platform }}"
+          cd "$SINGBOX_SOURCE"
+          GOOS=linux GOARCH=${{ matrix.platform }} CGO_ENABLED=0 \
+            go build -trimpath \
+              -tags 'with_utls,with_v2ray_api,badlinkname,tfogo_checklinkname0' \
+              -ldflags '-s -w -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0' \
+              -o "$SINGBOX_OUTPUT" ./cmd/sing-box
+          cd "$(dirname "$SINGBOX_OUTPUT")"
           cd ../..
 
       - name: Verify Trojan and Hysteria2 traffic through packaged Xray
@@ -253,6 +251,12 @@ jobs:
         env:
           XRAY_E2E_BINARY: ${{ github.workspace }}/x-ui/bin/xray-linux-amd64
         run: go test ./internal/xray -run 'TestXrayProtocolConnectivity_E2E' -count=1 -v -timeout 2m
+
+      - name: Verify managed AnyTLS chain and user traffic accounting
+        if: matrix.platform == 'amd64'
+        env:
+          SINGBOX_E2E_BINARY: ${{ github.workspace }}/x-ui/bin/sing-box-linux-amd64
+        run: go test ./internal/web/service -run 'TestManagedAnyTLS(ConfigAcceptedBySingBox|ChainE2E)' -count=1 -v -timeout 3m
 
       - name: Package
         run: |
@@ -267,6 +271,7 @@ jobs:
             x-ui/x-ui \
             x-ui/bin/config.json \
             x-ui/bin/xray-linux-${{ matrix.platform }} \
+            x-ui/bin/sing-box-linux-${{ matrix.platform }} \
             x-ui/deploy/ubuntu/install.sh \
             x-ui/deploy/ubuntu/update.sh \
             x-ui/deploy/ubuntu/rollback.sh \

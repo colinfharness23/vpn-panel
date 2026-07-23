@@ -145,6 +145,9 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		if inbound.Protocol == model.MTProto {
 			continue
 		}
+		if inbound.Protocol == model.AnyTLS {
+			continue
+		}
 		settings := map[string]any{}
 		_ = json.Unmarshal([]byte(inbound.Settings), &settings)
 
@@ -398,6 +401,9 @@ func injectCommercialLines(cfg *xray.Config) {
 	newRules := make([]any, 0, len(rows))
 	observerTags := make([]string, 0, len(rows))
 	for i := range rows {
+		if strings.EqualFold(strings.TrimSpace(rows[i].Protocol), string(model.AnyTLS)) {
+			continue
+		}
 		plain, err := UnprotectCredential(rows[i].OutboundCiphertext)
 		if err != nil {
 			logger.Warning("commercial lines: decrypt outbound failed for [", rows[i].ID, "]:", err)
@@ -1253,11 +1259,11 @@ func (s *XrayService) RestartXray(isForce bool) error {
 		configUnchanged := p.GetConfig().Equals(xrayConfig)
 		if !isForce && configUnchanged && !isNeedXrayRestart.Load() {
 			logger.Debug("It does not need to restart Xray")
-			return nil
+			return ReconcileManagedAnyTLS()
 		}
 		if !isForce && !configUnchanged && s.tryHotApply(xrayConfig) {
 			logger.Info("Xray config changes applied through the core API, no restart needed")
-			return nil
+			return ReconcileManagedAnyTLS()
 		}
 		_ = p.Stop()
 	}
@@ -1269,8 +1275,7 @@ func (s *XrayService) RestartXray(isForce bool) error {
 	if err != nil {
 		return err
 	}
-
-	return nil
+	return ReconcileManagedAnyTLS()
 }
 
 // tryHotApply attempts to reconcile the running Xray instance with newCfg
@@ -1410,6 +1415,7 @@ func (s *XrayService) StopXray() error {
 	defer lock.Unlock()
 	isManuallyStopped.Store(true)
 	logger.Debug("Attempting to stop Xray...")
+	StopManagedAnyTLS()
 	if s.IsXrayRunning() {
 		return p.Stop()
 	}

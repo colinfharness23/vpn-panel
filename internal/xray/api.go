@@ -672,18 +672,51 @@ func (x *XrayAPI) GetTraffic() ([]*Traffic, []*ClientTraffic, error) {
 		logger.Debug("Failed to query Xray stats:", err)
 		return nil, nil, err
 	}
+	traffics, clients := x.trafficDeltas(resp, false)
+	return traffics, clients, nil
+}
 
+// GetTrafficWithMethod queries a V2Ray-wire-compatible statistics service
+// whose gRPC service name differs from Xray's. sing-box intentionally exposes
+// this compatibility endpoint as v2ray.core.app.stats.command.StatsService.
+func (x *XrayAPI) GetTrafficWithMethod(fullMethod string) ([]*Traffic, []*ClientTraffic, error) {
+	if x.grpcClient == nil {
+		return nil, nil, common.NewError("xray api is not initialized")
+	}
+	if strings.TrimSpace(fullMethod) == "" {
+		return nil, nil, common.NewError("stats gRPC method is empty")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+	resp := new(statsService.QueryStatsResponse)
+	if err := x.grpcClient.Invoke(ctx, fullMethod, &statsService.QueryStatsRequest{Reset_: false}, resp); err != nil {
+		return nil, nil, err
+	}
+	// This path is used for a panel-owned sidecar whose counters are created
+	// after the panel starts. Its first observed value is therefore new traffic,
+	// not an unknown pre-panel baseline.
+	traffics, clients := x.trafficDeltas(resp, true)
+	return traffics, clients, nil
+}
+
+func (x *XrayAPI) trafficDeltas(resp *statsService.QueryStatsResponse, includeFirst bool) ([]*Traffic, []*ClientTraffic) {
 	tagTrafficMap := make(map[string]*Traffic)
 	emailTrafficMap := make(map[string]*ClientTraffic)
 
 	for _, stat := range resp.GetStat() {
 		lastValue, ok := x.StatsLastValues[stat.Name]
 		x.StatsLastValues[stat.Name] = stat.Value
-		if !ok || stat.Value < lastValue {
-			// skip first time of seen stat
+		if stat.Value < lastValue {
 			continue
 		}
-		value := stat.Value - lastValue
+		value := stat.Value
+		if ok {
+			value -= lastValue
+		} else if !includeFirst {
+			// The regular Xray process may predate this API client, so its first
+			// value is a baseline rather than traffic from this poll.
+			continue
+		}
 		if matches := trafficRegex.FindStringSubmatch(stat.Name); len(matches) == 4 {
 			processTraffic(matches, value, tagTrafficMap)
 		} else if matches := clientTrafficRegex.FindStringSubmatch(stat.Name); len(matches) == 3 {
@@ -703,7 +736,7 @@ func (x *XrayAPI) GetTraffic() ([]*Traffic, []*ClientTraffic, error) {
 		x.StatsLastValues = pruned
 	}
 
-	return mapToSlice(tagTrafficMap), mapToSlice(emailTrafficMap), nil
+	return mapToSlice(tagTrafficMap), mapToSlice(emailTrafficMap)
 }
 
 // OnlineIP is one source address of a live connection, with the unix time (seconds)

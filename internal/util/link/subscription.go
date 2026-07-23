@@ -195,6 +195,18 @@ func clashProxyToOutbound(proxy map[string]any) (Outbound, string) {
 			}}},
 			"streamSettings": clashStreamSettings(proxy, "tls"),
 		}
+	case "anytls":
+		password := mapString(proxy, "password")
+		if password == "" {
+			return nil, ""
+		}
+		outbound = Outbound{
+			"protocol": "anytls", "tag": name,
+			"settings": map[string]any{
+				"server": server, "serverPort": port, "password": password,
+			},
+			"streamSettings": clashStreamSettings(proxy, "tls"),
+		}
 	case "ss":
 		method := mapString(proxy, "cipher", "method")
 		password := mapString(proxy, "password")
@@ -338,7 +350,7 @@ func parseSingBoxOutbounds(values []any) ([]Outbound, []string) {
 		}
 		protocol := strings.ToLower(mapString(outbound, "type"))
 		switch protocol {
-		case "vmess", "vless", "trojan", "hysteria2", "wireguard":
+		case "vmess", "vless", "trojan", "hysteria2", "wireguard", "anytls":
 		case "shadowsocks":
 			protocol = "ss"
 		default:

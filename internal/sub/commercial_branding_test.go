@@ -71,7 +71,7 @@ func TestManagedLineSubscriptionHidesImportedProviderRemark(t *testing.T) {
 	}
 }
 
-func TestManagedSubscriptionPreservesSixProtocolTypesAndExactAliases(t *testing.T) {
+func TestManagedSubscriptionPreservesSevenProtocolTypesAndExactAliases(t *testing.T) {
 	initSubDB(t)
 	db := database.GetDB()
 	if err := db.Create(&model.CommercialSetting{Key: "site.name", Value: "PHEERO"}).Error; err != nil {
@@ -93,6 +93,7 @@ func TestManagedSubscriptionPreservesSixProtocolTypesAndExactAliases(t *testing.
 		model.Shadowsocks: `{}`,
 		model.Hysteria:    `{"network":"hysteria","security":"tls","tlsSettings":{"serverName":"vpn.pheero.com","settings":{"fingerprint":"chrome"}},"hysteriaSettings":{"version":2}}`,
 		model.WireGuard:   `{}`,
+		model.AnyTLS:      `{"network":"tcp","security":"tls","tlsSettings":{"serverName":"vpn.pheero.com"}}`,
 	}
 	settings := map[model.Protocol]string{
 		model.VMESS:       `{"clients":[]}`,
@@ -101,8 +102,9 @@ func TestManagedSubscriptionPreservesSixProtocolTypesAndExactAliases(t *testing.
 		model.Shadowsocks: `{"method":"2022-blake3-aes-256-gcm","password":"cHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHA=","network":"tcp,udp","clients":[]}`,
 		model.Hysteria:    `{"version":2,"clients":[]}`,
 		model.WireGuard:   `{"secretKey":"` + privateKey + `","mtu":1420,"peers":[]}`,
+		model.AnyTLS:      `{"clients":[]}`,
 	}
-	protocols := []model.Protocol{model.VMESS, model.VLESS, model.Trojan, model.Shadowsocks, model.Hysteria, model.WireGuard}
+	protocols := []model.Protocol{model.VMESS, model.VLESS, model.Trojan, model.Shadowsocks, model.Hysteria, model.WireGuard, model.AnyTLS}
 	for index, protocol := range protocols {
 		alias := "Alias-" + strings.ToUpper(string(protocol))
 		inbound := &model.Inbound{UserId: 1, Remark: "private provider", Enable: true, Port: 31000 + index, Protocol: protocol, Settings: settings[protocol], StreamSettings: streams[protocol], Tag: fmt.Sprintf("managed-%s-%d", protocol, index), ShareAddrStrategy: "custom", ShareAddr: "vpn.pheero.com"}
@@ -129,8 +131,8 @@ func TestManagedSubscriptionPreservesSixProtocolTypesAndExactAliases(t *testing.
 	if len(links) != len(protocols) {
 		t.Fatalf("got %d links, want %d: %v", len(links), len(protocols), links)
 	}
-	wantSchemes := map[string]bool{"vmess": false, "vless": false, "trojan": false, "ss": false, "hysteria2": false, "wireguard": false}
-	wantAliases := map[string]string{"vless": "Alias-VLESS", "trojan": "Alias-TROJAN", "ss": "Alias-SHADOWSOCKS", "hysteria2": "Alias-HYSTERIA", "wireguard": "Alias-WIREGUARD"}
+	wantSchemes := map[string]bool{"vmess": false, "vless": false, "trojan": false, "ss": false, "hysteria2": false, "wireguard": false, "anytls": false}
+	wantAliases := map[string]string{"vless": "Alias-VLESS", "trojan": "Alias-TROJAN", "ss": "Alias-SHADOWSOCKS", "hysteria2": "Alias-HYSTERIA", "wireguard": "Alias-WIREGUARD", "anytls": "Alias-ANYTLS"}
 	for _, rawLink := range links {
 		if strings.HasPrefix(rawLink, "vmess://") {
 			decoded, decodeErr := base64.StdEncoding.DecodeString(strings.TrimPrefix(rawLink, "vmess://"))

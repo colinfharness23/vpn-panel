@@ -59,6 +59,20 @@ systemctl enable --now certbot.timer
 certbot renew --cert-name "$NOVA_DOMAIN" --dry-run --no-random-sleep-on-renew
 /usr/local/sbin/nova-sync-line-cert
 
+xray_ready=0
+for _ in $(seq 1 60); do
+  if pgrep -u nova -f '/usr/local/x-ui/bin/xray-linux-' >/dev/null; then
+    xray_ready=1
+    break
+  fi
+  sleep 1
+done
+if ((xray_ready == 0)); then
+  systemctl status x-ui --no-pager -l >&2 2>/dev/null || true
+  journalctl -u x-ui -n 160 --no-pager >&2 2>/dev/null || true
+  die "证书同步后 Xray 未在 60 秒内恢复。"
+fi
+
 curl -fsS --max-time 20 "https://$NOVA_DOMAIN/" | grep -qi '<div id="portal"></div>' || die "HTTPS 根门户验证失败。"
 curl -fsS --max-time 20 "https://$NOVA_DOMAIN/$NOVA_ADMIN_PATH/" >/dev/null || die "HTTPS 管理后台验证失败。"
 status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "https://$NOVA_DOMAIN/api/v1/user/bootstrap")"
@@ -72,7 +86,6 @@ status="$(curl -sS -D "$headers_file" -o /dev/null -w '%{http_code}' --max-time 
 [[ $status != 000 && $status -lt 500 ]] || die "订阅服务验证失败（HTTP $status）。"
 tr -d '\r' <"$headers_file" | grep -qi '^X-Nova-Service: subscription$' || die "订阅路径没有进入独立订阅服务。"
 PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -tAc 'SELECT 1' | grep -qx 1 || die "PostgreSQL 验证失败。"
-pgrep -u nova -f '/usr/local/x-ui/bin/xray-linux-' >/dev/null || die "Xray 进程未运行。"
 systemctl is-enabled --quiet certbot.timer || die "证书自动续期定时器未启用。"
 
 if grep -q '^NOVA_TLS_READY=' "$DEPLOY_FILE"; then

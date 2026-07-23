@@ -3221,6 +3221,7 @@
               "shadowsocks",
               "wireguard",
               "hysteria",
+              "anytls",
               "http",
               "mixed",
               "tunnel",

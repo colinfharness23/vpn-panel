@@ -97,6 +97,26 @@ describe('customer email settings', () => {
     expect(await screen.findByText('SSL/TLS (implicit, usually port 465)')).toBeTruthy();
   });
 
+  it('offers a domain SMTP preset and a beginner setup guide', async () => {
+    vi.spyOn(HttpUtil, 'get').mockResolvedValue({ success: true, msg: '', obj: templates });
+    const updateSetting = vi.fn();
+
+    render(<EmailTab allSetting={new AllSetting()} updateSetting={updateSetting} />);
+
+    expect(screen.getByText(/Follow these five steps/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: /official domain setup guide/ }).getAttribute('href'))
+      .toBe('https://resend.com/docs/dashboard/domains/introduction');
+
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Common email provider' }));
+    fireEvent.click(await screen.findByText('Resend'));
+    expect(updateSetting).toHaveBeenLastCalledWith({
+      smtpHost: 'smtp.resend.com',
+      smtpPort: 465,
+      smtpEncryptionType: 'tls',
+      smtpUsername: 'resend',
+    });
+  });
+
   it('keeps system alerts and adds template and customer-send tabs', async () => {
     vi.spyOn(HttpUtil, 'get').mockImplementation(async (url: string) => {
       if (url.includes('email-templates')) return { success: true, msg: '', obj: templates } as never;

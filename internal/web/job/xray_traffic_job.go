@@ -44,6 +44,13 @@ func (j *XrayTrafficJob) Run() {
 	if err != nil {
 		return
 	}
+	anyTLSTraffics, anyTLSClients, anyTLSErr := service.GetManagedAnyTLSTraffic()
+	if anyTLSErr != nil {
+		logger.Debug("get managed AnyTLS traffic failed:", anyTLSErr)
+	} else {
+		traffics = append(traffics, anyTLSTraffics...)
+		clientTraffics = append(clientTraffics, anyTLSClients...)
+	}
 	needRestart0, clientsDisabled, err := j.inboundService.AddTraffic(traffics, clientTraffics)
 	if err != nil {
 		logger.Warning("add inbound traffic failed:", err)

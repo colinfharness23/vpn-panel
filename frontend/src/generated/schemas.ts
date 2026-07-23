@@ -3195,6 +3195,7 @@ export const SCHEMAS: Record<string, unknown> = {
           "shadowsocks",
           "wireguard",
           "hysteria",
+          "anytls",
           "http",
           "mixed",
           "tunnel",

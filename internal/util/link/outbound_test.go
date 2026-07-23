@@ -399,6 +399,24 @@ func TestParseTLSLinksPreserveAllowInsecure(t *testing.T) {
 	}
 }
 
+func TestParseAnyTLSLink(t *testing.T) {
+	result, err := ParseLink("anytls://p%40ss%2Bkey@203.0.113.41:8443?security=tls&sni=edge.example.com&fp=chrome&insecure=1#Hong%20Kong")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Identity == "" || result.Outbound["protocol"] != "anytls" || result.Outbound["tag"] != "Hong Kong" {
+		t.Fatalf("unexpected AnyTLS parse result: %#v", result)
+	}
+	settings := result.Outbound["settings"].(map[string]any)
+	if settings["server"] != "203.0.113.41" || settings["serverPort"] != 8443 || settings["password"] != "p@ss+key" {
+		t.Fatalf("AnyTLS endpoint was not preserved: %#v", settings)
+	}
+	tlsSettings := result.Outbound["streamSettings"].(map[string]any)["tlsSettings"].(map[string]any)
+	if tlsSettings["serverName"] != "edge.example.com" || tlsSettings["fingerprint"] != "chrome" || tlsSettings["allowInsecure"] != true {
+		t.Fatalf("AnyTLS TLS settings were not preserved: %#v", tlsSettings)
+	}
+}
+
 func TestSlugAndSuggest(t *testing.T) {
 	if SlugRemark("Hello World!") != "hello-world" {
 		t.Errorf("slug failed")
