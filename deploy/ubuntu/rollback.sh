@@ -27,6 +27,7 @@ recover_current() {
 }
 trap 'recover_current "$?"' ERR
 
+install -d -m 700 /var/backups/nova/releases
 backup="${1:-}"
 if [[ -z $backup ]]; then
   backup="$(find /var/backups/nova/releases -maxdepth 1 -type f -name 'x-ui-*.tar.gz' -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"

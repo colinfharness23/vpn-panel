@@ -72,6 +72,7 @@ for required_diagnostic in diagnose-active-subscription diagnose-managed-ingress
 done
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+install -d -m 700 /var/backups/nova/releases
 backup="/var/backups/nova/releases/x-ui-$NOVA_RELEASE_TAG-$stamp.tar.gz"
 tar -czf "$backup" -C /usr/local x-ui
 printf '%s\n' "$NOVA_RELEASE_TAG" >"$backup.tag"

@@ -264,7 +264,7 @@ assert_port_available "$NOVA_SUB_PORT"
 getent ahosts "$NOVA_DOMAIN" >/dev/null || die "域名 $NOVA_DOMAIN 尚未完成 DNS 解析。"
 
 id -u "$SERVICE_USER" >/dev/null 2>&1 || useradd --system --home-dir "$DATA_DIR" --create-home --shell /usr/sbin/nologin "$SERVICE_USER"
-install -d -m 700 "$CONFIG_DIR" "$BACKUP_ROOT"
+install -d -m 700 "$CONFIG_DIR" "$BACKUP_ROOT" "$BACKUP_ROOT/releases"
 install -d -o "$SERVICE_USER" -g "$SERVICE_USER" -m 750 "$DATA_DIR" "$UPLOAD_DIR" "$LOG_DIR"
 
 legacy_pg_dsn="$(existing_env_value /etc/default/x-ui XUI_DB_DSN)"
