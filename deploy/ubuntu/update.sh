@@ -98,7 +98,7 @@ if ! grep -q '/nova-line/' /etc/nginx/sites-available/nova.conf; then
   cp -a /etc/nginx/sites-available/nova.conf "$nginx_backup"
   line_location="$tmp_dir/nova-line-location.conf"
   cat >"$line_location" <<EOF
-    location ~ ^/nova-line/[2-5][0-9]{4}/[0-9a-f]{16}\$ {
+    location ~ "^/nova-line/[2-5][0-9]{4}/[0-9a-f]{16}\$" {
         proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;

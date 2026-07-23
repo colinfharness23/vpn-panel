@@ -34,10 +34,31 @@ jobs:
       - name: Validate shell scripts
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq shellcheck
+          sudo apt-get install -y -qq nginx shellcheck
           bash -n deploy/ubuntu/*.sh
           shellcheck -S error -x deploy/ubuntu/*.sh
           sudo env NOVA_INSTALL_PORT_SELF_TEST=1 bash deploy/ubuntu/install.sh
+
+      - name: Validate managed-line Nginx ingress syntax
+        run: |
+          ingress='location ~ "^/nova-line/[2-5][0-9]{4}/[0-9a-f]{16}\$" {'
+          grep -Fq "$ingress" deploy/ubuntu/install.sh
+          grep -Fq "$ingress" deploy/ubuntu/update.sh
+          prefix=$(mktemp -d)
+          cat >"$prefix/nginx.conf" <<'EOF'
+          pid logs/nginx.pid;
+          events {}
+          http {
+              server {
+                  listen 127.0.0.1:18080;
+                  location ~ "^/nova-line/[2-5][0-9]{4}/[0-9a-f]{16}$" {
+                      return 204;
+                  }
+              }
+          }
+          EOF
+          mkdir -p "$prefix/logs"
+          sudo nginx -t -p "$prefix/" -c "$prefix/nginx.conf"
 
       - name: Validate the interactive installer contract
         run: |
