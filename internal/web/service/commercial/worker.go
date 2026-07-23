@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 
+	appconfig "github.com/mhsanaei/3x-ui/v3/internal/config"
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
@@ -30,6 +31,7 @@ type Worker struct {
 	config     *ConfigStore
 	clients    service.ClientService
 	inbounds   service.InboundService
+	xray       clientRuntimeConverger
 	mailer     customerEmailSender
 	lineEvents chan eventbus.Event
 }
@@ -38,10 +40,40 @@ type customerEmailSender interface {
 	SendTo(recipients []string, subject, body string) error
 }
 
+type clientRuntimeConverger interface {
+	SetToNeedRestart()
+	RestartXray(isForce bool) error
+}
+
+// applyClientRuntimeMutation closes the gap between a successful database
+// mutation and the running proxy process. ClientService first attempts a hot
+// API update and reports needRestart when that update is unavailable or
+// rejected. Commercial provisioning used to discard that signal, leaving the
+// subscription credential in PostgreSQL while the running Xray process did not
+// know the user; clients could import the link but every connection failed.
+func (w *Worker) applyClientRuntimeMutation(needRestart bool) error {
+	if !needRestart {
+		return nil
+	}
+	xrayService := w.xray
+	if xrayService == nil {
+		xrayService = &service.XrayService{}
+	}
+	xrayService.SetToNeedRestart()
+	// Unit tests and upstream-compatible development profiles do not own a
+	// production Xray process. The production profile must converge
+	// immediately before an order can be marked complete.
+	if !appconfig.IsCommercialProduction() {
+		return nil
+	}
+	return xrayService.RestartXray(false)
+}
+
 func NewWorker() *Worker {
 	config := NewConfigStore()
 	return &Worker{
 		db: database.GetDB(), orders: NewOrderService(), config: config,
+		xray:   &service.XrayService{},
 		mailer: emailservice.NewEmailService(service.SettingService{}, config), lineEvents: make(chan eventbus.Event, 256),
 	}
 }
@@ -205,19 +237,29 @@ func (w *Worker) provision(_ context.Context, job *model.ProvisioningJob) error 
 	client := model.Client{ID: clientID, Email: internalID, SubID: subscriptionID, Enable: true, TotalGB: plan.TrafficBytes, TrafficMultiplierPermille: model.NormalizeTrafficMultiplierPermille(plan.TrafficMultiplierPermille), UploadLimitMbps: plan.UploadLimitMbps, DownloadLimitMbps: plan.DownloadLimitMbps, ExpiryTime: expiry.UnixMilli(), LimitIP: plan.DeviceLimit, Group: plan.NodeGroup, Reset: resetDaysForPolicy(plan.ResetCycle, policy.MonthlyResetMode), Comment: "commercial:" + order.ID}
 	var record model.ClientRecord
 	lookupErr := w.db.Where("email = ?", internalID).First(&record).Error
+	needRuntimeRestart := false
 	if errors.Is(lookupErr, gorm.ErrRecordNotFound) {
-		if _, err := w.clients.Create(&w.inbounds, &service.ClientCreatePayload{Client: client, InboundIds: inboundIDs}); err != nil {
+		needRestart, err := w.clients.Create(&w.inbounds, &service.ClientCreatePayload{Client: client, InboundIds: inboundIDs})
+		if err != nil {
 			return err
 		}
+		needRuntimeRestart = needRuntimeRestart || needRestart
 	} else if lookupErr != nil {
 		return lookupErr
 	} else {
-		if _, err := w.clients.UpdateByEmail(&w.inbounds, internalID, client, inboundIDs...); err != nil {
+		needRestart, err := w.clients.UpdateByEmail(&w.inbounds, internalID, client, inboundIDs...)
+		if err != nil {
 			return err
 		}
-		if _, err := w.clients.AttachByEmail(&w.inbounds, internalID, inboundIDs); err != nil {
+		needRuntimeRestart = needRuntimeRestart || needRestart
+		needRestart, err = w.clients.AttachByEmail(&w.inbounds, internalID, inboundIDs)
+		if err != nil {
 			return err
 		}
+		needRuntimeRestart = needRuntimeRestart || needRestart
+	}
+	if err := w.applyClientRuntimeMutation(needRuntimeRestart); err != nil {
+		return fmt.Errorf("apply provisioned client to proxy runtime: %w", err)
 	}
 	starts := time.Now().UTC()
 	entitlement := model.SubscriptionEntitlement{ID: uuid.NewString(), CustomerID: order.CustomerID, PlanID: plan.ID, OrderID: order.ID, InternalClientID: internalID, SubscriptionID: subscriptionID, Status: "active", TrafficQuota: plan.TrafficBytes, DeviceLimit: plan.DeviceLimit, TrafficMultiplierPermille: model.NormalizeTrafficMultiplierPermille(plan.TrafficMultiplierPermille), UploadLimitMbps: plan.UploadLimitMbps, DownloadLimitMbps: plan.DownloadLimitMbps, ResidentialRelayEnabled: plan.ResidentialRelayEnabled, ResidentialRelayLimit: plan.ResidentialRelayLimit, NodeGroup: plan.NodeGroup, StartsAt: starts, ExpiresAt: &expiry}
@@ -290,12 +332,15 @@ func (w *Worker) provisionExistingSubscription(order *model.Order, plan *model.P
 	client.Group = plan.NodeGroup
 	policy := w.config.SubscriptionPolicy()
 	client.Reset = resetDaysForPolicy(plan.ResetCycle, policy.MonthlyResetMode)
-	if _, err := w.clients.UpdateByEmail(&w.inbounds, entitlement.InternalClientID, *client, currentInboundIDs...); err != nil {
+	needRuntimeRestart, err := w.clients.UpdateByEmail(&w.inbounds, entitlement.InternalClientID, *client, currentInboundIDs...)
+	if err != nil {
 		return err
 	}
-	if _, err := w.clients.AttachByEmail(&w.inbounds, entitlement.InternalClientID, inboundIDs); err != nil {
+	needRestart, err := w.clients.AttachByEmail(&w.inbounds, entitlement.InternalClientID, inboundIDs)
+	if err != nil {
 		return err
 	}
+	needRuntimeRestart = needRuntimeRestart || needRestart
 	targetSet := make(map[int]struct{}, len(inboundIDs))
 	for _, inboundID := range inboundIDs {
 		targetSet[inboundID] = struct{}{}
@@ -307,9 +352,14 @@ func (w *Worker) provisionExistingSubscription(order *model.Order, plan *model.P
 		}
 	}
 	if len(obsolete) > 0 {
-		if _, err := w.clients.DetachByEmailMany(&w.inbounds, entitlement.InternalClientID, obsolete); err != nil {
+		needRestart, err = w.clients.DetachByEmailMany(&w.inbounds, entitlement.InternalClientID, obsolete)
+		if err != nil {
 			return err
 		}
+		needRuntimeRestart = needRuntimeRestart || needRestart
+	}
+	if err := w.applyClientRuntimeMutation(needRuntimeRestart); err != nil {
+		return fmt.Errorf("apply updated client to proxy runtime: %w", err)
 	}
 	resetTraffic := policy.EventFor(order.OrderKind) == SubscriptionEventResetTraffic
 	if resetTraffic {

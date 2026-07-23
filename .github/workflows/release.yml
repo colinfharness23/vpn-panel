@@ -180,7 +180,8 @@ jobs:
           cp x-ui.service.rhel x-ui/
           mkdir -p x-ui/deploy/ubuntu
           cp deploy/ubuntu/*.sh x-ui/deploy/ubuntu/
-          chmod +x x-ui/deploy/ubuntu/*.sh
+          cp deploy/ubuntu/*.py x-ui/deploy/ubuntu/
+          chmod +x x-ui/deploy/ubuntu/*.sh x-ui/deploy/ubuntu/*.py
           mv x-ui/xui-release x-ui/x-ui
           mkdir x-ui/bin
           # Ship a valid initial Xray configuration. The panel rewrites this
@@ -279,7 +280,9 @@ jobs:
             x-ui/deploy/ubuntu/rotate-admin-path.sh \
             x-ui/deploy/ubuntu/uninstall.sh \
             x-ui/deploy/ubuntu/finalize-domain.sh \
-            x-ui/deploy/ubuntu/sync-line-cert.sh; do
+            x-ui/deploy/ubuntu/sync-line-cert.sh \
+            x-ui/deploy/ubuntu/diagnose-active-subscription.py \
+            x-ui/deploy/ubuntu/diagnose-managed-ingress.py; do
             grep -Fxq "$required" /tmp/release-files.txt || {
               echo "missing release file: $required" >&2
               exit 1

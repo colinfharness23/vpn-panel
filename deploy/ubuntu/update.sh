@@ -9,6 +9,7 @@ source /etc/nova/deploy.env
 
 tmp_dir=""
 backup=""
+nginx_backup=""
 rollback_armed=0
 cleanup() { [[ -z $tmp_dir || ! -d $tmp_dir ]] || rm -rf -- "$tmp_dir"; }
 restore_previous() {
@@ -23,6 +24,10 @@ restore_previous() {
     chown -R nova:nova /usr/local/x-ui
     sed -i "s|^NOVA_RELEASE_TAG=.*$|NOVA_RELEASE_TAG=$NOVA_RELEASE_TAG|" /etc/nova/deploy.env
     systemctl restart x-ui
+    if [[ -n $nginx_backup && -f $nginx_backup ]]; then
+      cp -a "$nginx_backup" /etc/nginx/sites-available/nova.conf
+      nginx -t && systemctl reload nginx
+    fi
     curl -fsS --max-time 10 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/" >/dev/null ||
       journalctl -u x-ui -n 80 --no-pager >&2
   fi
@@ -52,7 +57,7 @@ curl -fL --retry 5 --retry-delay 3 --max-time 60 -o "$tmp_dir/$asset.sha256" "$a
 expected_sha="$(awk -v name="$asset" '$2 == name || $2 == "*"name {print $1; exit}' "$tmp_dir/$asset.sha256")"
 [[ $expected_sha =~ ^[a-fA-F0-9]{64}$ ]] || { echo "Release SHA-256 文件格式无效。" >&2; exit 1; }
 actual_sha="$(sha256sum "$tmp_dir/$asset" | awk '{print $1}')"
-[[ ${actual_sha,,} == ${expected_sha,,} ]] || { echo "Release SHA-256 校验失败。" >&2; exit 1; }
+[[ ${actual_sha,,} == "${expected_sha,,}" ]] || { echo "Release SHA-256 校验失败。" >&2; exit 1; }
 tar -tzf "$tmp_dir/$asset" | awk '$0 ~ /(^\/|(^|\/)\.\.(\/|$))/ { found=1 } END { exit !found }' && { echo "安装包包含不安全路径。" >&2; exit 1; }
 tar -tzf "$tmp_dir/$asset" | awk '$0 !~ /^x-ui(\/|$)/ { found=1 } END { exit !found }' && { echo "安装包包含 x-ui 目录之外的文件。" >&2; exit 1; }
 tar -tvzf "$tmp_dir/$asset" | awk 'substr($1,1,1) !~ /^[-d]$/ { found=1 } END { exit !found }' && { echo "安装包包含符号链接、硬链接或设备文件。" >&2; exit 1; }
@@ -61,6 +66,9 @@ tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
   { echo "Release 缺少面板、Xray、AnyTLS 运行时或初始配置。" >&2; exit 1; }
 for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_script.sh ]] || { echo "Release 缺少运维脚本 $required_script.sh。" >&2; exit 1; }
+done
+for required_diagnostic in diagnose-active-subscription diagnose-managed-ingress; do
+  [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_diagnostic.py ]] || { echo "Release 缺少诊断脚本 $required_diagnostic.py。" >&2; exit 1; }
 done
 
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -84,6 +92,41 @@ ln -sfn /usr/local/sbin/nova-sync-line-cert /etc/letsencrypt/renewal-hooks/deplo
 if [[ -r /etc/letsencrypt/live/$NOVA_DOMAIN/fullchain.pem && -r /etc/letsencrypt/live/$NOVA_DOMAIN/privkey.pem ]]; then
   NOVA_SYNC_NO_RESTART=true /usr/local/sbin/nova-sync-line-cert
 fi
+
+if ! grep -q '/nova-line/' /etc/nginx/sites-available/nova.conf; then
+  nginx_backup="$tmp_dir/nova.conf.before-line-ingress"
+  cp -a /etc/nginx/sites-available/nova.conf "$nginx_backup"
+  line_location="$tmp_dir/nova-line-location.conf"
+  cat >"$line_location" <<EOF
+    location ~ ^/nova-line/[2-5][0-9]{4}/[0-9a-f]{16}\$ {
+        proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_buffering off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
+EOF
+  updated_nginx="$tmp_dir/nova.conf.with-line-ingress"
+  awk -v snippet="$line_location" '
+    !inserted && /^[[:space:]]*location \/[[:space:]]*\{/ {
+      while ((getline line < snippet) > 0) print line
+      close(snippet)
+      inserted=1
+    }
+    { print }
+    END { if (!inserted) exit 42 }
+  ' /etc/nginx/sites-available/nova.conf >"$updated_nginx"
+  install -m 644 "$updated_nginx" /etc/nginx/sites-available/nova.conf
+  nginx -t
+  systemctl reload nginx
+fi
 systemctl restart x-ui
 
 healthy=0
@@ -91,12 +134,24 @@ for _ in $(seq 1 40); do
   user_bootstrap_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/user/bootstrap" || true)"
   portal_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/portal/" || true)"
   subscription_status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_SUB_PORT${NOVA_SUB_PATH}health-probe" || true)"
+  enabled_inbounds="$(
+    PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" \
+      -tAc 'SELECT COUNT(*) FROM inbounds WHERE enable = true' 2>/dev/null | tr -d '[:space:]'
+  )"
+  xray_ready=0
+  if pgrep -u nova -f "/usr/local/x-ui/bin/xray-linux-$arch" >/dev/null; then
+    xray_ready=1
+  elif [[ $enabled_inbounds == 0 ]] &&
+       runuser -u nova -- "/usr/local/x-ui/bin/xray-linux-$arch" run -test \
+         -c /usr/local/x-ui/bin/config.json >/dev/null 2>&1; then
+    xray_ready=1
+  fi
   if curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/" >/dev/null &&
      curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/$NOVA_ADMIN_PATH/" >/dev/null &&
      curl -fsS --max-time 3 -H "Host: $NOVA_DOMAIN" "http://127.0.0.1:$NOVA_PANEL_PORT/api/v1/guest/auth-config" | jq -e '.success == true' >/dev/null &&
      [[ $user_bootstrap_status == 401 && $portal_status == 308 && $subscription_status != 000 && $subscription_status -lt 500 ]] &&
      PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -tAc 'SELECT 1' | grep -qx 1 &&
-     pgrep -u nova -f "/usr/local/x-ui/bin/xray-linux-$arch" >/dev/null; then
+     (( xray_ready == 1 )); then
     healthy=1
     break
   fi
@@ -118,6 +173,10 @@ sed -i "s|^NOVA_RELEASE_TAG=.*$|NOVA_RELEASE_TAG=$requested_tag|" /etc/nova/depl
 for script in update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f /usr/local/x-ui/deploy/ubuntu/$script.sh ]] &&
     install -m 755 "/usr/local/x-ui/deploy/ubuntu/$script.sh" "/usr/local/sbin/nova-$script"
+done
+for diagnostic in diagnose-active-subscription diagnose-managed-ingress; do
+  [[ -f /usr/local/x-ui/deploy/ubuntu/$diagnostic.py ]] &&
+    install -m 755 "/usr/local/x-ui/deploy/ubuntu/$diagnostic.py" "/usr/local/sbin/nova-$diagnostic"
 done
 rollback_armed=0
 echo "更新完成：$NOVA_RELEASE_TAG -> $requested_tag"

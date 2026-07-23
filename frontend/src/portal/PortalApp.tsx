@@ -500,7 +500,40 @@ Object.assign(fallbackBootstrapEN.site, {
   termsVersion: "preview-terms-v1",
 });
 
+const fallbackBootstrapAR: GuestBootstrap = {
+  ...fallbackBootstrapEN,
+  site: {
+    ...fallbackBootstrapEN.site,
+    siteTagline: "وصول آمن وإعداد بسيط",
+    termsTitle: "شروط الخدمة",
+  },
+  plans: fallbackBootstrapEN.plans.map((entry, index) => ({
+    ...entry,
+    plan: {
+      ...entry.plan,
+      name: ["الأساسية", "الاحترافية", "المتكاملة"][index],
+      description: [
+        "للتصفح الخفيف والاستخدام العرضي",
+        "بيانات شهرية واتصال عالي السرعة",
+        "لأجهزة متعددة واستخدام كثيف",
+      ][index],
+    },
+  })),
+  paymentMethods: [{ code: "alipay-demo", name: "دفع تجريبي" }],
+  notices: [
+    {
+      id: "welcome",
+      slug: "welcome",
+      level: "info",
+      title: "إشعار الخدمة",
+      content:
+        "تتوفر خطوط جديدة عالية السرعة. حدّث اشتراكك في التطبيق لاستخدامها.",
+    },
+  ],
+};
+
 function fallbackBootstrapForLocale(locale: PortalLocale): GuestBootstrap {
+  if (locale === "ar-EG") return fallbackBootstrapAR;
   return locale === "zh-CN" ? fallbackBootstrapZH : fallbackBootstrapEN;
 }
 
@@ -568,7 +601,12 @@ function previewDashboardForLocale(locale: PortalLocale): Dashboard {
     customer: {
       id: "preview",
       email: "member@gmail.com",
-      displayName: locale === "zh-CN" ? "NOVA 用户" : "NOVA Member",
+      displayName:
+        locale === "zh-CN"
+          ? "NOVA 用户"
+          : locale === "ar-EG"
+            ? "عضو NOVA"
+            : "NOVA Member",
       locale,
       status: "active",
       balanceFen: 2860,
@@ -944,7 +982,12 @@ function PortalContent() {
 
   useEffect(() => {
     document.documentElement.lang = locale;
-    document.documentElement.dir = rtl ? "rtl" : "ltr";
+    // Keep the application shell in a stable left-to-right layout. Applying
+    // `dir=rtl` to <html> mirrors every grid, tab strip and navigation control,
+    // which also makes horizontally scrollable controls start off-screen on
+    // phones. Arabic and Persian copy still gets its native reading direction
+    // through the scoped data attribute below.
+    document.documentElement.dir = "ltr";
     localStorage.setItem("nova-locale", locale);
   }, [locale, rtl]);
 
@@ -1527,6 +1570,15 @@ function PortalContent() {
             privacy: "隱私政策",
             copyright: "服務資訊以帳戶與訂單頁面顯示為準",
           }
+        : locale === "ar-EG"
+          ? {
+              promise:
+                "تفاصيل واضحة للباقات، وتحكم موثوق بالحساب، وسجل خدمة يمكنك الرجوع إليه.",
+              navigation: "التنقل في الخدمة",
+              terms: "شروط الخدمة",
+              privacy: "سياسة الخصوصية",
+              copyright: "تظهر تفاصيل الخدمة الحالية في صفحات الحساب والطلبات",
+            }
         : {
             promise:
               "Clear plan details, dependable account controls and service records you can revisit.",
@@ -1540,9 +1592,13 @@ function PortalContent() {
   return (
     <ConfigProvider
       locale={antdLocales[locale]}
-      direction={rtl ? "rtl" : "ltr"}
+      direction="ltr"
     >
-      <div className="portal-shell" dir={rtl ? "rtl" : "ltr"}>
+      <div
+        className="portal-shell"
+        dir="ltr"
+        data-copy-direction={rtl ? "rtl" : "ltr"}
+      >
         {dashboard && (
           <>
         <header className="portal-header">
@@ -1729,7 +1785,7 @@ function PortalContent() {
 
         <Modal
           className="portal-auth-modal"
-          open={authOpen || !dashboard}
+          open={authOpen || (!dashboard && !preview)}
           onCancel={() => {
             if (dashboard) setAuthOpen(false);
           }}

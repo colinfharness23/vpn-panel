@@ -271,6 +271,8 @@ export default defineConfig({
         makeBackendProxy(BACKEND_TARGET),
       "^/(?:[^/]+/)?api/v1(?:/|$)": makeBackendProxy(BACKEND_TARGET),
       "^/(?!src/)(?:[^/]+/)?portal(?:/|$)": makeBackendProxy(BACKEND_TARGET),
+      "^/(subscription|plans|guides|tickets|orders|account)(?:[/?]|$)":
+        makeBackendProxy(BACKEND_TARGET),
       "^/$": makeBackendProxy(BACKEND_TARGET),
       "^/[^/]+/$": makeBackendProxy(BACKEND_TARGET),
       "^/(?:[^/]+/)?ws$": {

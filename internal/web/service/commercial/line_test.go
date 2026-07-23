@@ -61,9 +61,9 @@ func TestManagedLineInboundPreservesImportedProtocolAndAliasInputs(t *testing.T)
 		want     model.Protocol
 		network  string
 	}{
-		{"vmess", model.VMESS, "tcp"},
-		{"vless", model.VLESS, "tcp"},
-		{"trojan", model.Trojan, "tcp"},
+		{"vmess", model.VMESS, "ws"},
+		{"vless", model.VLESS, "ws"},
+		{"trojan", model.Trojan, "ws"},
 		{"shadowsocks", model.Shadowsocks, "tcp"},
 		{"hysteria", model.Hysteria, "hysteria"},
 		{"wireguard", model.WireGuard, ""},
@@ -76,7 +76,7 @@ func TestManagedLineInboundPreservesImportedProtocolAndAliasInputs(t *testing.T)
 				t.Fatalf("protocol = %q, want %q", protocol, tc.want)
 			}
 			node := &model.LineNode{Fingerprint: strings.Repeat("a", 64), Protocol: tc.imported, PublicName: "IPLC"}
-			settingsJSON, streamJSON, err := managedLineInboundJSON(node, protocol, "vpn.pheero.com")
+			settingsJSON, streamJSON, err := managedLineInboundJSON(node, protocol, "vpn.pheero.com", 23456)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -95,7 +95,131 @@ func TestManagedLineInboundPreservesImportedProtocolAndAliasInputs(t *testing.T)
 			if got, _ := stream["network"].(string); got != tc.network {
 				t.Fatalf("%s network = %q, want %q", tc.imported, got, tc.network)
 			}
+			if tc.network == "ws" {
+				ws, _ := stream["wsSettings"].(map[string]any)
+				if got, _ := ws["path"].(string); got != "/nova-line/23456/aaaaaaaaaaaaaaaa" {
+					t.Fatalf("%s websocket path = %q", tc.imported, got)
+				}
+				proxies, _ := stream["externalProxy"].([]any)
+				if len(proxies) != 1 {
+					t.Fatalf("%s external proxy = %#v", tc.imported, proxies)
+				}
+				ep, _ := proxies[0].(map[string]any)
+				if ep["dest"] != "vpn.pheero.com" || int(ep["port"].(float64)) != 443 || ep["forceTls"] != "tls" {
+					t.Fatalf("%s public endpoint = %#v", tc.imported, ep)
+				}
+			}
 		})
+	}
+}
+
+func TestManagedLineUpgradeMovesVLESSBehindStandard443WebSocket(t *testing.T) {
+	initCommercialTestDB(t)
+	if err := NewConfigStore().SetManyProtected(map[string]string{
+		"site.url":                 "https://vpn.pheero.com",
+		"line.reality_private_key": "private-key",
+		"line.reality_public_key":  "public-key",
+	}, map[string]bool{"line.reality_private_key": true}); err != nil {
+		t.Fatal(err)
+	}
+	db := database.GetDB()
+	inbound := model.Inbound{
+		UserId: 1, Remark: "IPLC", Enable: true, Listen: "0.0.0.0", Port: 23456,
+		Protocol: model.VLESS, Settings: `{"clients":[],"decryption":"none","encryption":"none"}`,
+		StreamSettings: `{"network":"tcp","security":"reality"}`, Tag: "commercial-in-upgrade",
+	}
+	if err := db.Create(&inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	client := model.ClientRecord{
+		Email: "upgrade@example.com", SubID: "upgrade-sub",
+		UUID: "11111111-2222-4333-8444-555555555555", Enable: true,
+	}
+	if err := db.Create(&client).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ClientInbound{
+		ClientId: client.Id, InboundId: inbound.Id, FlowOverride: "xtls-rprx-vision",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	port := inbound.Port
+	node := model.LineNode{
+		ID: uuid.NewString(), Fingerprint: strings.Repeat("a", 64), Remark: "provider",
+		PublicName: "IPLC", Protocol: "vless", OutboundTag: lineTagPrefix + "upgrade",
+		OutboundCiphertext: "encrypted", PublicPort: &port, InboundID: &inbound.Id,
+		Status: lineStatusReady, HealthStatus: lineHealthHealthy, ProvisionVersion: 3,
+	}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewWorker().ensureManagedLineInbound(&node); err != nil {
+		t.Fatal(err)
+	}
+	var got model.Inbound
+	if err := db.First(&got, inbound.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if got.Listen != "127.0.0.1" || got.Port != 23456 {
+		t.Fatalf("upgraded listener = %s:%d", got.Listen, got.Port)
+	}
+	var stream map[string]any
+	if err := json.Unmarshal([]byte(got.StreamSettings), &stream); err != nil {
+		t.Fatal(err)
+	}
+	if stream["network"] != "ws" || stream["security"] != "none" {
+		t.Fatalf("upgraded stream = %#v", stream)
+	}
+	var binding model.ClientInbound
+	if err := db.Where("client_id = ? AND inbound_id = ?", client.Id, inbound.Id).First(&binding).Error; err != nil {
+		t.Fatal(err)
+	}
+	if binding.FlowOverride != "" {
+		t.Fatalf("VLESS WebSocket retained incompatible flow %q", binding.FlowOverride)
+	}
+	if node.ProvisionVersion != managedLineProvisionVersion {
+		t.Fatalf("provision version = %d", node.ProvisionVersion)
+	}
+}
+
+func TestManagedWebSocketIngressBackendValidatesNodeTokenAndRuntime(t *testing.T) {
+	initCommercialTestDB(t)
+	db := database.GetDB()
+	port := 23456
+	node := model.LineNode{
+		ID: uuid.NewString(), Fingerprint: strings.Repeat("a", 64), Remark: "provider",
+		PublicName: "IPLC", Protocol: "vless", OutboundTag: lineTagPrefix + "ingress-auth",
+		OutboundCiphertext: "encrypted", PublicPort: &port, Status: lineStatusReady,
+		HealthStatus: lineHealthHealthy, ProvisionVersion: managedLineProvisionVersion,
+	}
+	path := managedLineWSPathPrefix + "23456/" + managedLineWebSocketPathToken(&node)
+	inbound := model.Inbound{
+		UserId: 1, Remark: "IPLC", Enable: true, Listen: "127.0.0.1", Port: port,
+		Protocol: model.VLESS, Settings: `{"clients":[],"decryption":"none"}`,
+		StreamSettings: `{"network":"ws","security":"none","wsSettings":{"path":"` + path + `","host":"vpn.pheero.com"}}`,
+		Tag:            "commercial-in-ingress-auth",
+	}
+	if err := db.Create(&inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	node.InboundID = &inbound.Id
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	lineService := NewLineService()
+	if backend, err := lineService.ManagedWebSocketIngressBackend(port, strings.Repeat("a", 16)); err != nil || backend != port {
+		t.Fatalf("valid ingress = %d, %v", backend, err)
+	}
+	if _, err := lineService.ManagedWebSocketIngressBackend(port, strings.Repeat("b", 16)); err == nil {
+		t.Fatal("incorrect line token was accepted")
+	}
+	if err := db.Model(&inbound).Update("enable", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lineService.ManagedWebSocketIngressBackend(port, strings.Repeat("a", 16)); err == nil {
+		t.Fatal("disabled inbound was accepted")
 	}
 }
 
@@ -169,6 +293,46 @@ func TestLineImportSevenProtocolsDeduplicatesAndEncrypts(t *testing.T) {
 	updated, err := service.UpdateNode(nodes[0].ID, entity.CommercialLineNodeUpdateRequest{PublicName: "香港高速线路"})
 	if err != nil || updated.PublicName != "香港高速线路" {
 		t.Fatalf("update public alias: row=%+v err=%v", updated, err)
+	}
+}
+
+func TestLineImportAcceptsAnyTLSWithTLSCompatibilityParameters(t *testing.T) {
+	initCommercialTestDB(t)
+	// Keep the provider credential supplied for live acceptance out of source
+	// control. This synthetic link preserves the same scheme, TLS compatibility
+	// flags, TCP transport and percent-encoded Unicode fragment.
+	const raw = "anytls://11111111-2222-4333-8444-555555555555@anytls.example.com:55551?security=tls&sni=anytls.example.com&insecure=1&allowInsecure=1&type=tcp#%F0%9F%87%B8%F0%9F%87%AC%E6%96%B0%E5%8A%A0%E5%9D%A102-AWS%E7%94%B5%E4%BF%A1%E4%BC%98%E5%8C%96"
+
+	lineService := NewLineService()
+	preview, err := lineService.PreviewImport(raw)
+	if err != nil {
+		t.Fatalf("preview AnyTLS link: %v", err)
+	}
+	if preview.ValidCount != 1 || preview.InvalidCount != 0 || len(preview.Entries) != 1 {
+		t.Fatalf("unexpected AnyTLS preview: %+v", preview)
+	}
+	entry := preview.Entries[0]
+	if !entry.Valid || entry.Protocol != "anytls" || entry.Remark != "🇸🇬新加坡02-AWS电信优化" {
+		t.Fatalf("unexpected AnyTLS entry: %+v", entry)
+	}
+
+	source, err := lineService.CommitImport(entity.CommercialLineImportRequest{
+		Name:  "AnyTLS exact-link regression",
+		Links: raw,
+	})
+	if err != nil {
+		t.Fatalf("commit AnyTLS link: %v", err)
+	}
+	if source.NodeCount != 1 {
+		t.Fatalf("AnyTLS source node count = %d, want 1", source.NodeCount)
+	}
+
+	var node model.LineNode
+	if err := database.GetDB().First(&node, "protocol = ?", "anytls").Error; err != nil {
+		t.Fatalf("load imported AnyTLS node: %v", err)
+	}
+	if node.Protocol != "anytls" || strings.TrimSpace(node.OutboundCiphertext) == "" {
+		t.Fatalf("stored AnyTLS node is incomplete: %+v", node)
 	}
 }
 

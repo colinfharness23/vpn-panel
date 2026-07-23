@@ -218,6 +218,34 @@ Object.assign(portalCopies['uk-UA'], { guides: 'Документація', guide
 Object.assign(portalCopies['tr-TR'], { guides: 'Kullanım belgeleri', guidesDescription: 'Cihazınız için resmi uygulamayı seçin, ardından uygun içe aktarma kılavuzunu izleyin.' });
 Object.assign(portalCopies['pt-BR'], { guides: 'Documentação', guidesDescription: 'Escolha o aplicativo oficial para seu dispositivo e siga o guia de importação correspondente.' });
 Object.assign(portalCopies['ar-EG'], { guides: 'دليل الاستخدام', guidesDescription: 'اختر التطبيق الرسمي المناسب لجهازك ثم اتبع دليل الاستيراد المطابق.' });
+Object.assign(portalCopies['ar-EG'], {
+  accountCenter: 'المركز الشخصي',
+  accountOverview: 'نظرة عامة',
+  invitationRewards: 'مكافآت الدعوة',
+  invitationCode: 'رمز الدعوة',
+  invitationLink: 'رابط الدعوة الشخصي',
+  copyInvitation: 'نسخ رابط الدعوة',
+  inviteFriends: 'دعوة الأصدقاء',
+  invitationDescription: 'شارك رابط دعوتك الشخصي. تُضاف المكافآت إلى رصيد حسابك وفق سياسة الموقع الحالية.',
+  accountSecurity: 'أمان الحساب',
+  balance: 'رصيد الحساب',
+  invitedUsers: 'الأصدقاء المدعوون',
+  commissionRate: 'نسبة المكافأة',
+  pendingCommission: 'المكافآت المعلقة',
+  earnedCommission: 'المكافآت المكتسبة',
+  commissionBalanceHint: 'لا يمكن سحب رصيد الحساب، ويمكن استخدامه فقط لشراء الباقات أو تجديدها أو ترقيتها.',
+  firstPaymentRule: 'تُحسب المكافأة على أول دفعة ناجحة للمستخدم المدعو.',
+  inviteCodePermanent: 'رمز دعوتك لا تنتهي صلاحيته.',
+  redeemGiftCard: 'استرداد بطاقة هدية',
+  giftCardCode: 'رمز بطاقة الهدية',
+  subscription: 'اشتراكي',
+  currentPlan: 'الباقة الحالية',
+  status: 'الحالة',
+  active: 'نشط',
+  used: 'المستخدم',
+  totalTraffic: 'إجمالي البيانات',
+  trafficReset: 'تُعاد تهيئة البيانات عند انتهاء الدورة الحالية',
+});
 Object.assign(portalCopies['fa-IR'], { guides: 'راهنمای استفاده', guidesDescription: 'برنامه رسمی مناسب دستگاه را انتخاب کنید و سپس راهنمای ورود مرتبط را دنبال کنید.' });
 
 Object.assign(portalCopies['zh-CN'], { changePassword: '修改密码', currentPassword: '当前密码', passwordRule: '密码至少 10 个字符，并包含大写字母、小写字母和数字。', passwordChangeHint: '验证当前密码后设置新密码；修改成功后，其他登录会话将被退出。', passwordChanged: '密码修改成功，其他登录会话已退出。' });

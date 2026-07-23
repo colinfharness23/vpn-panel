@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
@@ -51,6 +55,139 @@ func TestCommercialPublicAuthenticationBoundary(t *testing.T) {
 			t.Fatalf("GET %s returned %d, want %d: %s", test.path, response.Code, test.want, response.Body.String())
 		}
 	}
+}
+
+func TestManagedLineIngressOnlyProxiesTheRegisteredPortAndToken(t *testing.T) {
+	t.Setenv("XUI_COMMERCIAL_ENV", "test")
+	if err := database.InitDB(filepath.Join(t.TempDir(), "commercial-line-ingress.db")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := database.GetDB().DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	db := database.GetDB()
+	for key, value := range map[string]string{
+		"site.url":           "https://vpn.pheero.com",
+		"security.safe_mode": "true",
+	} {
+		if err := db.Create(&model.CommercialSetting{Key: key, Value: value}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	listener := reserveManagedLineIngressPort(t)
+	port := listener.Addr().(*net.TCPAddr).Port
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	backend := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if strings.EqualFold(request.Header.Get("Upgrade"), "websocket") {
+			connection, err := upgrader.Upgrade(w, request, nil)
+			if err != nil {
+				return
+			}
+			defer connection.Close()
+			messageType, message, err := connection.ReadMessage()
+			if err == nil {
+				_ = connection.WriteMessage(messageType, append([]byte("echo:"), message...))
+			}
+			return
+		}
+		_, _ = io.WriteString(w, "managed-line-proxy-ok")
+	})}
+	go func() { _ = backend.Serve(listener) }()
+	t.Cleanup(func() { _ = backend.Close() })
+
+	token := strings.Repeat("a", 16)
+	path := "/nova-line/" + strconv.Itoa(port) + "/" + token
+	inbound := model.Inbound{
+		UserId: 1, Remark: "IPLC", Enable: true, Listen: "127.0.0.1", Port: port,
+		Protocol: model.VLESS, Settings: `{"clients":[],"decryption":"none"}`,
+		StreamSettings: `{"network":"ws","security":"none","wsSettings":{"path":"` + path + `","host":"vpn.pheero.com"}}`,
+		Tag:            "commercial-in-public-ingress-test",
+	}
+	if err := db.Create(&inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	node := model.LineNode{
+		ID: uuid.NewString(), Fingerprint: strings.Repeat("a", 64), Remark: "provider",
+		PublicName: "IPLC", Protocol: "vless", OutboundTag: "commercial-line-public-ingress-test",
+		OutboundCiphertext: "encrypted", PublicPort: &port, InboundID: &inbound.Id,
+		Status: "ready", HealthStatus: "healthy", ProvisionVersion: 5,
+	}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set("base_path", "/")
+		c.Next()
+	})
+	NewCommercialPublicController(engine.Group(""), nil)
+
+	publicServer := httptest.NewServer(engine)
+	t.Cleanup(publicServer.Close)
+	if err := db.Model(&model.CommercialSetting{}).Where("key = ?", "site.url").Update("value", publicServer.URL).Error; err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequest(http.MethodGet, publicServer.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := publicServer.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || string(body) != "managed-line-proxy-ok" {
+		t.Fatalf("valid line ingress = %d %q", response.StatusCode, body)
+	}
+
+	webSocketURL := "ws" + strings.TrimPrefix(publicServer.URL, "http") + path
+	connection, _, err := websocket.DefaultDialer.Dial(webSocketURL, nil)
+	if err != nil {
+		t.Fatalf("upgrade managed line WebSocket: %v", err)
+	}
+	if err := connection.WriteMessage(websocket.TextMessage, []byte("ping")); err != nil {
+		connection.Close()
+		t.Fatal(err)
+	}
+	_, message, err := connection.ReadMessage()
+	connection.Close()
+	if err != nil || string(message) != "echo:ping" {
+		t.Fatalf("managed line WebSocket echo = %q, %v", message, err)
+	}
+
+	request, err = http.NewRequest(http.MethodGet, publicServer.URL+"/nova-line/"+strconv.Itoa(port)+"/"+strings.Repeat("b", 16), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err = publicServer.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusNotFound {
+		t.Fatalf("invalid line token returned %d", response.StatusCode)
+	}
+}
+
+func reserveManagedLineIngressPort(t *testing.T) net.Listener {
+	t.Helper()
+	for port := 20000; port <= 59999; port++ {
+		listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if err == nil {
+			return listener
+		}
+	}
+	t.Fatal("no managed line test port available")
+	return nil
 }
 
 func TestAuthenticatedApplicationDownloadSupportsRange(t *testing.T) {

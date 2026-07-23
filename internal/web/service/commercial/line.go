@@ -3,6 +3,7 @@ package commercial
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -75,9 +76,10 @@ type LineGroupView struct {
 
 type LineNodeView struct {
 	model.LineNode
-	SourceIDs []string `json:"sourceIds"`
-	GroupIDs  []string `json:"groupIds"`
-	Published bool     `json:"published"`
+	SourceIDs      []string `json:"sourceIds"`
+	GroupIDs       []string `json:"groupIds"`
+	Published      bool     `json:"published"`
+	ConnectionPort int      `json:"connectionPort"`
 }
 
 type LineOverview struct {
@@ -112,6 +114,41 @@ type LineService struct {
 
 func NewLineService() *LineService {
 	return &LineService{db: database.GetDB()}
+}
+
+func (s *LineService) ManagedWebSocketIngressBackend(port int, token string) (int, error) {
+	if port < 20000 || port > 59999 || len(token) != 16 {
+		return 0, errors.New("managed line ingress not found")
+	}
+	var node model.LineNode
+	if err := s.db.Where(
+		"public_port = ? AND inbound_id IS NOT NULL AND missing_since IS NULL AND status = ? AND provision_version >= ?",
+		port, lineStatusReady, managedLineProvisionVersion,
+	).First(&node).Error; err != nil {
+		return 0, errors.New("managed line ingress not found")
+	}
+	expectedToken := managedLineWebSocketPathToken(&node)
+	if subtle.ConstantTimeCompare([]byte(strings.ToLower(token)), []byte(expectedToken)) != 1 {
+		return 0, errors.New("managed line ingress not found")
+	}
+	var inbound model.Inbound
+	if err := s.db.Select("id", "enable", "listen", "port", "protocol", "stream_settings").First(&inbound, "id = ?", *node.InboundID).Error; err != nil {
+		return 0, errors.New("managed line ingress not found")
+	}
+	if !inbound.Enable || inbound.Listen != "127.0.0.1" || inbound.Port != port || !managedLineUsesWebSocket443(inbound.Protocol) {
+		return 0, errors.New("managed line ingress not found")
+	}
+	var stream map[string]any
+	if err := json.Unmarshal([]byte(inbound.StreamSettings), &stream); err != nil ||
+		stream["network"] != "ws" || stream["security"] != "none" {
+		return 0, errors.New("managed line ingress not found")
+	}
+	ws, _ := stream["wsSettings"].(map[string]any)
+	wantPath := managedLineWSPathPrefix + fmt.Sprint(port) + "/" + expectedToken
+	if path, _ := ws["path"].(string); path != wantPath {
+		return 0, errors.New("managed line ingress not found")
+	}
+	return port, nil
 }
 
 func (s *LineService) Overview() (*LineOverview, error) {
@@ -198,6 +235,11 @@ func (s *LineService) Nodes(sourceID, groupID, status string) ([]LineNodeView, e
 	views := make([]LineNodeView, 0, len(rows))
 	for i := range rows {
 		view := LineNodeView{LineNode: rows[i], SourceIDs: []string{}, GroupIDs: []string{}}
+		if managedLineUsesWebSocket443(managedLineInboundProtocol(rows[i].Protocol)) {
+			view.ConnectionPort = managedLinePublicPort
+		} else if rows[i].PublicPort != nil {
+			view.ConnectionPort = *rows[i].PublicPort
+		}
 		if err := s.db.Model(&model.LineSourceNode{}).Where("node_id = ? AND missing_since IS NULL", rows[i].ID).Pluck("source_id", &view.SourceIDs).Error; err != nil {
 			return nil, err
 		}

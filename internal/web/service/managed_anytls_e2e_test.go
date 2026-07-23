@@ -13,9 +13,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	linkutil "github.com/mhsanaei/3x-ui/v3/internal/util/link"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 
 	netproxy "golang.org/x/net/proxy"
@@ -153,6 +155,34 @@ func TestManagedAnyTLSChainE2E(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+func TestLiveAnyTLSShareLink(t *testing.T) {
+	binary := strings.TrimSpace(os.Getenv("SINGBOX_E2E_BINARY"))
+	raw := strings.TrimSpace(os.Getenv("NOVA_TEST_LIVE_ANYTLS_URL"))
+	if binary == "" || raw == "" {
+		t.Skip("set SINGBOX_E2E_BINARY and NOVA_TEST_LIVE_ANYTLS_URL to run the live AnyTLS test")
+	}
+	t.Setenv("XUI_SINGBOX_BINARY", binary)
+	parsed, err := linkutil.ParseLink(raw)
+	if err != nil {
+		t.Fatalf("parse live AnyTLS link: %v", err)
+	}
+	encoded, err := json.Marshal(parsed.Outbound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	secured, _, err := linkutil.SecureTLSOutbound(ctx, string(encoded))
+	if err != nil {
+		t.Fatalf("secure live AnyTLS TLS settings: %v", err)
+	}
+	delay, err := ProbeManagedAnyTLSOutbound(ctx, secured)
+	if err != nil {
+		t.Fatalf("live AnyTLS egress failed: %v", err)
+	}
+	t.Logf("live AnyTLS egress passed in %d ms", delay)
 }
 
 func mustAnyTLSTestJSON(value any) string {

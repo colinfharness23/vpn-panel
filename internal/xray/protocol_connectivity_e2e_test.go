@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -19,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"os/exec"
@@ -139,6 +141,39 @@ func TestXrayProtocolConnectivity_E2E(t *testing.T) {
 		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
 	})
 
+	t.Run("managed_vless_tls_websocket", func(t *testing.T) {
+		id := "44444444-5555-4666-8777-888888888888"
+		path := "/nova-line/23456/aaaaaaaaaaaaaaaa"
+		serverPort := freePort(t)
+		proxyPort := freePort(t)
+		publicPort := startProtocolTLSWebSocketProxy(t, certFile, keyFile, serverPort, path, "e2e.local")
+		server := map[string]any{
+			"log": map[string]any{"loglevel": "warning"},
+			"inbounds": []any{map[string]any{
+				"listen": "127.0.0.1", "port": serverPort, "protocol": "vless", "tag": "managed-vless-ws-e2e-in",
+				"settings": map[string]any{"decryption": "none", "clients": []any{map[string]any{"id": id}}},
+				"streamSettings": map[string]any{
+					"network": "ws", "security": "none",
+					"wsSettings": map[string]any{"path": path, "host": "e2e.local"},
+				},
+			}},
+			"outbounds": protocolTestDirectOutbounds(),
+		}
+		client := protocolTestHTTPClientConfig(proxyPort, map[string]any{
+			"protocol": "vless", "tag": "managed-vless-ws-e2e-out",
+			"settings": map[string]any{"vnext": []any{map[string]any{
+				"address": "127.0.0.1", "port": publicPort,
+				"users": []any{map[string]any{"id": id, "encryption": "none"}},
+			}}},
+			"streamSettings": map[string]any{
+				"network": "ws", "security": "tls",
+				"wsSettings":  map[string]any{"path": path, "host": "e2e.local"},
+				"tlsSettings": protocolTestTLSClientSettings(certPin),
+			},
+		})
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
+	})
+
 	t.Run("shadowsocks", func(t *testing.T) {
 		password := "shadowsocks-e2e-password"
 		serverPort := freePort(t)
@@ -188,6 +223,38 @@ func TestXrayProtocolConnectivity_E2E(t *testing.T) {
 			},
 		})
 
+		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
+	})
+
+	t.Run("managed_trojan_tls_websocket", func(t *testing.T) {
+		password := "managed-trojan-ws-e2e-password"
+		path := "/nova-line/23457/bbbbbbbbbbbbbbbb"
+		serverPort := freePort(t)
+		proxyPort := freePort(t)
+		publicPort := startProtocolTLSWebSocketProxy(t, certFile, keyFile, serverPort, path, "e2e.local")
+		server := map[string]any{
+			"log": map[string]any{"loglevel": "warning"},
+			"inbounds": []any{map[string]any{
+				"listen": "127.0.0.1", "port": serverPort, "protocol": "trojan", "tag": "managed-trojan-ws-e2e-in",
+				"settings": map[string]any{"clients": []any{map[string]any{"password": password, "email": "managed-trojan-ws-e2e"}}},
+				"streamSettings": map[string]any{
+					"network": "ws", "security": "none",
+					"wsSettings": map[string]any{"path": path, "host": "e2e.local"},
+				},
+			}},
+			"outbounds": protocolTestDirectOutbounds(),
+		}
+		client := protocolTestHTTPClientConfig(proxyPort, map[string]any{
+			"protocol": "trojan", "tag": "managed-trojan-ws-e2e-out",
+			"settings": map[string]any{"servers": []any{map[string]any{
+				"address": "127.0.0.1", "port": publicPort, "password": password,
+			}}},
+			"streamSettings": map[string]any{
+				"network": "ws", "security": "tls",
+				"wsSettings":  map[string]any{"path": path, "host": "e2e.local"},
+				"tlsSettings": protocolTestTLSClientSettings(certPin),
+			},
+		})
 		runProtocolProxyCheck(t, bin, server, client, serverPort, proxyPort, loopbackOriginURL, false)
 	})
 
@@ -329,6 +396,34 @@ func protocolTestTLSClientSettings(certPin string) map[string]any {
 		"pinnedPeerCertSha256": certPin,
 		"alpn":                 []string{"h3", "http/1.1"},
 	}
+}
+
+func startProtocolTLSWebSocketProxy(t *testing.T, certFile, keyFile string, backendPort int, path, host string) int {
+	t.Helper()
+	target, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", backendPort))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reverseProxy := httputil.NewSingleHostReverseProxy(target)
+	proxy := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != path || r.Host != host {
+			http.NotFound(w, r)
+			return
+		}
+		reverseProxy.ServeHTTP(w, r)
+	}))
+	certificate, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxy.TLS = &tls.Config{
+		Certificates: []tls.Certificate{certificate},
+		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"http/1.1"},
+	}
+	proxy.StartTLS()
+	t.Cleanup(proxy.Close)
+	return proxy.Listener.Addr().(*net.TCPAddr).Port
 }
 
 func runProtocolProxyCheck(

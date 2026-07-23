@@ -67,6 +67,7 @@ interface LineNode {
   publicName: string;
   protocol: string;
   publicPort?: number;
+  connectionPort?: number;
   status: string;
   healthStatus: string;
   published: boolean;
@@ -492,7 +493,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
         type="info"
         showIcon
         title="导入协议会转换为同类型的本站线路"
-        description="用户只连接本站域名并使用你设置的原样别名，上游地址、机场名称和凭证不会下发。VLESS 使用 Reality；VMess、Trojan、Hysteria2 与 AnyTLS 使用本站 TLS 证书；Shadowsocks 与 WireGuard 使用各自的本站凭证。请同时放行 TCP 和 UDP 20000–59999。"
+        description="用户只连接本站域名并使用你设置的原样别名，上游地址、机场名称和凭证不会下发。VMess、VLESS 与 Trojan 统一通过本站 HTTPS 443 的独立 WebSocket 路径接入，Hysteria2 优先使用 UDP 443；AnyTLS、Shadowsocks、WireGuard 及额外 Hysteria2 线路使用页面显示的随机端口。只有使用随机端口时才需要放行对应的 TCP/UDP 20000–59999。"
       />
       <Row gutter={[16, 16]}>
         <Col xs={12} lg={6}>
@@ -654,7 +655,7 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
                   columns={[
                     { title: "用户线路别名", dataIndex: "publicName", width: 220, render: (value: string, row) => value || row.remark || "—" },
                     { title: "上游协议", dataIndex: "protocol", render: (value: string) => <Tag>{value === "hysteria" ? "hysteria2" : value}</Tag> },
-                    { title: "公网端口", dataIndex: "publicPort", render: (value?: number) => value || "待分配" },
+                    { title: "用户连接端口", dataIndex: "connectionPort", render: (value: number | undefined, row) => value || row.publicPort || "待分配" },
                     { title: "上游探测延迟", dataIndex: "latencyMs", render: (value: number, row: LineNode) => row.healthStatus === "healthy" && value > 0 && value < 60_000 ? `${value} ms` : "—" },
                     { title: "线路组", dataIndex: "groupIds", render: (values: string[]) => arrayOrEmpty(values).map((id) => <Tag key={id}>{groupById.get(id)?.name || id.slice(0, 8)}</Tag>) },
                     { title: "发布状态", dataIndex: "status", render: (value: string, row) => <Tag color={row.published ? "success" : healthColor(value)}>{publicationLabel(value, row.published)}</Tag> },

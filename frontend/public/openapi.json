@@ -5250,6 +5250,41 @@
         }
       }
     },
+    "/nova-line/{port}/{token}": {
+      "get": {
+        "tags": [
+          "Commercial customer portal"
+        ],
+        "summary": "Carry an authenticated managed-line WebSocket connection.",
+        "operationId": "get_nova_line_port_token",
+        "description": "Transport endpoint emitted inside customer subscriptions. The port and opaque token must match an enabled managed line; it is not a browser API.",
+        "parameters": [
+          {
+            "name": "port",
+            "in": "path",
+            "required": true,
+            "description": "Managed loopback ingress port.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "description": "Opaque line path token.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "WebSocket connection established."
+          }
+        }
+      }
+    },
     "/api/v1/guest/auth-config": {
       "get": {
         "tags": [
@@ -16536,24 +16571,8 @@
         "summary": "Upgrade an HTTP connection to a WebSocket. Requires an authenticated session cookie (Bearer token auth is not supported here). Returns 101 Switching Protocols on success. The server then pushes JSON messages described below.",
         "operationId": "get_ws",
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": {
-                      "type": "boolean"
-                    },
-                    "msg": {
-                      "type": "string"
-                    },
-                    "obj": {}
-                  }
-                }
-              }
-            }
+          "101": {
+            "description": "WebSocket connection established."
           }
         }
       }

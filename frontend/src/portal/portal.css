@@ -18,13 +18,15 @@
 html,
 body,
 #portal {
-  min-width: 320px;
+  width: 100%;
+  min-width: 0;
   min-height: 100%;
   margin: 0;
 }
 
 body {
   min-height: 100vh;
+  overflow-x: hidden;
   background: linear-gradient(180deg, #fff 0, #f7fbff 100%);
 }
 
@@ -36,8 +38,35 @@ textarea {
 
 .portal-shell {
   display: flex;
+  width: 100%;
+  min-width: 0;
   flex-direction: column;
   min-height: 100vh;
+}
+
+/*
+ * Arabic and Persian need right-to-left text, but the product navigation,
+ * cards and tab order must not be mirrored. Scoping direction to copy-bearing
+ * elements preserves correct reading order without moving controls off-screen.
+ */
+.portal-shell[data-copy-direction="rtl"]
+  :where(
+    .ant-typography,
+    .ant-card-head-title,
+    .ant-form-item-label,
+    .ant-alert-message,
+    .ant-alert-description,
+    .ant-empty-description,
+    .ant-descriptions-item-label,
+    .ant-descriptions-item-content,
+    .portal-nav button,
+    .portal-announcement > span,
+    .member-summary-card small,
+    .member-summary-card em,
+    .account-stat-grid small
+  ) {
+  direction: rtl;
+  text-align: right;
 }
 
 .portal-header {
@@ -171,6 +200,7 @@ textarea {
 .portal-main {
   flex: 1;
   width: min(1440px, calc(100% - 64px));
+  min-width: 0;
   margin: 40px auto 0;
   padding: 0 0 72px;
 }
@@ -1553,8 +1583,8 @@ textarea {
   .portal-nav {
     order: 3;
     width: 100%;
-    justify-content: flex-start;
-    gap: 18px;
+    justify-content: space-between;
+    gap: clamp(10px, 3vw, 14px);
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -1565,6 +1595,7 @@ textarea {
 
   .portal-nav button {
     min-height: 38px;
+    font-size: 12px;
     white-space: nowrap;
   }
 
@@ -2069,19 +2100,58 @@ textarea {
 }
 
 .account-center-shell.ant-card {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid #dbe7f0;
   box-shadow: 0 14px 34px rgba(60, 92, 120, 0.07);
 }
 
 .account-center-shell > .ant-card-body {
+  width: 100%;
+  min-width: 0;
   padding: 10px 28px 30px;
 }
 
 .account-tab-content {
   display: flex;
+  width: 100%;
+  min-width: 0;
   padding-top: 10px;
   flex-direction: column;
   gap: 20px;
+}
+
+.account-center,
+.account-center-shell .ant-tabs,
+.account-center-shell .ant-tabs-content-holder,
+.account-center-shell .ant-tabs-content,
+.account-center-shell .ant-tabs-tabpane,
+.account-center-shell .ant-tabs-nav-wrap,
+.account-center-shell .ant-row,
+.account-center-shell .ant-col,
+.account-stat-grid,
+.account-stat-grid > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.account-center-shell .ant-tabs-content,
+.account-center-shell .ant-tabs-tabpane {
+  width: 100%;
+}
+
+.account-center-shell .ant-descriptions-view {
+  overflow: hidden;
+}
+
+.account-center-shell .ant-descriptions table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.account-center-shell .ant-descriptions-item-content {
+  overflow-wrap: anywhere;
 }
 
 .password-change-card.ant-card {
@@ -2180,7 +2250,35 @@ textarea {
   }
 
   .account-center-shell > .ant-card-body {
-    padding: 8px 16px 22px;
+    padding: 8px 12px 20px;
+  }
+
+  .account-center-shell .ant-tabs-nav {
+    max-width: 100%;
+  }
+
+  .account-center-shell .ant-tabs-nav-wrap {
+    overflow-x: auto !important;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  .account-center-shell .ant-tabs-nav-wrap::-webkit-scrollbar {
+    display: none;
+  }
+
+  .account-center-shell .ant-tabs-tab {
+    flex: 0 0 auto;
+  }
+
+  .account-center-shell .ant-tabs-nav-operations {
+    display: none !important;
+  }
+
+  .account-stat-grid > div {
+    width: 100%;
+    min-height: 118px;
+    padding: 18px;
   }
 
   .telegram-support-fab {
@@ -2190,5 +2288,19 @@ textarea {
     height: 48px;
     padding: 0;
     justify-content: center;
+  }
+}
+
+@media (max-width: 575px) {
+  .portal-header {
+    padding-inline: 10px;
+  }
+
+  .portal-main {
+    width: calc(100% - 20px);
+  }
+
+  .account-center-shell > .ant-card-body {
+    padding-inline: 10px;
   }
 }

@@ -146,21 +146,26 @@ function buildOperation(ep, tag) {
       successExample = { success: true, obj: ep.responseSchemaArray ? [obj] : obj };
     }
   }
-  responses['200'] = {
-    description: 'Successful response',
-    content: {
-      'application/json': {
-        schema: {
-          type: 'object',
-          properties: {
-            success: { type: 'boolean' },
-            msg: { type: 'string' },
-            obj: objSchema,
+  const successStatus = String(ep.successStatus || 200);
+  responses[successStatus] = {
+    description: ep.successDescription || 'Successful response',
+    ...(!ep.emptySuccess
+      ? {
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  success: { type: 'boolean' },
+                  msg: { type: 'string' },
+                  obj: objSchema,
+                },
+              },
+              ...(successExample !== undefined ? { example: successExample } : {}),
+            },
           },
-        },
-        ...(successExample !== undefined ? { example: successExample } : {}),
-      },
-    },
+        }
+      : {}),
   };
 
   const errExample = tryParseJson(ep.errorResponse);

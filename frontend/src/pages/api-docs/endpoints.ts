@@ -38,6 +38,9 @@ export interface Endpoint {
   response?: string;
   errorResponse?: string;
   errorStatus?: number;
+  successStatus?: number;
+  successDescription?: string;
+  emptySuccess?: boolean;
   responseSchema?: string;
   responseSchemaArray?: boolean;
 }
@@ -76,6 +79,20 @@ export const sections: readonly Section[] = [
         method: "GET",
         path: "/portal/*path",
         summary: "Permanently redirect legacy portal subpaths to the root.",
+      },
+      {
+        method: "GET",
+        path: "/nova-line/:port/:token",
+        summary: "Carry an authenticated managed-line WebSocket connection.",
+        description:
+          "Transport endpoint emitted inside customer subscriptions. The port and opaque token must match an enabled managed line; it is not a browser API.",
+        successStatus: 101,
+        successDescription: "WebSocket connection established.",
+        emptySuccess: true,
+        params: [
+          { name: "port", in: "path", type: "integer", desc: "Managed loopback ingress port." },
+          { name: "token", in: "path", type: "string", desc: "Opaque line path token." },
+        ],
       },
       {
         method: "GET",
@@ -2819,6 +2836,9 @@ export const sections: readonly Section[] = [
         path: "/ws",
         summary:
           "Upgrade an HTTP connection to a WebSocket. Requires an authenticated session cookie (Bearer token auth is not supported here). Returns 101 Switching Protocols on success. The server then pushes JSON messages described below.",
+        successStatus: 101,
+        successDescription: "WebSocket connection established.",
+        emptySuccess: true,
       },
       {
         method: "WS",

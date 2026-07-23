@@ -339,7 +339,7 @@ fi
 expected_sha="$(awk -v name="$asset" '$2 == name || $2 == "*"name {print $1; exit}' "$tmp_dir/$asset.sha256")"
 [[ $expected_sha =~ ^[a-fA-F0-9]{64}$ ]] || die "Release SHA-256 文件格式无效。"
 actual_sha="$(sha256sum "$tmp_dir/$asset" | awk '{print $1}')"
-[[ ${actual_sha,,} == ${expected_sha,,} ]] || die "Release SHA-256 校验失败。"
+[[ ${actual_sha,,} == "${expected_sha,,}" ]] || die "Release SHA-256 校验失败。"
 if tar -tzf "$tmp_dir/$asset" | awk '$0 ~ /(^\/|(^|\/)\.\.(\/|$))/ { found=1 } END { exit !found }'; then
   die "Release 包含不安全路径。"
 fi
@@ -356,6 +356,9 @@ tar -xzf "$tmp_dir/$asset" -C "$tmp_dir"
 [[ -x $tmp_dir/x-ui/bin/sing-box-linux-$ARCH ]] || die "Release 缺少 $ARCH AnyTLS 运行时。"
 for required_script in install update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_script.sh ]] || die "Release 缺少运维脚本 $required_script.sh。"
+done
+for required_diagnostic in diagnose-active-subscription diagnose-managed-ingress; do
+  [[ -f $tmp_dir/x-ui/deploy/ubuntu/$required_diagnostic.py ]] || die "Release 缺少诊断脚本 $required_diagnostic.py。"
 done
 
 systemctl stop x-ui 2>/dev/null || true
@@ -570,6 +573,20 @@ server {
         add_header X-Nova-Service subscription always;
         proxy_read_timeout 300s;
     }
+    location ~ ^/nova-line/[2-5][0-9]{4}/[0-9a-f]{16}\$ {
+        proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_buffering off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+    }
     location / {
         proxy_pass http://127.0.0.1:$NOVA_PANEL_PORT;
         proxy_http_version 1.1;
@@ -604,6 +621,10 @@ fi
 
 for script in update rollback backup rotate-admin-path uninstall finalize-domain sync-line-cert; do
   [[ -f $INSTALL_DIR/deploy/ubuntu/$script.sh ]] && install -m 755 "$INSTALL_DIR/deploy/ubuntu/$script.sh" "/usr/local/sbin/nova-$script"
+done
+for diagnostic in diagnose-active-subscription diagnose-managed-ingress; do
+  [[ -f $INSTALL_DIR/deploy/ubuntu/$diagnostic.py ]] &&
+    install -m 755 "$INSTALL_DIR/deploy/ubuntu/$diagnostic.py" "/usr/local/sbin/nova-$diagnostic"
 done
 
 cat >"$DEPLOY_FILE" <<EOF
@@ -664,10 +685,28 @@ systemctl is-active --quiet postgresql
 systemctl is-active --quiet nginx
 systemctl is-active --quiet x-ui
 PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" -tAc 'SELECT 1' | grep -qx 1
-wait_xray_process 60 || {
-  print_xray_diagnostics
-  die "Xray 未在 60 秒内启动；请保留上方诊断信息。"
-}
+if ! wait_xray_process 60; then
+  enabled_inbounds="$(
+    PGPASSWORD="$NOVA_DB_PASSWORD" psql -h 127.0.0.1 -U "$NOVA_DB_USER" -d "$NOVA_DB_NAME" \
+      -tAc 'SELECT COUNT(*) FROM inbounds WHERE enable = true' | tr -d '[:space:]'
+  )"
+  if [[ $enabled_inbounds == 0 ]]; then
+    # A fresh commercial installation intentionally starts without public
+    # lines. The panel launches Xray as soon as the first managed line is
+    # provisioned, so an idle core process is not required yet. Still validate
+    # the bundled baseline config before accepting the installation.
+    runuser -u "$SERVICE_USER" -- "$INSTALL_DIR/bin/xray-linux-$ARCH" run -test \
+      -c "$INSTALL_DIR/bin/config.json" >/dev/null ||
+      {
+        print_xray_diagnostics
+        die "Xray 初始配置校验失败。"
+      }
+    log "当前没有已启用线路；Xray 配置有效，将在线路创建后自动启动。"
+  else
+    print_xray_diagnostics
+    die "数据库已有 $enabled_inbounds 条启用线路，但 Xray 未在 60 秒内启动。"
+  fi
+fi
 if [[ $NOVA_DEFER_TLS == false ]]; then
   curl -fsS --max-time 15 "https://$NOVA_DOMAIN/" | grep -qi '<div id="portal"></div>' || die "HTTPS 根页面不是用户门户。"
   curl -fsS --max-time 15 "https://$NOVA_DOMAIN/$NOVA_ADMIN_PATH/" >/dev/null || die "HTTPS 管理后台不可用。"

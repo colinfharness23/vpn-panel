@@ -29,6 +29,7 @@ interface Window {
   X_UI_PUBLIC_BASE_PATH?: string;
   X_UI_CUR_VER?: string;
   X_UI_DB_TYPE?: string;
+  X_UI_COMMERCIAL_MODE?: boolean;
   __SUB_PAGE_DATA__?: SubPageData;
 }
 

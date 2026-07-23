@@ -71,6 +71,72 @@ func TestManagedLineSubscriptionHidesImportedProviderRemark(t *testing.T) {
 	}
 }
 
+func TestManagedWebSocketIngressPublishesStandardTLS443(t *testing.T) {
+	initSubDB(t)
+	db := database.GetDB()
+	inbound := &model.Inbound{
+		UserId: 1, Remark: "IPLC", Enable: true, Listen: "127.0.0.1", Port: 23456,
+		Protocol: model.VLESS, Settings: `{"clients":[],"decryption":"none","encryption":"none"}`,
+		StreamSettings: `{
+			"network":"ws",
+			"security":"none",
+			"wsSettings":{"path":"/nova-line/23456/aaaaaaaaaaaaaaaa","host":"vpn.pheero.com"},
+			"externalProxy":[{
+				"dest":"vpn.pheero.com",
+				"port":443,
+				"forceTls":"tls",
+				"sni":"vpn.pheero.com",
+				"fingerprint":"chrome",
+				"verifyPeerCertByName":"vpn.pheero.com"
+			}]
+		}`,
+	}
+	if err := db.Create(inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	client := &model.ClientRecord{
+		Email: "standard-port@example.com", SubID: "standard-port-sub",
+		UUID: "11111111-2222-4333-8444-555555555555", Enable: true,
+	}
+	if err := db.Create(client).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ClientInbound{ClientId: client.Id, InboundId: inbound.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.LineNode{
+		ID: "11111111-1111-4111-8111-111111111111", Fingerprint: strings.Repeat("a", 64),
+		Remark: "provider", PublicName: "IPLC", Protocol: "vless", OutboundTag: "commercial-line-standard-port",
+		OutboundCiphertext: "encrypted", InboundID: &inbound.Id, Status: "ready", HealthStatus: "healthy",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	links, _, _, _, err := NewSubService("").GetSubs("standard-port-sub", "vpn.pheero.com")
+	if err != nil || len(links) != 1 {
+		t.Fatalf("links=%v err=%v", links, err)
+	}
+	parsed, err := url.Parse(links[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Scheme != "vless" || parsed.Hostname() != "vpn.pheero.com" || parsed.Port() != "443" {
+		t.Fatalf("public endpoint = %s://%s", parsed.Scheme, parsed.Host)
+	}
+	for key, want := range map[string]string{
+		"type": "ws", "security": "tls", "sni": "vpn.pheero.com",
+		"host": "vpn.pheero.com", "path": "/nova-line/23456/aaaaaaaaaaaaaaaa",
+		"fp": "chrome", "vcn": "vpn.pheero.com",
+	} {
+		if got := parsed.Query().Get(key); got != want {
+			t.Fatalf("%s = %q, want %q in %q", key, got, want, links[0])
+		}
+	}
+	if parsed.Fragment != "IPLC" {
+		t.Fatalf("alias = %q, want IPLC", parsed.Fragment)
+	}
+}
+
 func TestManagedSubscriptionPreservesSevenProtocolTypesAndExactAliases(t *testing.T) {
 	initSubDB(t)
 	db := database.GetDB()
@@ -162,6 +228,53 @@ func TestManagedSubscriptionPreservesSevenProtocolTypesAndExactAliases(t *testin
 		}
 		if strings.Contains(parsed.Fragment, "PHEERO") || strings.Contains(rawLink, "private provider") {
 			t.Fatalf("managed link leaked or prefixed branding: %q", rawLink)
+		}
+		if parsed.Hostname() != "vpn.pheero.com" {
+			t.Fatalf("%s address = %q, want vpn.pheero.com", parsed.Scheme, parsed.Hostname())
+		}
+		query := parsed.Query()
+		switch parsed.Scheme {
+		case "vless":
+			for key, want := range map[string]string{
+				"type": "tcp", "security": "reality", "sni": "vpn.pheero.com",
+				"fp": "chrome", "pbk": "PBK", "sid": "abcd1234",
+			} {
+				if got := query.Get(key); got != want {
+					t.Fatalf("VLESS %s = %q, want %q in %q", key, got, want, rawLink)
+				}
+			}
+			if parsed.User.Username() != client.UUID {
+				t.Fatalf("VLESS UUID = %q, want %q", parsed.User.Username(), client.UUID)
+			}
+		case "trojan":
+			for key, want := range map[string]string{
+				"type": "tcp", "security": "tls", "sni": "vpn.pheero.com",
+			} {
+				if got := query.Get(key); got != want {
+					t.Fatalf("Trojan %s = %q, want %q in %q", key, got, want, rawLink)
+				}
+			}
+			if parsed.User.Username() != client.Password {
+				t.Fatalf("Trojan password did not round-trip")
+			}
+		case "hysteria2":
+			for key, want := range map[string]string{
+				"security": "tls", "sni": "vpn.pheero.com", "fp": "chrome",
+			} {
+				if got := query.Get(key); got != want {
+					t.Fatalf("Hysteria2 %s = %q, want %q in %q", key, got, want, rawLink)
+				}
+			}
+			if parsed.User.Username() != client.Auth {
+				t.Fatalf("Hysteria2 auth did not round-trip")
+			}
+		case "anytls":
+			if query.Get("security") != "tls" || query.Get("sni") != "vpn.pheero.com" {
+				t.Fatalf("AnyTLS TLS parameters are incomplete: %q", rawLink)
+			}
+			if parsed.User.Username() != client.Password {
+				t.Fatalf("AnyTLS password did not round-trip")
+			}
 		}
 	}
 	for scheme, present := range wantSchemes {

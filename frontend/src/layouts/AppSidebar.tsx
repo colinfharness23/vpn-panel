@@ -112,6 +112,7 @@ export default function AppSidebar() {
 
   const currentTheme: 'light' | 'dark' = isDark ? 'dark' : 'light';
   const panelVersion = window.X_UI_CUR_VER || '';
+  const commercialMode = window.X_UI_COMMERCIAL_MODE === true;
 
   const tabs = useMemo<{ key: string; icon: IconName; title: string; section: SidebarSection }[]>(() => [
     { key: '/inbounds', icon: 'inbound', title: t('menu.inbounds'), section: 'xui' },
@@ -138,7 +139,10 @@ export default function AppSidebar() {
     { key: LOGOUT_KEY, icon: 'logout', title: t('logout'), section: 'utility' },
   ], [t]);
 
-  const xuiItems = useMemo(() => tabs.filter((tab) => tab.section === 'xui'), [tabs]);
+  const xuiItems = useMemo(
+    () => commercialMode ? [] : tabs.filter((tab) => tab.section === 'xui'),
+    [commercialMode, tabs],
+  );
   const systemItems = useMemo(() => tabs.filter((tab) => tab.section === 'system'), [tabs]);
   const utilItems = useMemo(() => tabs.filter((tab) => tab.section === 'utility'), [tabs]);
 
@@ -179,7 +183,7 @@ export default function AppSidebar() {
   [xrayChildren]);
 
   const groupedNavItems = useMemo<MenuProps['items']>(() => [
-    {
+    ...(xuiItems.length > 0 ? [{
       type: 'group',
       key: '__xui_group__',
       label: collapsed ? null : (
@@ -189,7 +193,7 @@ export default function AppSidebar() {
         </span>
       ),
       children: toMenuItems(xuiItems),
-    },
+    } as const] : []),
     {
       type: 'group',
       key: '__system_group__',
@@ -199,12 +203,12 @@ export default function AppSidebar() {
   ], [collapsed, logoUrl, siteName, systemItems, t, toMenuItems, xuiItems]);
 
   const drawerNavItems = useMemo<MenuProps['items']>(() => [
-    {
+    ...(xuiItems.length > 0 ? [{
       type: 'group',
       key: '__drawer_xui_group__',
       label: siteName,
       children: toMenuItems(xuiItems),
-    },
+    } as const] : []),
     {
       type: 'group',
       key: '__drawer_system_group__',

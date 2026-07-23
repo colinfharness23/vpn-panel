@@ -12,7 +12,7 @@ trap cleanup EXIT
 
 [[ $EUID -eq 0 ]] || die "请使用 root 执行，或在命令前使用 sudo。"
 [[ -f $DEPLOY_FILE ]] || die "没有找到 $DEPLOY_FILE。"
-# shellcheck disable=SC1091
+# shellcheck disable=SC1090,SC1091
 source "$DEPLOY_FILE"
 
 [[ ${NOVA_DOMAIN:-} =~ ^([A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,}$ ]] || die "部署域名无效。"

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { createBrowserRouter, type RouteObject } from 'react-router-dom';
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router-dom';
 
 import PanelLayout from '@/layouts/PanelLayout';
 
@@ -19,21 +19,26 @@ function withSuspense(node: React.ReactNode) {
   return <Suspense fallback={null}>{node}</Suspense>;
 }
 
+const commercialMode =
+  typeof window !== 'undefined' && window.X_UI_COMMERCIAL_MODE === true;
+const legacyEngineRoute = (node: React.ReactNode) =>
+  commercialMode ? <Navigate to="/commercial" replace /> : withSuspense(node);
+
 const routes: RouteObject[] = [
   {
     path: '/',
     element: <PanelLayout />,
     children: [
       { index: true, element: withSuspense(<IndexPage />) },
-      { path: 'inbounds', element: withSuspense(<InboundsPage />) },
-      { path: 'clients', element: withSuspense(<ClientsPage />) },
-      { path: 'groups', element: withSuspense(<GroupsPage />) },
-      { path: 'nodes', element: withSuspense(<NodesPage />) },
-      { path: 'hosts', element: withSuspense(<HostsPage />) },
+      { path: 'inbounds', element: legacyEngineRoute(<InboundsPage />) },
+      { path: 'clients', element: legacyEngineRoute(<ClientsPage />) },
+      { path: 'groups', element: legacyEngineRoute(<GroupsPage />) },
+      { path: 'nodes', element: legacyEngineRoute(<NodesPage />) },
+      { path: 'hosts', element: legacyEngineRoute(<HostsPage />) },
       { path: 'settings', element: withSuspense(<SettingsPage />) },
-      { path: 'xray', element: withSuspense(<XrayPage />) },
-      { path: 'outbound', element: withSuspense(<XrayPage />) },
-      { path: 'routing', element: withSuspense(<XrayPage />) },
+      { path: 'xray', element: legacyEngineRoute(<XrayPage />) },
+      { path: 'outbound', element: legacyEngineRoute(<XrayPage />) },
+      { path: 'routing', element: legacyEngineRoute(<XrayPage />) },
       { path: 'api-docs', element: withSuspense(<ApiDocsPage />) },
       { path: 'commercial', element: withSuspense(<CommercialPage />) },
       { path: 'migration', element: withSuspense(<MigrationPage />) },

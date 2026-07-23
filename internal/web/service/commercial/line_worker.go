@@ -3,7 +3,9 @@ package commercial
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,7 +31,11 @@ import (
 
 const lineStatusRetry = "retry"
 
-const managedLineProvisionVersion = 3
+const (
+	managedLineProvisionVersion = 5
+	managedLinePublicPort       = 443
+	managedLineWSPathPrefix     = "/nova-line/"
+)
 
 func (w *Worker) HandleLineHealthEvent(event eventbus.Event) {
 	if event.Type != eventbus.EventOutboundSample || !strings.HasPrefix(event.Source, lineTagPrefix) {
@@ -107,19 +114,34 @@ func (w *Worker) provisionLineNode(ctx context.Context, node *model.LineNode) er
 	}); err != nil {
 		return err
 	}
-	if err := (&service.XrayService{}).RestartXray(false); err != nil {
-		return err
+	managedAnyTLS := strings.EqualFold(strings.TrimSpace(node.Protocol), "anytls")
+	if managedAnyTLS {
+		// AnyTLS is served by the sing-box sidecar rather than Xray. Reconcile
+		// it immediately after enabling the inbound so first-time provisioning
+		// does not wait on a listener that cannot start until the next worker
+		// tick.
+		if err := service.ReconcileManagedAnyTLS(); err != nil {
+			return err
+		}
+	} else {
+		if err := (&service.XrayService{}).RestartXray(false); err != nil {
+			return err
+		}
 	}
 	if node.PublicPort == nil {
 		return errors.New("托管线路没有公网端口")
 	}
 	if err := waitManagedLineListenerForProtocol(ctx, managedLineInboundProtocol(node.Protocol), *node.PublicPort, 8*time.Second); err != nil {
 		_ = w.db.Model(&model.Inbound{}).Where("id = ?", *node.InboundID).Update("enable", false).Error
-		_ = (&service.XrayService{}).RestartXray(true)
+		if managedAnyTLS {
+			_ = service.ReconcileManagedAnyTLS()
+		} else {
+			_ = (&service.XrayService{}).RestartXray(true)
+		}
 		return err
 	}
 
-	if strings.EqualFold(strings.TrimSpace(node.Protocol), "anytls") {
+	if managedAnyTLS {
 		delay, probeErr := service.ProbeManagedAnyTLSOutbound(ctx, plain)
 		if probeErr != nil {
 			return w.db.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{
@@ -199,12 +221,21 @@ func waitManagedLineListenerForProtocol(ctx context.Context, protocol model.Prot
 
 func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
 	expectedProtocol := managedLineInboundProtocol(node.Protocol)
+	siteURL := NewConfigStore().GetDefault("site.url", "")
+	parsed, err := url.Parse(siteURL)
+	if err != nil || parsed.Hostname() == "" {
+		return errors.New("请先在商业设置中配置站点域名")
+	}
+	hostname := parsed.Hostname()
 	if node.InboundID != nil && node.PublicPort != nil {
 		var existing model.Inbound
-		if err := w.db.Select("id", "protocol").First(&existing, "id = ?", *node.InboundID).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err := w.db.Select("id", "listen", "port", "protocol", "stream_settings").First(&existing, "id = ?", *node.InboundID).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if existing.Id > 0 && existing.Protocol == expectedProtocol && node.ProvisionVersion >= managedLineProvisionVersion {
+		if existing.Id > 0 && existing.Protocol == expectedProtocol && node.ProvisionVersion >= 3 {
+			if node.ProvisionVersion < managedLineProvisionVersion {
+				return w.upgradeManagedLineIngress(node, &existing, expectedProtocol, hostname)
+			}
 			return nil
 		}
 		if existing.Id > 0 {
@@ -221,16 +252,11 @@ func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
 			node.PublicPort = nil
 		}
 	}
-	port, err := allocateManagedLinePort(w.db)
+	port, err := allocateManagedLinePort(w.db, expectedProtocol, node.ID)
 	if err != nil {
 		return err
 	}
-	siteURL := NewConfigStore().GetDefault("site.url", "")
-	parsed, err := url.Parse(siteURL)
-	if err != nil || parsed.Hostname() == "" {
-		return errors.New("请先在商业设置中配置站点域名")
-	}
-	settings, stream, err := managedLineInboundJSON(node, expectedProtocol, parsed.Hostname())
+	settings, stream, err := managedLineInboundJSON(node, expectedProtocol, hostname, port)
 	if err != nil {
 		return err
 	}
@@ -239,7 +265,7 @@ func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
 	if publicName == "" {
 		publicName = strings.ToUpper(strings.TrimSpace(node.Protocol)) + " 线路"
 	}
-	inbound := &model.Inbound{UserId: 1, Remark: publicName, SubSortIndex: 1, Enable: false, Listen: "0.0.0.0", Port: port, Protocol: expectedProtocol, Settings: string(settings), StreamSettings: string(stream), Tag: "commercial-in-" + strings.ReplaceAll(node.ID, "-", "")[:20], Sniffing: sniffing, ShareAddrStrategy: "custom", ShareAddr: parsed.Hostname()}
+	inbound := &model.Inbound{UserId: 1, Remark: publicName, SubSortIndex: 1, Enable: false, Listen: managedLineListenAddress(expectedProtocol), Port: port, Protocol: expectedProtocol, Settings: string(settings), StreamSettings: string(stream), Tag: "commercial-in-" + strings.ReplaceAll(node.ID, "-", "")[:20], Sniffing: sniffing, ShareAddrStrategy: "custom", ShareAddr: hostname}
 	created, _, err := w.inbounds.AddInbound(inbound)
 	if err != nil {
 		return err
@@ -252,6 +278,58 @@ func (w *Worker) ensureManagedLineInbound(node *model.LineNode) error {
 	node.InboundID = &created.Id
 	node.ProvisionVersion = managedLineProvisionVersion
 	return nil
+}
+
+func (w *Worker) upgradeManagedLineIngress(node *model.LineNode, inbound *model.Inbound, protocol model.Protocol, hostname string) error {
+	updates := map[string]any{"listen": managedLineListenAddress(protocol)}
+	port := inbound.Port
+	if protocol == model.Hysteria && port != managedLinePublicPort && managedLineUDPPortAvailable(w.db, node.ID, managedLinePublicPort) {
+		port = managedLinePublicPort
+		updates["port"] = port
+	}
+	switch protocol {
+	case model.VMESS, model.VLESS, model.Trojan, model.Hysteria:
+		_, stream, err := managedLineInboundJSON(node, protocol, hostname, port)
+		if err != nil {
+			return err
+		}
+		updates["stream_settings"] = string(stream)
+	}
+	if err := w.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.Inbound{}).Where("id = ?", inbound.Id).Updates(updates).Error; err != nil {
+			return err
+		}
+		if protocol == model.VLESS && managedLineUsesWebSocket443(protocol) {
+			if err := tx.Model(&model.ClientInbound{}).Where("inbound_id = ?", inbound.Id).Update("flow_override", "").Error; err != nil {
+				return err
+			}
+		}
+		return tx.Model(&model.LineNode{}).Where("id = ?", node.ID).Updates(map[string]any{
+			"public_port":       port,
+			"provision_version": managedLineProvisionVersion,
+		}).Error
+	}); err != nil {
+		return err
+	}
+	node.PublicPort = &port
+	node.ProvisionVersion = managedLineProvisionVersion
+	return nil
+}
+
+func managedLineListenAddress(protocol model.Protocol) string {
+	if managedLineUsesWebSocket443(protocol) {
+		return "127.0.0.1"
+	}
+	return "0.0.0.0"
+}
+
+func managedLineUsesWebSocket443(protocol model.Protocol) bool {
+	switch protocol {
+	case model.VMESS, model.VLESS, model.Trojan:
+		return true
+	default:
+		return false
+	}
 }
 
 func managedLineInboundProtocol(protocol string) model.Protocol {
@@ -273,29 +351,63 @@ func managedLineInboundProtocol(protocol string) model.Protocol {
 	}
 }
 
-func managedLineInboundJSON(node *model.LineNode, protocol model.Protocol, hostname string) ([]byte, []byte, error) {
+func managedLineWebSocketStream(node *model.LineNode, hostname string, port int) map[string]any {
+	token := managedLineWebSocketPathToken(node)
+	path := managedLineWSPathPrefix + strconv.Itoa(port) + "/" + token
+	return map[string]any{
+		"network":  "ws",
+		"security": "none",
+		"wsSettings": map[string]any{
+			"path": path,
+			"host": hostname,
+		},
+		"externalProxy": []any{map[string]any{
+			"dest":                 hostname,
+			"port":                 managedLinePublicPort,
+			"forceTls":             "tls",
+			"sni":                  hostname,
+			"fingerprint":          "chrome",
+			"verifyPeerCertByName": hostname,
+		}},
+	}
+}
+
+func managedLineWebSocketPathToken(node *model.LineNode) string {
+	candidate := strings.ToLower(strings.TrimSpace(node.Fingerprint))
+	if len(candidate) >= 16 {
+		candidate = candidate[:16]
+		valid := true
+		for _, char := range candidate {
+			if (char < '0' || char > '9') && (char < 'a' || char > 'f') {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return candidate
+		}
+	}
+	sum := sha256.Sum256([]byte(strings.TrimSpace(node.ID)))
+	return hex.EncodeToString(sum[:8])
+}
+
+func managedLineInboundJSON(node *model.LineNode, protocol model.Protocol, hostname string, port int) ([]byte, []byte, error) {
 	var settings map[string]any
 	stream := map[string]any{}
 	switch protocol {
 	case model.VLESS:
-		privateKey, publicKey, err := lineRealityKeys()
-		if err != nil {
-			return nil, nil, err
-		}
 		if len(node.Fingerprint) < 16 {
 			return nil, nil, errors.New("线路节点指纹无效")
 		}
 		settings = map[string]any{"clients": []any{}, "decryption": "none", "encryption": "none", "fallbacks": []any{}}
-		stream = map[string]any{
-			"network": "tcp", "security": "reality", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}},
-			"realitySettings": map[string]any{
-				"show": false, "xver": 0, "target": "127.0.0.1:443", "serverNames": []string{hostname},
-				"privateKey": privateKey, "minClientVer": "", "maxClientVer": "", "maxTimediff": 0,
-				"shortIds": []string{node.Fingerprint[:16]}, "mldsa65Seed": "",
-				"settings": map[string]any{"publicKey": publicKey, "fingerprint": "chrome", "serverName": hostname, "spiderX": "/", "mldsa65Verify": ""},
-			},
-		}
-	case model.VMESS, model.Trojan, model.Hysteria:
+		stream = managedLineWebSocketStream(node, hostname, port)
+	case model.VMESS:
+		settings = map[string]any{"clients": []any{}}
+		stream = managedLineWebSocketStream(node, hostname, port)
+	case model.Trojan:
+		settings = map[string]any{"clients": []any{}, "fallbacks": []any{}}
+		stream = managedLineWebSocketStream(node, hostname, port)
+	case model.Hysteria:
 		certFile, keyFile, err := managedLineTLSFiles()
 		if err != nil {
 			return nil, nil, err
@@ -309,17 +421,8 @@ func managedLineInboundJSON(node *model.LineNode, protocol model.Protocol, hostn
 			}},
 			"settings": map[string]any{"fingerprint": "chrome", "verifyPeerCertByName": hostname},
 		}
-		switch protocol {
-		case model.VMESS:
-			settings = map[string]any{"clients": []any{}}
-			stream = map[string]any{"network": "tcp", "security": "tls", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}}, "tlsSettings": tlsSettings}
-		case model.Trojan:
-			settings = map[string]any{"clients": []any{}, "fallbacks": []any{}}
-			stream = map[string]any{"network": "tcp", "security": "tls", "tcpSettings": map[string]any{"header": map[string]any{"type": "none"}}, "tlsSettings": tlsSettings}
-		case model.Hysteria:
-			settings = map[string]any{"version": 2, "clients": []any{}}
-			stream = map[string]any{"network": "hysteria", "security": "tls", "tlsSettings": tlsSettings, "hysteriaSettings": map[string]any{"version": 2, "udpIdleTimeout": 60}}
-		}
+		settings = map[string]any{"version": 2, "clients": []any{}}
+		stream = map[string]any{"network": "hysteria", "security": "tls", "tlsSettings": tlsSettings, "hysteriaSettings": map[string]any{"version": 2, "udpIdleTimeout": 60}}
 	case model.Shadowsocks:
 		masterKey, err := randomManagedLineKey(32)
 		if err != nil {
@@ -389,33 +492,10 @@ func randomManagedLineKey(size int) (string, error) {
 	return base64.StdEncoding.EncodeToString(value), nil
 }
 
-func lineRealityKeys() (string, string, error) {
-	config := NewConfigStore()
-	privateKey, privateErr := config.Get("line.reality_private_key")
-	publicKey, publicErr := config.Get("line.reality_public_key")
-	if privateErr == nil && publicErr == nil && privateKey != "" && publicKey != "" {
-		return privateKey, publicKey, nil
+func allocateManagedLinePort(db *gorm.DB, protocol model.Protocol, nodeID string) (int, error) {
+	if protocol == model.Hysteria && managedLineUDPPortAvailable(db, nodeID, managedLinePublicPort) {
+		return managedLinePublicPort, nil
 	}
-	raw, err := (&service.ServerService{}).GetNewX25519Cert()
-	if err != nil {
-		return "", "", err
-	}
-	pair, ok := raw.(map[string]any)
-	if !ok {
-		return "", "", errors.New("Xray 未返回有效 Reality 密钥")
-	}
-	privateKey, _ = pair["privateKey"].(string)
-	publicKey, _ = pair["publicKey"].(string)
-	if privateKey == "" || publicKey == "" {
-		return "", "", errors.New("Xray 返回的 Reality 密钥为空")
-	}
-	if err := config.SetManyProtected(map[string]string{"line.reality_private_key": privateKey, "line.reality_public_key": publicKey}, map[string]bool{"line.reality_private_key": true}); err != nil {
-		return "", "", err
-	}
-	return privateKey, publicKey, nil
-}
-
-func allocateManagedLinePort(db *gorm.DB) (int, error) {
 	span := big.NewInt(40000)
 	for range 512 {
 		value, err := rand.Int(rand.Reader, span)
@@ -451,6 +531,23 @@ func allocateManagedLinePort(db *gorm.DB) (int, error) {
 		return port, nil
 	}
 	return 0, errors.New("无法分配可用的随机线路端口")
+}
+
+func managedLineUDPPortAvailable(db *gorm.DB, nodeID string, port int) bool {
+	var lineCount int64
+	query := db.Model(&model.LineNode{}).Where("public_port = ?", port)
+	if strings.TrimSpace(nodeID) != "" {
+		query = query.Where("id <> ?", nodeID)
+	}
+	if err := query.Count(&lineCount).Error; err != nil || lineCount > 0 {
+		return false
+	}
+	packet, err := (&net.ListenConfig{}).ListenPacket(context.Background(), "udp", fmt.Sprintf(":%d", port))
+	if err != nil {
+		return false
+	}
+	_ = packet.Close()
+	return true
 }
 
 func (w *Worker) attachLineSubscribers(nodeID string) error {
@@ -699,7 +796,8 @@ func (w *Worker) reconcileActivePlanClients(planID string) error {
 		if err != nil {
 			return err
 		}
-		if _, err := w.clients.AttachByEmail(&w.inbounds, email, desired); err != nil {
+		needRuntimeRestart, err := w.clients.AttachByEmail(&w.inbounds, email, desired)
+		if err != nil {
 			return err
 		}
 		obsolete := make([]int, 0)
@@ -709,9 +807,14 @@ func (w *Worker) reconcileActivePlanClients(planID string) error {
 			}
 		}
 		if len(obsolete) > 0 {
-			if _, err := w.clients.DetachByEmailMany(&w.inbounds, email, obsolete); err != nil {
-				return err
+			needRestart, detachErr := w.clients.DetachByEmailMany(&w.inbounds, email, obsolete)
+			if detachErr != nil {
+				return detachErr
 			}
+			needRuntimeRestart = needRuntimeRestart || needRestart
+		}
+		if err := w.applyClientRuntimeMutation(needRuntimeRestart); err != nil {
+			return fmt.Errorf("apply reconciled plan client to proxy runtime: %w", err)
 		}
 	}
 	return nil

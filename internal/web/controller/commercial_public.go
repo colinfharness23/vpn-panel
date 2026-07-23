@@ -6,7 +6,9 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,15 +32,17 @@ type CommercialPublicController struct {
 	portal *commercial.PortalService
 	config *commercial.ConfigStore
 	relays *commercial.ResidentialRelayService
+	lines  *commercial.LineService
 }
 
 func NewCommercialPublicController(g *gin.RouterGroup, mailer commercial.VerificationMailer) *CommercialPublicController {
-	controller := &CommercialPublicController{auth: commercial.NewAuthService(mailer), orders: commercial.NewOrderService(), portal: commercial.NewPortalService(), config: commercial.NewConfigStore(), relays: commercial.NewResidentialRelayService()}
+	controller := &CommercialPublicController{auth: commercial.NewAuthService(mailer), orders: commercial.NewOrderService(), portal: commercial.NewPortalService(), config: commercial.NewConfigStore(), relays: commercial.NewResidentialRelayService(), lines: commercial.NewLineService()}
 	controller.initRouter(g)
 	return controller
 }
 
 func (a *CommercialPublicController) initRouter(g *gin.RouterGroup) {
+	g.GET("/nova-line/:port/:token", a.siteHostGuard, a.lineIngress)
 	g.GET("/", a.siteHostGuard, a.portalSPA)
 	for _, route := range []string{"/subscription", "/plans", "/guides", "/tickets", "/orders", "/account"} {
 		g.GET(route, a.siteHostGuard, a.portalSPA)
@@ -96,6 +100,26 @@ func (a *CommercialPublicController) initRouter(g *gin.RouterGroup) {
 	user.GET("/tickets/:id/messages", a.ticketMessages)
 	user.POST("/tickets/:id/reply", a.replyTicket)
 	user.POST("/gift-cards/redeem", a.redeemGiftCard)
+}
+
+func (a *CommercialPublicController) lineIngress(c *gin.Context) {
+	port, err := strconv.Atoi(c.Param("port"))
+	if err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	backendPort, err := a.lines.ManagedWebSocketIngressBackend(port, c.Param("token"))
+	if err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(backendPort))}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.FlushInterval = -1
+	proxy.ErrorHandler = func(response http.ResponseWriter, _ *http.Request, _ error) {
+		http.Error(response, http.StatusText(http.StatusBadGateway), http.StatusBadGateway)
+	}
+	proxy.ServeHTTP(c.Writer, c.Request)
 }
 
 func (a *CommercialPublicController) siteHostGuard(c *gin.Context) {

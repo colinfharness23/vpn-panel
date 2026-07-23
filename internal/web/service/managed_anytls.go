@@ -33,6 +33,7 @@ var managedAnyTLSRuntime = struct {
 	sync.Mutex
 	cmd        *exec.Cmd
 	done       chan struct{}
+	cancel     context.CancelFunc
 	statsAPI   *xray.XrayAPI
 	configHash [sha256.Size]byte
 }{}
@@ -95,7 +96,10 @@ func ReconcileManagedAnyTLS() error {
 		return err
 	}
 	defer os.Remove(tempPath)
-	if output, checkErr := exec.Command(binaryPath, "check", "-c", tempPath).CombinedOutput(); checkErr != nil {
+	checkCtx, cancelCheck := context.WithTimeout(context.Background(), 30*time.Second)
+	output, checkErr := exec.CommandContext(checkCtx, binaryPath, "check", "-c", tempPath).CombinedOutput()
+	cancelCheck()
+	if checkErr != nil {
 		return fmt.Errorf("sing-box rejected managed AnyTLS config: %w: %s", checkErr, strings.TrimSpace(string(output)))
 	}
 	if err := os.Rename(tempPath, configPath); err != nil {
@@ -108,16 +112,19 @@ func ReconcileManagedAnyTLS() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(binaryPath, "run", "-c", configPath)
+	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(runtimeCtx, binaryPath, "run", "-c", configPath)
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
 	if err := cmd.Start(); err != nil {
+		cancelRuntime()
 		_ = logFile.Close()
 		return err
 	}
 	done := make(chan struct{})
 	managedAnyTLSRuntime.cmd = cmd
 	managedAnyTLSRuntime.done = done
+	managedAnyTLSRuntime.cancel = cancelRuntime
 	managedAnyTLSRuntime.configHash = hash
 	go func() {
 		err := cmd.Wait()
@@ -129,10 +136,11 @@ func ReconcileManagedAnyTLS() error {
 	}()
 	statsAPI := new(xray.XrayAPI)
 	if err := statsAPI.Init(managedAnyTLSStatsPort); err != nil {
-		_ = cmd.Process.Kill()
+		cancelRuntime()
 		<-done
 		managedAnyTLSRuntime.cmd = nil
 		managedAnyTLSRuntime.done = nil
+		managedAnyTLSRuntime.cancel = nil
 		managedAnyTLSRuntime.configHash = [sha256.Size]byte{}
 		return fmt.Errorf("initialize managed AnyTLS statistics API: %w", err)
 	}
@@ -165,25 +173,37 @@ func stopManagedAnyTLSLocked() {
 		managedAnyTLSRuntime.statsAPI = nil
 	}
 	if !managedAnyTLSRunningLocked() {
+		if managedAnyTLSRuntime.cancel != nil {
+			managedAnyTLSRuntime.cancel()
+		}
 		managedAnyTLSRuntime.cmd = nil
 		managedAnyTLSRuntime.done = nil
+		managedAnyTLSRuntime.cancel = nil
 		return
 	}
 	cmd := managedAnyTLSRuntime.cmd
 	done := managedAnyTLSRuntime.done
+	cancelRuntime := managedAnyTLSRuntime.cancel
 	if cmd.Process != nil {
 		_ = cmd.Process.Signal(os.Interrupt)
 	}
 	select {
 	case <-done:
 	case <-time.After(3 * time.Second):
+		if cancelRuntime != nil {
+			cancelRuntime()
+		}
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
 		<-done
 	}
+	if cancelRuntime != nil {
+		cancelRuntime()
+	}
 	managedAnyTLSRuntime.cmd = nil
 	managedAnyTLSRuntime.done = nil
+	managedAnyTLSRuntime.cancel = nil
 }
 
 // GetManagedAnyTLSTraffic returns per-line and per-customer traffic deltas from
@@ -348,7 +368,8 @@ func ProbeManagedAnyTLSOutbound(ctx context.Context, raw string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}
@@ -408,8 +429,9 @@ func ProbeManagedAnyTLSOutbound(ctx context.Context, raw string) (int, error) {
 
 	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
 	deadline := time.Now().Add(5 * time.Second)
+	tcpDialer := &net.Dialer{Timeout: 250 * time.Millisecond}
 	for {
-		connection, dialErr := net.DialTimeout("tcp", address, 250*time.Millisecond)
+		connection, dialErr := tcpDialer.DialContext(ctx, "tcp", address)
 		if dialErr == nil {
 			_ = connection.Close()
 			break
@@ -439,26 +461,41 @@ func ProbeManagedAnyTLSOutbound(ctx context.Context, raw string) (int, error) {
 	}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 15 * time.Second}
-	var failures []error
 	started := time.Now()
-	for _, target := range []string{
+	targets := []string{
 		"https://cp.cloudflare.com/generate_204",
 		"https://www.gstatic.com/generate_204",
-	} {
-		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-		if requestErr != nil {
-			failures = append(failures, requestErr)
-			continue
-		}
-		response, requestErr := client.Do(request)
-		if requestErr == nil {
-			_ = response.Body.Close()
-			if response.StatusCode >= 200 && response.StatusCode < 500 {
-				return max(1, int(time.Since(started).Milliseconds())), nil
+	}
+	var failures []error
+	for attempt := 0; attempt < 2; attempt++ {
+		failures = failures[:0]
+		for _, target := range targets {
+			request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+			if requestErr != nil {
+				failures = append(failures, requestErr)
+				continue
 			}
-			requestErr = fmt.Errorf("%s returned HTTP %d", target, response.StatusCode)
+			response, requestErr := client.Do(request)
+			if requestErr == nil {
+				_ = response.Body.Close()
+				if response.StatusCode >= 200 && response.StatusCode < 500 {
+					return max(1, int(time.Since(started).Milliseconds())), nil
+				}
+				requestErr = fmt.Errorf("%s returned HTTP %d", target, response.StatusCode)
+			}
+			failures = append(failures, requestErr)
 		}
-		failures = append(failures, requestErr)
+		if attempt == 0 {
+			select {
+			case <-ctx.Done():
+				return 0, ctx.Err()
+			case <-time.After(400 * time.Millisecond):
+			}
+		}
+	}
+	runtimeLog := strings.TrimSpace(processOutput.String())
+	if runtimeLog != "" {
+		return 0, fmt.Errorf("AnyTLS egress probe failed: %w; sing-box: %s", errors.Join(failures...), runtimeLog)
 	}
 	return 0, fmt.Errorf("AnyTLS egress probe failed: %w", errors.Join(failures...))
 }

@@ -6,7 +6,7 @@ NOVA 是面向商业订阅业务的 VPN 管理面板。生产部署使用 Postgr
 
 ## FinalShell 一键安装
 
-安装前，把域名的 A/AAAA 记录指向服务器，并放行 TCP 80、443。以 `root` 身份执行：
+安装前，把域名的 A/AAAA 记录指向服务器，并放行 TCP 80、443；使用 Hysteria2 时同时放行 UDP 443。以 `root` 身份执行：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/colinfharness23/vpn-panel/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=colinfharness23/vpn-panel bash
@@ -33,9 +33,11 @@ sudo nova-rollback               # 回滚最近一次应用更新
 sudo nova-rotate-admin-path      # 更换隐藏管理员入口
 sudo nova-uninstall              # 先备份，再卸载 NOVA
 sudo journalctl -u x-ui -n 200   # 查看服务日志
+sudo nova-diagnose-active-subscription  # 用实际用户凭证逐条验证订阅链路
+sudo nova-diagnose-managed-ingress      # 检查托管入站、路由与监听状态
 ```
 
-安装器不会放行线路业务端口。使用“线路中心”托管线路时，还需要在云安全组和防火墙中手工放行 TCP 与 UDP `20000-59999`。
+安装器不会修改防火墙或云安全组。VMess、VLESS 与 Trojan 默认共用本站 TCP 443，首条 Hysteria2 默认使用 UDP 443；AnyTLS、Shadowsocks、WireGuard、额外 Hysteria2 线路及无法共用标准端口的原生传输，会在“线路中心”显示实际随机端口，此时只需放行页面显示的对应 TCP/UDP 端口（范围 `20000-59999`），不必整段全部开放。
 
 ## 线路中心怎么用
 

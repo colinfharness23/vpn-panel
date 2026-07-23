@@ -121,6 +121,11 @@ func serveDistPage(c *gin.Context, name string) {
 		escapedVer := jsEscape.Replace(config.GetPanelVersion())
 		script += `;window.X_UI_CUR_VER="` + escapedVer + `"`
 		script += `;window.X_UI_DB_TYPE="` + config.GetDBKind() + `"`
+		if config.IsCommercialProduction() {
+			script += `;window.X_UI_COMMERCIAL_MODE=true`
+		} else {
+			script += `;window.X_UI_COMMERCIAL_MODE=false`
+		}
 	}
 	script += `;</script>`
 	inject := []byte(script)
