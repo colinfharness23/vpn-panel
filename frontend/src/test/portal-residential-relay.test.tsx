@@ -73,7 +73,9 @@ describe("portal residential relay", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<PortalApp />);
-    fireEvent.click(await screen.findByRole("button", { name: "link 添加中转" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /添加中转/ }),
+    );
     const dialog = await screen.findByRole("dialog");
 
     const lineSelect = within(dialog).getByRole("combobox", { name: "中转线路" });

@@ -168,8 +168,10 @@ func GetAdminBasePath(fallback string) (string, error) {
 			}
 			continue
 		}
-		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
-			(char >= '0' && char <= '9') || char == '-' || char == '_') {
+		isLower := char >= 'a' && char <= 'z'
+		isUpper := char >= 'A' && char <= 'Z'
+		isDigit := char >= '0' && char <= '9'
+		if !isLower && !isUpper && !isDigit && char != '-' && char != '_' {
 			return "", fmt.Errorf("XUI_ADMIN_BASE_PATH must use only ASCII letters, digits, '-' and '_'")
 		}
 	}
