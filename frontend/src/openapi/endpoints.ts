@@ -1,3 +1,4 @@
+// Internal build-time API contract. This module is not routed or shipped as a documentation page.
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "WS";
 export type ParamLocation =
   | "path"

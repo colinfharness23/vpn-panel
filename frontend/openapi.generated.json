@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "3X-UI Panel API",
+    "title": "Commercial Panel Internal API Contract",
     "version": "3.x",
-    "description": "Programmatic interface to a 3X-UI panel. Authenticate either by logging in (cookie) or with an API token from Settings → Security → API Token (Bearer). All endpoints under /panel/api/* honour both modes — an API token is a full-admin credential, so treat it like the panel password."
+    "description": "Build-time contract for internal route consistency and generated client types. It is not published as a website asset."
   },
   "servers": [
     {

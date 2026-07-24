@@ -36,7 +36,7 @@ production-style links work without round-tripping through Go.
 | `npm run lint` | ESLint flat config (`@typescript-eslint` + `react-hooks`) |
 | `npm run test` | Vitest single run (schema fixtures, link parsers, …) |
 | `npm run test:watch` | Vitest watch mode |
-| `npm run gen:api` | Build `public/openapi.json` from `pages/api-docs/endpoints.ts` |
+| `npm run gen:api` | Build the non-public `openapi.generated.json` contract from `openapi/endpoints.ts` |
 | `npm run gen:zod` | Run the Go-side openapigen tool → `src/generated/{zod,types}.ts` |
 
 CI runs `typecheck`, `lint`, `test`, and `build` on every PR
@@ -87,7 +87,7 @@ frontend/
     ├── routes.tsx       # react-router routes mounted under /panel/
     ├── pages/           # One folder per route, page component + helpers
     │   ├── index/, login/, inbounds/, clients/, xray/, nodes/,
-    │   ├── settings/, api-docs/, sub/
+    │   ├── settings/, openapi/, sub/
     ├── layouts/         # AdminLayout (sidebar + header + outlet)
     ├── components/      # Cross-page React components
     ├── hooks/           # useClients, useTheme, useWebSocket, …

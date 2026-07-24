@@ -11,7 +11,6 @@ const NodesPage = lazy(() => import('@/pages/nodes/NodesPage'));
 const HostsPage = lazy(() => import('@/pages/hosts/HostsPage'));
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage'));
 const XrayPage = lazy(() => import('@/pages/xray/XrayPage'));
-const ApiDocsPage = lazy(() => import('@/pages/api-docs/ApiDocsPage'));
 const CommercialPage = lazy(() => import('@/pages/commercial/CommercialPage'));
 const MigrationPage = lazy(() => import('@/pages/migration/MigrationPage'));
 
@@ -39,7 +38,6 @@ const routes: RouteObject[] = [
       { path: 'xray', element: legacyEngineRoute(<XrayPage />) },
       { path: 'outbound', element: legacyEngineRoute(<XrayPage />) },
       { path: 'routing', element: legacyEngineRoute(<XrayPage />) },
-      { path: 'api-docs', element: withSuspense(<ApiDocsPage />) },
       { path: 'commercial', element: withSuspense(<CommercialPage />) },
       { path: 'migration', element: withSuspense(<MigrationPage />) },
     ],

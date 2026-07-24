@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -185,7 +186,24 @@ func (a *CommercialPublicController) downloadApplication(c *gin.Context) {
 	if row.PackageSHA256 != "" {
 		c.Header("ETag", `"`+row.PackageSHA256+`"`)
 	}
+	if prefix := strings.TrimSpace(os.Getenv("XUI_APPLICATION_ACCEL_PREFIX")); validInternalRedirectPrefix(prefix) {
+		// Authentication and database authorization stay in Go, while Nginx
+		// serves the already-approved immutable file with sendfile(2). Nginx
+		// consumes this header during an internal redirect, so the storage name
+		// is never exposed by the public response.
+		_ = file.Close()
+		c.Header("X-Accel-Redirect", prefix+url.PathEscape(row.PackageStoredName))
+		c.Status(http.StatusOK)
+		return
+	}
 	http.ServeContent(c.Writer, c.Request, row.PackageFileName, info.ModTime(), file)
+}
+
+func validInternalRedirectPrefix(value string) bool {
+	return strings.HasPrefix(value, "/") &&
+		strings.HasSuffix(value, "/") &&
+		!strings.Contains(value, "..") &&
+		!strings.ContainsAny(value, "\r\n\\")
 }
 
 func (a *CommercialPublicController) sendCode(c *gin.Context) {
@@ -394,7 +412,7 @@ func (a *CommercialPublicController) residentialRelayQR(c *gin.Context) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	links := sub.NewLinkProvider().LinksForClient(requestOrigin(c), relay.Inbound, relay.ClientID)
+	links := sub.NewLinkProvider().LinksForClientNamed(requestOrigin(c), relay.Inbound, relay.ClientID, relay.Name)
 	if len(links) == 0 {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
@@ -414,7 +432,7 @@ func (a *CommercialPublicController) attachResidentialRelayLinks(c *gin.Context,
 	}
 	provider := sub.NewLinkProvider()
 	for i := range overview.Relays {
-		overview.Relays[i].Links = provider.LinksForClient(requestOrigin(c), overview.Relays[i].Inbound, overview.Relays[i].ClientID)
+		overview.Relays[i].Links = provider.LinksForClientNamed(requestOrigin(c), overview.Relays[i].Inbound, overview.Relays[i].ClientID, overview.Relays[i].Name)
 	}
 }
 
@@ -611,6 +629,7 @@ func requestOrigin(c *gin.Context) string {
 }
 
 func commercialJSON(c *gin.Context, obj any, err error) {
+	c.Header("Cache-Control", "no-store")
 	status := http.StatusOK
 	message := ""
 	if err != nil {

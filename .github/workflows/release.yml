@@ -62,7 +62,7 @@ jobs:
       - name: Verify generated API contracts
         run: |
           npm run gen
-          git diff --exit-code -- src/generated public/openapi.json
+          git diff --exit-code -- src/generated openapi.generated.json
         working-directory: frontend
 
       - name: Verify frontend

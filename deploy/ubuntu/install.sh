@@ -32,6 +32,7 @@ trap 'on_error "$LINENO"' ERR
 trap cleanup EXIT
 
 [[ $EUID -eq 0 ]] || die "请使用 root 执行，或在命令前使用 sudo。"
+# shellcheck disable=SC1091
 source /etc/os-release
 [[ $ID == ubuntu ]] || die "仅支持 Ubuntu 22.04/24.04，当前为 $PRETTY_NAME。"
 case "$VERSION_ID" in
@@ -84,12 +85,24 @@ read_secret_tty() {
   printf -v "$2" '%s' "$value"
 }
 generate_admin_path() {
-  local result="" byte
-  for _ in $(seq 1 18); do
-    byte="$(od -An -N1 -tu1 /dev/urandom | tr -d ' ')"
-    result="$result$((byte % 10))"
+  local result
+  for _ in $(seq 1 100); do
+    result="$(openssl rand -base64 60 | tr '+/' '_-' | tr -d '=\r\n' | cut -c1-40)"
+    if [[ $result =~ ^[A-Za-z0-9_-]{40}$ &&
+          $result =~ [A-Z] && $result =~ [a-z] && $result =~ [0-9] &&
+          $result =~ [_-] ]]; then
+      printf '%s' "$result"
+      return 0
+    fi
   done
-  printf '%s' "$result"
+  return 1
+}
+valid_admin_path() {
+  local value="$1"
+  [[ $value =~ ^[0-9]{18}$ ]] ||
+    [[ $value =~ ^[A-Za-z0-9_-]{40}$ &&
+       $value =~ [A-Z] && $value =~ [a-z] && $value =~ [0-9] &&
+       $value =~ [_-] ]]
 }
 generate_port() {
   local minimum="$1" maximum="$2" excluded="${3:-}" candidate
@@ -186,10 +199,12 @@ panel_port_explicit=0
 sub_port_explicit=0
 domain_explicit=0
 admin_username_explicit=0
+admin_path_explicit=0
 [[ -n ${NOVA_PANEL_PORT:-} ]] && panel_port_explicit=1
 [[ -n ${NOVA_SUB_PORT:-} ]] && sub_port_explicit=1
 [[ -n ${NOVA_DOMAIN:-} ]] && domain_explicit=1
 [[ -n ${NOVA_ADMIN_USERNAME:-} ]] && admin_username_explicit=1
+[[ -n ${NOVA_ADMIN_PATH:-} ]] && admin_path_explicit=1
 
 NOVA_GITHUB_REPO="${NOVA_GITHUB_REPO:-$(saved_value NOVA_GITHUB_REPO)}"
 NOVA_RELEASE_TAG="${NOVA_RELEASE_TAG:-latest}"
@@ -243,8 +258,11 @@ password_length="$(printf '%s' "$NOVA_ADMIN_PASSWORD" | wc -c)"
 ((password_length >= 12 && password_length <= 128)) || die "管理员密码长度必须为 12-128 位。"
 [[ $NOVA_ADMIN_PASSWORD =~ [A-Z] && $NOVA_ADMIN_PASSWORD =~ [a-z] && $NOVA_ADMIN_PASSWORD =~ [0-9] ]] || die "管理员密码必须包含大写字母、小写字母和数字。"
 
-[[ -n $NOVA_ADMIN_PATH ]] || NOVA_ADMIN_PATH="$(generate_admin_path)"
-[[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]] || die "管理员入口必须为 18 位数字。"
+if [[ -z $NOVA_ADMIN_PATH || ( $admin_path_explicit == 0 && $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ) ]]; then
+  [[ -z $NOVA_ADMIN_PATH ]] || log "检测到旧版 18 位数字入口，正在自动升级为高强度随机入口。"
+  NOVA_ADMIN_PATH="$(generate_admin_path)" || die "生成管理员入口失败。"
+fi
+valid_admin_path "$NOVA_ADMIN_PATH" || die "管理员入口必须为 40 位 URL 安全随机字符，并同时包含大小写字母、数字和 - 或 _。"
 reset_saved_internal_port "$panel_port_explicit" NOVA_PANEL_PORT "内部面板"
 [[ -n $NOVA_PANEL_PORT ]] || NOVA_PANEL_PORT="$(generate_port 10000 19999)"
 reset_saved_internal_port "$sub_port_explicit" NOVA_SUB_PORT "订阅服务" "$NOVA_PANEL_PORT"
@@ -408,6 +426,7 @@ XUI_COMMERCIAL_DEMO=false
 XUI_COMMERCIAL_ENV=production
 XUI_LINE_CERT_FILE=/var/lib/x-ui/certs/fullchain.pem
 XUI_LINE_KEY_FILE=/var/lib/x-ui/certs/privkey.pem
+XUI_APPLICATION_ACCEL_PREFIX=/_nova_internal/client-applications/
 GIN_MODE=release
 EOF
 chown root:"$SERVICE_USER" /etc/default/x-ui
@@ -454,6 +473,7 @@ EOF
 systemctl daemon-reload
 systemctl enable x-ui
 set -a
+# shellcheck disable=SC1091
 source /etc/default/x-ui
 set +a
 runuser -u "$SERVICE_USER" --preserve-environment -- "$INSTALL_DIR/x-ui" setting -username "$NOVA_ADMIN_USERNAME" -password "$NOVA_ADMIN_PASSWORD" -port "$NOVA_PANEL_PORT" -webBasePath "/" -listenIP "127.0.0.1"
@@ -542,6 +562,17 @@ server {
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header X-Forwarded-Host \$host;
+    }
+    location ^~ /_nova_internal/client-applications/ {
+        internal;
+        alias /var/lib/x-ui/uploads/client-applications/;
+        sendfile on;
+        tcp_nopush on;
+        limit_rate 0;
+        open_file_cache max=100 inactive=60s;
+        open_file_cache_valid 60s;
+        open_file_cache_min_uses 1;
+        open_file_cache_errors off;
     }
     location ^~ $NOVA_SUB_PATH {
         proxy_pass http://127.0.0.1:$NOVA_SUB_PORT;
@@ -717,10 +748,8 @@ if [[ $NOVA_DEFER_TLS == false ]]; then
   [[ $status == 308 ]] || die "/portal/ 未永久重定向到根页面（HTTP $status）。"
   status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/panel/")"
   [[ $status == 404 ]] || die "公开 /panel/ 未返回 404（HTTP $status）。"
-  if [[ $NOVA_ADMIN_PATH != 123456789012345678 ]]; then
-    status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/123456789012345678/")"
-    [[ $status == 404 ]] || die "错误管理员路径未返回 404（HTTP $status）。"
-  fi
+  status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN/123456789012345678/")"
+  [[ $status == 404 ]] || die "旧版数字管理员路径未返回 404（HTTP $status）。"
   status="$(curl -sS -D "$tmp_dir/sub-health.headers" -o /dev/null -w '%{http_code}' --max-time 15 "https://$NOVA_DOMAIN${NOVA_SUB_PATH}health-probe")"
   [[ $status != 000 && $status -lt 500 ]] || die "订阅服务健康检查失败（HTTP $status）。"
   tr -d '\r' <"$tmp_dir/sub-health.headers" | grep -qi '^X-Nova-Service: subscription$' || die "订阅路径未进入独立订阅服务。"

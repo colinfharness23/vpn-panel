@@ -201,6 +201,7 @@ func TestPanelSPAFallbackPredicate(t *testing.T) {
 		{name: "json accept excluded", method: http.MethodGet, path: "/admin-random/panel/hosts", accept: "application/json"},
 		{name: "api root excluded", method: http.MethodGet, path: "/admin-random/panel/api", accept: "text/html"},
 		{name: "api descendant excluded", method: http.MethodGet, path: "/admin-random/panel/api/unknown", accept: "text/html"},
+		{name: "removed api docs excluded", method: http.MethodGet, path: "/admin-random/panel/api-docs", accept: "text/html"},
 		{name: "csrf excluded", method: http.MethodGet, path: "/admin-random/panel/csrf-token", accept: "text/html"},
 		{name: "csrf descendant excluded", method: http.MethodGet, path: "/admin-random/panel/csrf-token/", accept: "text/html"},
 		{name: "file excluded", method: http.MethodGet, path: "/admin-random/panel/missing.css", accept: "text/html"},

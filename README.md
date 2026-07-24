@@ -9,7 +9,7 @@ NOVA 是面向商业订阅业务的 VPN 管理面板。生产部署使用 Postgr
 安装前，把域名的 A/AAAA 记录指向服务器，并放行 TCP 80、443；使用 Hysteria2 时同时放行 UDP 443。以 `root` 身份执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/colinfharness23/vpn-panel/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=colinfharness23/vpn-panel bash
+curl -fsSL https://raw.githubusercontent.com/colinfharness23/r8eH6Z6rpQpAi2UI2gkZ0lteagev/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=colinfharness23/r8eH6Z6rpQpAi2UI2gkZ0lteagev bash
 ```
 
 安装过程依次询问：

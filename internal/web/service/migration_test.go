@@ -1,9 +1,12 @@
 package service
 
 import (
+	"context"
+	"io"
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateMigrationRequest(t *testing.T) {
@@ -27,6 +30,45 @@ func TestValidateMigrationRequest(t *testing.T) {
 				t.Fatalf("validateMigrationRequest() error = %v, wantErr %v", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestDialMigrationSSHReturnsWhenConnectedPortNeverSendsBanner(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	serverDone := make(chan struct{})
+	go func() {
+		defer close(serverDone)
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = io.Copy(io.Discard, conn)
+	}()
+
+	address := listener.Addr().(*net.TCPAddr)
+	started := time.Now()
+	client, _, err := dialMigrationSSHWithTimeout(context.Background(), ServerMigrationRequest{
+		Host: "127.0.0.1", Port: address.Port, Username: "root", Password: "test-only",
+	}, "", 150*time.Millisecond)
+	if client != nil {
+		client.Close()
+	}
+	if err == nil {
+		t.Fatal("tarpitted SSH port unexpectedly completed a handshake")
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("SSH handshake timeout took %s, want under 2s", elapsed)
+	}
+	select {
+	case <-serverDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("tarpit test server did not observe the client closing the timed-out connection")
 	}
 }
 
@@ -60,6 +102,26 @@ func TestMigrationInstallCommandSeparatesChmodAndInstaller(t *testing.T) {
 		strings.Contains(command, "NOVA_PANEL_PORT=") ||
 		!strings.HasSuffix(command, "bash '/tmp/install.sh'") {
 		t.Fatalf("installer environment is incomplete: %q", command)
+	}
+}
+
+func TestValidMigrationAdminPath(t *testing.T) {
+	for _, value := range []string{
+		"583104927618350492",
+		"A9z_-pQ7Lm2_Nx8cV4-bR6sT1yK3wH5uJ0eFX7Y9",
+	} {
+		if !validMigrationAdminPath(value) {
+			t.Fatalf("validMigrationAdminPath(%q) = false", value)
+		}
+	}
+	for _, value := range []string{
+		"admin",
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		"A9Z_-PQ7LM2_NX8CV4-BR6ST1YK3WH5UJ0EFX7Y9",
+	} {
+		if validMigrationAdminPath(value) {
+			t.Fatalf("validMigrationAdminPath(%q) = true", value)
+		}
 	}
 }
 

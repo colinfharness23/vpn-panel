@@ -257,10 +257,12 @@ func buildManagedAnyTLSConfig(db *gorm.DB) ([]byte, int, error) {
 			return nil, 0, err
 		}
 		users := make([]any, 0, len(clients))
+		activeUsers := make(map[string]struct{}, len(clients))
 		for j := range clients {
 			if clients[j].Enable && clients[j].Email != "" && clients[j].Password != "" {
 				users = append(users, map[string]any{"name": clients[j].Email, "password": clients[j].Password})
 				statUsers[clients[j].Email] = struct{}{}
+				activeUsers[clients[j].Email] = struct{}{}
 			}
 		}
 		if len(users) == 0 {
@@ -286,6 +288,12 @@ func buildManagedAnyTLSConfig(db *gorm.DB) ([]byte, int, error) {
 			},
 		})
 		cfg.Outbounds = append(cfg.Outbounds, outbound)
+		relayRules, relayOutbounds, err := managedAnyTLSResidentialRelays(db, inbound.Id, inbound.Tag, nodes[i].OutboundTag, activeUsers)
+		if err != nil {
+			return nil, 0, err
+		}
+		cfg.Outbounds = append(cfg.Outbounds, relayOutbounds...)
+		rules = append(rules, relayRules...)
 		rules = append(rules, map[string]any{
 			"inbound": []string{inbound.Tag}, "action": "route", "outbound": nodes[i].OutboundTag,
 		})
@@ -312,6 +320,68 @@ func buildManagedAnyTLSConfig(db *gorm.DB) ([]byte, int, error) {
 	}
 	contents, err := json.MarshalIndent(cfg, "", "  ")
 	return contents, count, err
+}
+
+// managedAnyTLSResidentialRelays adds per-customer SOCKS5 exits to the
+// sing-box sidecar. The SOCKS outbound itself detours through the selected
+// AnyTLS airport line; auth_user keeps the override scoped to the customer who
+// configured it.
+func managedAnyTLSResidentialRelays(db *gorm.DB, inboundID int, inboundTag, carrierTag string, activeUsers map[string]struct{}) ([]any, []any, error) {
+	type relayRow struct {
+		model.ResidentialRelay
+		AuthUser string `gorm:"column:auth_user"`
+	}
+	var rows []relayRow
+	now := time.Now().UTC()
+	err := db.Table(model.ResidentialRelay{}.TableName()+" AS relays").
+		Select("relays.*, entitlements.internal_client_id AS auth_user").
+		Joins("JOIN "+model.SubscriptionEntitlement{}.TableName()+" AS entitlements ON entitlements.id = relays.entitlement_id AND entitlements.customer_id = relays.customer_id").
+		Where("relays.inbound_id = ? AND relays.status IN ?", inboundID, []string{"active", "pending"}).
+		Where("entitlements.status = ? AND entitlements.residential_relay_enabled = ? AND entitlements.residential_relay_limit > 0", "active", true).
+		Where("entitlements.expires_at IS NULL OR entitlements.expires_at > ?", now).
+		Order("relays.created_at asc").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, nil, err
+	}
+	rules := make([]any, 0, len(rows))
+	outbounds := make([]any, 0, len(rows))
+	for i := range rows {
+		if rows[i].AuthUser == "" {
+			continue
+		}
+		if _, ok := activeUsers[rows[i].AuthUser]; !ok {
+			continue
+		}
+		username, err := UnprotectCredential(rows[i].UsernameCiphertext)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decrypt AnyTLS residential relay username %s: %w", rows[i].ID, err)
+		}
+		password, err := UnprotectCredential(rows[i].PasswordCiphertext)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decrypt AnyTLS residential relay password %s: %w", rows[i].ID, err)
+		}
+		relayOutbound := map[string]any{
+			"type":        "socks",
+			"tag":         rows[i].OutboundTag,
+			"server":      rows[i].SOCKSHost,
+			"server_port": rows[i].SOCKSPort,
+			"version":     "5",
+			"detour":      carrierTag,
+		}
+		if username != "" && password != "" {
+			relayOutbound["username"] = username
+			relayOutbound["password"] = password
+		}
+		outbounds = append(outbounds, relayOutbound)
+		rules = append(rules, map[string]any{
+			"inbound":   []string{inboundTag},
+			"auth_user": []string{rows[i].AuthUser},
+			"action":    "route",
+			"outbound":  rows[i].OutboundTag,
+		})
+	}
+	return rules, outbounds, nil
 }
 
 func managedAnyTLSOutboundConfig(raw, tag string) (map[string]any, error) {

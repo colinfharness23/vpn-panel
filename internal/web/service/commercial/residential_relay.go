@@ -121,6 +121,16 @@ func (s *ResidentialRelayService) Create(ctx context.Context, customerID string,
 	if err != nil {
 		return nil, err
 	}
+	// Treat a repeated POST for the same entitlement and line as the same
+	// operation. A runtime reconciliation can take several seconds; without
+	// this check a second click observes the first committed row and reports a
+	// misleading plan-limit error even though the relay was created.
+	var existing model.ResidentialRelay
+	if err := s.db.Where("entitlement_id = ? AND inbound_id = ?", entitlement.ID, line.ID).First(&existing).Error; err == nil {
+		return s.Overview(customerID)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
 	var count int64
 	if err := s.db.Model(&model.ResidentialRelay{}).Where("customer_id = ? AND entitlement_id = ?", customerID, entitlement.ID).Count(&count).Error; err != nil {
 		return nil, err
@@ -152,11 +162,13 @@ func (s *ResidentialRelayService) Create(ctx context.Context, customerID string,
 	}
 	if err := s.db.Create(relay).Error; err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
-			return nil, errors.New("这条线路已经配置了住宅中转，请直接编辑现有配置")
+			return s.Overview(customerID)
 		}
 		return nil, err
 	}
-	s.applyRuntime(relay.ID)
+	if err := s.applyRuntime(relay.ID); err != nil {
+		return nil, err
+	}
 	return s.Overview(customerID)
 }
 
@@ -207,7 +219,9 @@ func (s *ResidentialRelayService) Update(ctx context.Context, customerID, relayI
 		}
 		return nil, err
 	}
-	s.applyRuntime(relay.ID)
+	if err := s.applyRuntime(relay.ID); err != nil {
+		return nil, err
+	}
 	return s.Overview(customerID)
 }
 
@@ -318,21 +332,28 @@ func (s *ResidentialRelayService) toView(relay *model.ResidentialRelay, entitlem
 	}, nil
 }
 
-func (s *ResidentialRelayService) applyRuntime(relayID string) {
+func (s *ResidentialRelayService) applyRuntime(relayID string) error {
 	if !s.xray.IsXrayRunning() {
 		s.xray.SetToNeedRestart()
-		return
+		return errors.New("代理运行时尚未启动，住宅中转已保存但暂未生效")
 	}
 	status := residentialRelayStatusActive
 	lastError := ""
-	if err := s.xray.RestartXray(false); err != nil {
+	runtimeErr := s.xray.RestartXray(false)
+	if runtimeErr != nil {
 		status = residentialRelayStatusPending
-		lastError = err.Error()
+		lastError = runtimeErr.Error()
 		if len(lastError) > 500 {
 			lastError = lastError[:500]
 		}
 	}
-	_ = s.db.Model(&model.ResidentialRelay{}).Where("id = ?", relayID).Updates(map[string]any{"status": status, "last_error": lastError}).Error
+	if err := s.db.Model(&model.ResidentialRelay{}).Where("id = ?", relayID).Updates(map[string]any{"status": status, "last_error": lastError}).Error; err != nil {
+		return err
+	}
+	if runtimeErr != nil {
+		return fmt.Errorf("住宅中转已保存，但应用到代理运行时失败: %w", runtimeErr)
+	}
+	return nil
 }
 
 func protectRelayCredentials(username, password string) (string, string, error) {
@@ -392,7 +413,7 @@ func safeRelayIP(ip net.IP) bool {
 
 func relaySupportedProtocol(protocol model.Protocol) bool {
 	switch protocol {
-	case model.VLESS, model.VMESS, model.Trojan, model.Shadowsocks, model.Hysteria:
+	case model.VLESS, model.VMESS, model.Trojan, model.Shadowsocks, model.Hysteria, model.AnyTLS:
 		return true
 	default:
 		return false

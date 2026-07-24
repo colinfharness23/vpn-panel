@@ -98,7 +98,16 @@ func TestGetAdminBasePath(t *testing.T) {
 		}
 	})
 
-	for _, value := range []string{"123", "/admin/", "/12345678901234567a/", "/１２３４５６７８９０１２３４５６７８/"} {
+	t.Run("valid strong path", func(t *testing.T) {
+		const path = "A9z_-pQ7Lm2_Nx8cV4-bR6sT1yK3wH5uJ0eFX7Y9"
+		t.Setenv("XUI_ADMIN_BASE_PATH", "/"+path+"/")
+		got, err := GetAdminBasePath("/")
+		if err != nil || got != "/"+path+"/" {
+			t.Fatalf("GetAdminBasePath() = %q, %v", got, err)
+		}
+	})
+
+	for _, value := range []string{"123", "/admin/", "/12345678901234567a/", "/１２３４５６７８９０１２３４５６７８/", "/A9z_-pQ7Lm2_Nx8cV4-bR6sT1yK3wH5uJ0eFX7!9/", "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"} {
 		t.Run("reject_"+value, func(t *testing.T) {
 			t.Setenv("XUI_ADMIN_BASE_PATH", value)
 			if _, err := GetAdminBasePath("/"); err == nil {

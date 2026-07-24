@@ -3,6 +3,7 @@ package sub
 import (
 	"strings"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 )
@@ -37,8 +38,29 @@ func (p *LinkProvider) SubLinksForSubId(host, subId string) ([]string, error) {
 
 func (p *LinkProvider) LinksForClient(host string, inbound *model.Inbound, email string) []string {
 	svc := p.build(host)
+	p.primeClient(svc, inbound, email)
 	svc.projectThroughFallbackMaster(inbound)
 	return splitLinkLines(svc.GetLink(inbound, email))
+}
+
+func (p *LinkProvider) LinksForClientNamed(host string, inbound *model.Inbound, email, name string) []string {
+	svc := p.build(host)
+	if inbound != nil && email != "" && strings.TrimSpace(name) != "" {
+		svc.residentialRelayNames[inbound.Id] = map[string]string{email: strings.TrimSpace(name)}
+	}
+	p.primeClient(svc, inbound, email)
+	svc.projectThroughFallbackMaster(inbound)
+	return splitLinkLines(svc.GetLink(inbound, email))
+}
+
+func (p *LinkProvider) primeClient(svc *SubService, inbound *model.Inbound, email string) {
+	if svc == nil || inbound == nil || inbound.Id <= 0 || email == "" || database.GetDB() == nil {
+		return
+	}
+	var record model.ClientRecord
+	if err := database.GetDB().Where("email = ?", email).First(&record).Error; err == nil {
+		svc.primeLinkClients(inbound.Id, []model.Client{*record.ToClient()}, false)
+	}
 }
 
 func (p *LinkProvider) LinksForInbounds(host string, inbounds []*model.Inbound) []string {

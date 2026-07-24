@@ -4,7 +4,14 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo "请使用 root 执行。" >&2; exit 1; }
 # shellcheck disable=SC1091
 source /etc/nova/deploy.env
-[[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]] || { echo "部署配置中的管理员入口无效。" >&2; exit 1; }
+valid_admin_path() {
+  local value="$1"
+  [[ $value =~ ^[0-9]{18}$ ]] ||
+    [[ $value =~ ^[A-Za-z0-9_-]{40}$ &&
+       $value =~ [A-Z] && $value =~ [a-z] && $value =~ [0-9] &&
+       $value =~ [_-] ]]
+}
+valid_admin_path "$NOVA_ADMIN_PATH" || { echo "部署配置中的管理员入口无效。" >&2; exit 1; }
 [[ $NOVA_GITHUB_REPO =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || { echo "部署配置中的 GitHub 仓库无效。" >&2; exit 1; }
 
 tmp_dir=""
@@ -128,6 +135,42 @@ EOF
   nginx -t
   systemctl reload nginx
 fi
+if ! grep -q '/_nova_internal/client-applications/' /etc/nginx/sites-available/nova.conf; then
+  if [[ -z $nginx_backup ]]; then
+    nginx_backup="$tmp_dir/nova.conf.before-download-acceleration"
+    cp -a /etc/nginx/sites-available/nova.conf "$nginx_backup"
+  fi
+  download_location="$tmp_dir/nova-download-location.conf"
+  cat >"$download_location" <<'EOF'
+    location ^~ /_nova_internal/client-applications/ {
+        internal;
+        alias /var/lib/x-ui/uploads/client-applications/;
+        sendfile on;
+        tcp_nopush on;
+        limit_rate 0;
+        open_file_cache max=100 inactive=60s;
+        open_file_cache_valid 60s;
+        open_file_cache_min_uses 1;
+        open_file_cache_errors off;
+    }
+EOF
+  updated_nginx="$tmp_dir/nova.conf.with-download-acceleration"
+  awk -v snippet="$download_location" '
+    !inserted && /^[[:space:]]*location \/[[:space:]]*\{/ {
+      while ((getline line < snippet) > 0) print line
+      close(snippet)
+      inserted=1
+    }
+    { print }
+    END { if (!inserted) exit 42 }
+  ' /etc/nginx/sites-available/nova.conf >"$updated_nginx"
+  install -m 644 "$updated_nginx" /etc/nginx/sites-available/nova.conf
+  nginx -t
+  systemctl reload nginx
+fi
+if ! grep -q '^XUI_APPLICATION_ACCEL_PREFIX=' /etc/default/x-ui; then
+  printf '%s\n' 'XUI_APPLICATION_ACCEL_PREFIX=/_nova_internal/client-applications/' >>/etc/default/x-ui
+fi
 systemctl restart x-ui
 
 healthy=0
@@ -179,5 +222,12 @@ for diagnostic in diagnose-active-subscription diagnose-managed-ingress; do
   [[ -f /usr/local/x-ui/deploy/ubuntu/$diagnostic.py ]] &&
     install -m 755 "/usr/local/x-ui/deploy/ubuntu/$diagnostic.py" "/usr/local/sbin/nova-$diagnostic"
 done
+if [[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]]; then
+  echo "检测到旧版 18 位数字管理员入口，正在自动轮换为高强度随机入口。"
+  /usr/local/sbin/nova-rotate-admin-path
+  # shellcheck disable=SC1091
+  source /etc/nova/deploy.env
+fi
 rollback_armed=0
+echo "管理员后台：https://$NOVA_DOMAIN/$NOVA_ADMIN_PATH/"
 echo "更新完成：$NOVA_RELEASE_TAG -> $requested_tag"

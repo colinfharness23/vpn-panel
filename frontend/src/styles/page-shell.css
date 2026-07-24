@@ -4,8 +4,7 @@
 .xray-page,
 .settings-page,
 .nodes-page,
-.groups-page,
-.api-docs-page {
+.groups-page {
   --bg-page: #e6e8ec;
   --bg-card: #ffffff;
   min-height: 100vh;
@@ -18,8 +17,7 @@
 .xray-page.is-dark,
 .settings-page.is-dark,
 .nodes-page.is-dark,
-.groups-page.is-dark,
-.api-docs-page.is-dark {
+.groups-page.is-dark {
   --bg-page: #1a1b1f;
   --bg-card: #23252b;
 }
@@ -30,8 +28,7 @@
 .xray-page.is-dark.is-ultra,
 .settings-page.is-dark.is-ultra,
 .nodes-page.is-dark.is-ultra,
-.groups-page.is-dark.is-ultra,
-.api-docs-page.is-dark.is-ultra {
+.groups-page.is-dark.is-ultra {
   --bg-page: #000;
   --bg-card: #101013;
 }
@@ -49,9 +46,7 @@
 .nodes-page .ant-layout,
 .nodes-page .ant-layout-content,
 .groups-page .ant-layout,
-.groups-page .ant-layout-content,
-.api-docs-page .ant-layout,
-.api-docs-page .ant-layout-content {
+.groups-page .ant-layout-content {
   background: transparent;
 }
 
@@ -61,8 +56,7 @@
 .xray-page .content-shell,
 .settings-page .content-shell,
 .nodes-page .content-shell,
-.groups-page .content-shell,
-.api-docs-page .content-shell {
+.groups-page .content-shell {
   background: transparent;
 }
 

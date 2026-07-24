@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -68,6 +69,71 @@ func TestManagedLineSubscriptionHidesImportedProviderRemark(t *testing.T) {
 	}
 	if got, want := parsed.Fragment, "香港 IPLC"; got != want {
 		t.Fatalf("rendered node name = %q, want %q", got, want)
+	}
+}
+
+func TestResidentialRelayNameOverridesSelectedLineForOnlyItsCustomer(t *testing.T) {
+	initSubDB(t)
+	db := database.GetDB()
+	inbound := &model.Inbound{
+		UserId: 1, Tag: "commercial-in-relay", Remark: "Hysteria2", Enable: true, Port: 24443,
+		Protocol: model.Hysteria, Settings: `{"version":2,"clients":[]}`,
+		StreamSettings: `{"network":"hysteria","security":"tls","tlsSettings":{"serverName":"vpn.pheero.com"},"hysteriaSettings":{"version":2}}`,
+	}
+	if err := db.Create(inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	client := &model.ClientRecord{Email: "relay-customer", SubID: "relay-sub", Auth: "relay-auth", Enable: true}
+	if err := db.Create(client).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ClientInbound{ClientId: client.Id, InboundId: inbound.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.LineNode{
+		ID: "line-relay", Fingerprint: strings.Repeat("c", 64), Remark: "Provider Hysteria",
+		PublicName: "Hysteria2", Protocol: "hysteria", OutboundTag: "commercial-line-relay",
+		OutboundCiphertext: "encrypted", InboundID: &inbound.Id, Status: "healthy", HealthStatus: "healthy",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	entitlement := &model.SubscriptionEntitlement{
+		ID: "entitlement-relay", CustomerID: "customer-relay", PlanID: "plan-relay", OrderID: "order-relay",
+		InternalClientID: client.Email, SubscriptionID: client.SubID, Status: "active",
+		ResidentialRelayEnabled: true, ResidentialRelayLimit: 1, StartsAt: time.Now().UTC(),
+	}
+	if err := db.Create(entitlement).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ResidentialRelay{
+		ID: "residential-relay", CustomerID: entitlement.CustomerID, EntitlementID: entitlement.ID,
+		InboundID: inbound.Id, Name: "伦敦", OutboundTag: "residential-relay-london",
+		SOCKSHost: "8.8.8.8", SOCKSPort: 1080, Status: "active",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	links, _, _, _, err := NewSubService("").GetSubs(client.SubID, "vpn.pheero.com")
+	if err != nil || len(links) != 1 {
+		t.Fatalf("links=%v err=%v", links, err)
+	}
+	parsed, err := url.Parse(links[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Fragment != "伦敦" {
+		t.Fatalf("residential relay alias = %q, want 伦敦", parsed.Fragment)
+	}
+	named := NewLinkProvider().LinksForClientNamed("vpn.pheero.com", inbound, client.Email, "伦敦")
+	if len(named) != 1 {
+		t.Fatalf("named relay links = %v", named)
+	}
+	parsed, err = url.Parse(named[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Fragment != "伦敦" {
+		t.Fatalf("relay QR alias = %q, want 伦敦", parsed.Fragment)
 	}
 }
 

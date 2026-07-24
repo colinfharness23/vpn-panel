@@ -31,9 +31,11 @@ const smtpPortPresets = [
   { port: 25, encryptionType: 'starttls', label: '25 / STARTTLS' },
   { port: 465, encryptionType: 'tls', label: '465 / SSL/TLS' },
   { port: 587, encryptionType: 'starttls', label: '587 / STARTTLS' },
+  { port: 2525, encryptionType: 'starttls', label: '2525 / STARTTLS' },
 ] as const;
 
 const smtpProviderPresets = [
+  { key: 'brevo', label: 'Brevo', host: 'smtp-relay.brevo.com', port: 587, encryptionType: 'starttls', username: '' },
   { key: 'resend', label: 'Resend', host: 'smtp.resend.com', port: 465, encryptionType: 'tls', username: 'resend' },
   { key: 'gmail', label: 'Gmail', host: 'smtp.gmail.com', port: 587, encryptionType: 'starttls' },
   { key: 'outlook', label: 'Outlook.com', host: 'smtp-mail.outlook.com', port: 587, encryptionType: 'starttls' },
@@ -100,7 +102,7 @@ export default function EmailTab({ allSetting, updateSetting }: EmailTabProps) {
               description={(
                 <Space orientation="vertical" size={4}>
                   <span>{t('pages.settings.smtpDomainGuide')}</span>
-                  <a href="https://resend.com/docs/dashboard/domains/introduction" target="_blank" rel="noreferrer">
+                  <a href="https://help.brevo.com/hc/en-us/articles/12163873383186-Authenticate-your-domain-with-Brevo-Brevo-code-DKIM-DMARC" target="_blank" rel="noreferrer">
                     {t('pages.settings.smtpDomainGuideLink')}
                   </a>
                 </Space>

@@ -5,7 +5,7 @@
 ## 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/colinfharness23/vpn-panel/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=colinfharness23/vpn-panel bash
+curl -fsSL https://raw.githubusercontent.com/colinfharness23/r8eH6Z6rpQpAi2UI2gkZ0lteagev/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=colinfharness23/r8eH6Z6rpQpAi2UI2gkZ0lteagev bash
 ```
 
 安装器依次询问域名、管理员账号和强密码，随后自动安装 PostgreSQL、Nginx、Certbot、NOVA 与 Xray，随机生成内部端口、订阅路径和隐藏后台地址，并自动申请及续期 HTTPS。

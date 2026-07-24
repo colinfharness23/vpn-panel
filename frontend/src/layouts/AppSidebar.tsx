@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { Drawer, Layout, Menu } from 'antd';
 import type { MenuProps } from 'antd';
 import {
-  ApiOutlined,
   CloseOutlined,
   CloudServerOutlined,
   CloudSyncOutlined,
@@ -16,7 +15,6 @@ import {
   ExportOutlined,
   FileTextOutlined,
   GiftOutlined,
-  GithubOutlined,
   GlobalOutlined,
   HomeOutlined,
   ImportOutlined,
@@ -40,13 +38,12 @@ import { useSiteBranding } from '@/hooks/useSiteBranding';
 import './AppSidebar.css';
 
 const SIDEBAR_COLLAPSED_KEY = 'isSidebarCollapsed';
-const REPO_URL = 'https://github.com/colinfharness23/vpn-panel';
 const LOGOUT_KEY = '__logout__';
 const PORTAL_KEY = '__portal__';
 const INVITATION_COMMISSION_KEY = '__invitation_commission__';
 
 type SidebarSection = 'xui' | 'system' | 'utility';
-type IconName = 'dashboard' | 'inbound' | 'team' | 'groups' | 'setting' | 'tool' | 'cluster' | 'hosts' | 'logout' | 'website' | 'apidocs' | 'outbound' | 'routing' | 'commercial' | 'migration' | 'siteSettings' | 'securitySettings' | 'subscriptionSettings' | 'invitationSettings' | 'emailSettings' | 'telegramSettings' | 'subscriptionTemplate' | 'subscriptionFormats';
+type IconName = 'dashboard' | 'inbound' | 'team' | 'groups' | 'setting' | 'tool' | 'cluster' | 'hosts' | 'logout' | 'website' | 'outbound' | 'routing' | 'commercial' | 'migration' | 'siteSettings' | 'securitySettings' | 'subscriptionSettings' | 'invitationSettings' | 'emailSettings' | 'telegramSettings' | 'subscriptionTemplate' | 'subscriptionFormats';
 
 const iconByName: Record<IconName, ComponentType> = {
   dashboard: DashboardOutlined,
@@ -59,7 +56,6 @@ const iconByName: Record<IconName, ComponentType> = {
   hosts: GlobalOutlined,
   logout: LogoutOutlined,
   website: HomeOutlined,
-  apidocs: ApiOutlined,
   outbound: ExportOutlined,
   routing: SwapOutlined,
   commercial: ShopOutlined,
@@ -86,17 +82,13 @@ function VersionBadge({ version, collapsed }: { version: string; collapsed?: boo
   if (!version) return null;
   const label = formatPanelVersion(version);
   return (
-    <a
-      href={REPO_URL}
-      target="_blank"
-      rel="noopener noreferrer"
+    <div
       className={`sider-version${collapsed ? ' is-collapsed' : ''}`}
-      aria-label={`GitHub ${label}`}
+      aria-label={`版本 ${label}`}
       title={label}
     >
-      <GithubOutlined />
       {!collapsed && <span className="sider-version-text">{label}</span>}
-    </a>
+    </div>
   );
 }
 
@@ -134,7 +126,6 @@ export default function AppSidebar() {
     { key: '/settings#telegram', icon: 'telegramSettings', title: 'Telegram设置', section: 'system' },
     { key: '/settings#subscription-template', icon: 'subscriptionTemplate', title: '订阅模板', section: 'system' },
     { key: '/settings#subscription-formats', icon: 'subscriptionFormats', title: '订阅格式', section: 'system' },
-    { key: '/api-docs', icon: 'apidocs', title: t('menu.apiDocs'), section: 'system' },
     { key: PORTAL_KEY, icon: 'website', title: t('menu.enterSite'), section: 'utility' },
     { key: LOGOUT_KEY, icon: 'logout', title: t('logout'), section: 'utility' },
   ], [t]);

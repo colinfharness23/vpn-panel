@@ -19,7 +19,7 @@ var routePattern = regexp.MustCompile(`\b(g|api)\.(GET|POST|PUT|DELETE|PATCH|HEA
 // docRoutePattern matches { method: 'X', path: 'Y' ... } entries in endpoints.ts.
 var docRoutePattern = regexp.MustCompile(`method:\s*["']([A-Z]+)["']\s*,\s*path:\s*["']([^"']+)["']`)
 
-// buildDocSet parses frontend/src/pages/api-docs/endpoints.ts and returns the
+// buildDocSet parses frontend/src/openapi/endpoints.ts and returns the
 // set of documented "METHOD PATH" keys. WS pseudo-routes and subscription
 // placeholders (paths starting with /{...}) are skipped because they aren't
 // registered on the main Gin engine.
@@ -29,7 +29,7 @@ func buildDocSet(t *testing.T) map[string]bool {
 	if err != nil {
 		t.Fatalf("failed to get current dir: %v", err)
 	}
-	endpointsPath := filepath.Join(controllerDir, "..", "..", "..", "frontend", "src", "pages", "api-docs", "endpoints.ts")
+	endpointsPath := filepath.Join(controllerDir, "..", "..", "..", "frontend", "src", "openapi", "endpoints.ts")
 	data, err := os.ReadFile(endpointsPath)
 	if err != nil {
 		t.Fatalf("failed to read endpoints.ts at %s: %v", endpointsPath, err)
@@ -136,7 +136,7 @@ func TestAPIRoutesDocumented(t *testing.T) {
 			"/panel/clients": true, "/panel/groups": true,
 			"/panel/nodes": true, "/panel/settings": true,
 			"/panel/xray": true, "/panel/outbound": true,
-			"/panel/routing": true, "/panel/api-docs": true,
+			"/panel/routing": true,
 		}
 		if spaPages[r.Path] {
 			continue
@@ -145,11 +145,6 @@ func TestAPIRoutesDocumented(t *testing.T) {
 		if r.Path == "/panel/csrf-token" {
 			continue
 		}
-		// Skip Chrome DevTools route
-		if strings.Contains(r.Path, ".well-known") {
-			continue
-		}
-
 		sourceSet[key] = true
 		if docSet[key] {
 			foundInDoc++
@@ -185,7 +180,7 @@ func TestCommercialSurfaceHasNoReversalChannel(t *testing.T) {
 		filepath.Join(root, "frontend", "src", "portal", "PortalApp.tsx"),
 		filepath.Join(root, "frontend", "src", "portal", "translations.ts"),
 		filepath.Join(root, "frontend", "src", "pages", "commercial", "CommercialPage.tsx"),
-		filepath.Join(root, "frontend", "src", "pages", "api-docs", "endpoints.ts"),
+		filepath.Join(root, "frontend", "src", "openapi", "endpoints.ts"),
 	}
 	forbiddenTerms := []string{"ref" + "und", "退" + "款"}
 	for _, path := range files {

@@ -8,7 +8,7 @@ randomized administrator path.
 Run as root:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/colinfharness23/vpn-panel/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=colinfharness23/vpn-panel bash
+curl -fsSL https://raw.githubusercontent.com/colinfharness23/r8eH6Z6rpQpAi2UI2gkZ0lteagev/main/deploy/ubuntu/install.sh | env NOVA_GITHUB_REPO=colinfharness23/r8eH6Z6rpQpAi2UI2gkZ0lteagev bash
 ```
 
 Operational helpers installed by the script:

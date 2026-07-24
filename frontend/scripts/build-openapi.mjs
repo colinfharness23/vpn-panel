@@ -3,12 +3,12 @@ import { writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { sections } from '../src/pages/api-docs/endpoints.ts';
+import { sections } from '../src/openapi/endpoints.ts';
 import { EXAMPLES } from '../src/generated/examples.ts';
 import { SCHEMAS } from '../src/generated/schemas.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const outPath = join(__dirname, '..', 'public', 'openapi.json');
+const outPath = join(__dirname, '..', 'openapi.generated.json');
 
 const PANEL_VERSION = process.env.X_UI_VERSION || '3.x';
 
@@ -211,10 +211,10 @@ function buildSpec() {
   return {
     openapi: '3.0.3',
     info: {
-      title: '3X-UI Panel API',
+      title: 'Commercial Panel Internal API Contract',
       version: PANEL_VERSION,
       description:
-        'Programmatic interface to a 3X-UI panel. Authenticate either by logging in (cookie) or with an API token from Settings → Security → API Token (Bearer). All endpoints under /panel/api/* honour both modes — an API token is a full-admin credential, so treat it like the panel password.',
+        'Build-time contract for internal route consistency and generated client types. It is not published as a website asset.',
     },
     servers: [
       { url: '/', description: 'Current panel (basePath aware)' },

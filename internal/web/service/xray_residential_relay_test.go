@@ -31,6 +31,15 @@ func TestInjectResidentialRelaysScopesRouteToCustomerAndInbound(t *testing.T) {
 	if err := db.Create(inbound).Error; err != nil {
 		t.Fatalf("create inbound: %v", err)
 	}
+	carrier := &model.LineNode{
+		ID: "line-1", Fingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		Remark: "carrier", PublicName: "Carrier", Protocol: "vless",
+		OutboundTag: "commercial-line-carrier", OutboundCiphertext: "unused",
+		InboundID: &inbound.Id, Status: "healthy", HealthStatus: "healthy",
+	}
+	if err := db.Create(carrier).Error; err != nil {
+		t.Fatalf("create carrier: %v", err)
+	}
 	client := &model.ClientRecord{Email: "customer-internal-id", UUID: "dc7e35bb-e77a-474d-ab7b-c626df961957", Enable: true}
 	if err := db.Create(client).Error; err != nil {
 		t.Fatalf("create client: %v", err)
@@ -85,6 +94,10 @@ func TestInjectResidentialRelaysScopesRouteToCustomerAndInbound(t *testing.T) {
 	if credentials["user"] != "proxy-user" || credentials["pass"] != "proxy-password" {
 		t.Fatalf("unexpected decrypted credentials: %#v", credentials)
 	}
+	proxySettings := outbounds[1]["proxySettings"].(map[string]any)
+	if proxySettings["tag"] != carrier.OutboundTag {
+		t.Fatalf("residential SOCKS must detour through selected carrier: %#v", proxySettings)
+	}
 
 	var routing map[string]any
 	if err := json.Unmarshal(cfg.RouterConfig, &routing); err != nil {
@@ -103,5 +116,20 @@ func TestInjectResidentialRelaysScopesRouteToCustomerAndInbound(t *testing.T) {
 	}
 	if got := rule["user"].([]any)[0]; got != client.Email {
 		t.Fatalf("route leaked beyond selected customer: got %v", got)
+	}
+
+	if err := db.Delete(carrier).Error; err != nil {
+		t.Fatalf("delete carrier: %v", err)
+	}
+	failClosed := &xray.Config{
+		OutboundConfigs: json_util.RawMessage(`[{"tag":"direct","protocol":"freedom"}]`),
+		RouterConfig:    json_util.RawMessage(`{"rules":[{"type":"field","network":"tcp","outboundTag":"direct"}]}`),
+	}
+	injectResidentialRelays(failClosed)
+	if err := json.Unmarshal(failClosed.OutboundConfigs, &outbounds); err != nil {
+		t.Fatalf("decode fail-closed outbounds: %v", err)
+	}
+	if len(outbounds) != 1 {
+		t.Fatalf("missing carrier injected a direct residential SOCKS outbound: %#v", outbounds)
 	}
 }

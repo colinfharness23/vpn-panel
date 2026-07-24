@@ -7,11 +7,18 @@ source /etc/nova/deploy.env
 
 old_path=""
 revert_armed=0
+valid_admin_path() {
+  local value="$1"
+  [[ $value =~ ^[0-9]{18}$ ]] ||
+    [[ $value =~ ^[A-Za-z0-9_-]{40}$ &&
+       $value =~ [A-Z] && $value =~ [a-z] && $value =~ [0-9] &&
+       $value =~ [_-] ]]
+}
 restore_old_path() {
   local failed_status="$1"
   trap - ERR
   set +e
-  if (( revert_armed == 1 )) && [[ $old_path =~ ^[0-9]{18}$ ]]; then
+  if (( revert_armed == 1 )) && valid_admin_path "$old_path"; then
     sed -i "s|^NOVA_ADMIN_PATH=.*$|NOVA_ADMIN_PATH=$old_path|" /etc/nova/deploy.env
     sed -i "s|^XUI_ADMIN_BASE_PATH=.*$|XUI_ADMIN_BASE_PATH=/$old_path/|" /etc/default/x-ui
     systemctl restart x-ui
@@ -22,16 +29,22 @@ restore_old_path() {
 trap 'restore_old_path "$?"' ERR
 
 generate_admin_path() {
-  local result="" byte
-  for _ in $(seq 1 18); do
-    byte="$(od -An -N1 -tu1 /dev/urandom | tr -d ' ')"
-    result="$result$((byte % 10))"
+  local result
+  for _ in $(seq 1 100); do
+    result="$(openssl rand -base64 60 | tr '+/' '_-' | tr -d '=\r\n' | cut -c1-40)"
+    if [[ $result =~ ^[A-Za-z0-9_-]{40}$ &&
+          $result =~ [A-Z] && $result =~ [a-z] && $result =~ [0-9] &&
+          $result =~ [_-] ]]; then
+      printf '%s' "$result"
+      return 0
+    fi
   done
-  printf '%s' "$result"
+  return 1
 }
 
 old_path="$NOVA_ADMIN_PATH"
-new_path="$(generate_admin_path)"
+valid_admin_path "$old_path" || { echo "当前管理员入口格式无效。" >&2; exit 1; }
+new_path="$(generate_admin_path)" || { echo "生成新管理员入口失败。" >&2; exit 1; }
 while [[ $new_path == "$old_path" ]]; do new_path="$(generate_admin_path)"; done
 
 revert_armed=1

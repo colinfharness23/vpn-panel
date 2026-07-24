@@ -39,11 +39,13 @@ jobs:
           shellcheck -S error -x deploy/ubuntu/*.sh
           sudo env NOVA_INSTALL_PORT_SELF_TEST=1 bash deploy/ubuntu/install.sh
 
-      - name: Validate managed-line Nginx ingress syntax
+      - name: Validate managed-line and download Nginx syntax
         run: |
           ingress='location ~ "^/nova-line/[2-5][0-9]{4}/[0-9a-f]{16}\$" {'
           grep -Fq "$ingress" deploy/ubuntu/install.sh
           grep -Fq "$ingress" deploy/ubuntu/update.sh
+          grep -Fq 'location ^~ /_nova_internal/client-applications/' deploy/ubuntu/install.sh
+          grep -Fq 'location ^~ /_nova_internal/client-applications/' deploy/ubuntu/update.sh
           prefix=$(mktemp -d)
           cat >"$prefix/nginx.conf" <<'EOF'
           pid logs/nginx.pid;
@@ -53,6 +55,17 @@ jobs:
                   listen 127.0.0.1:18080;
                   location ~ "^/nova-line/[2-5][0-9]{4}/[0-9a-f]{16}$" {
                       return 204;
+                  }
+                  location ^~ /_nova_internal/client-applications/ {
+                      internal;
+                      alias /var/lib/x-ui/uploads/client-applications/;
+                      sendfile on;
+                      tcp_nopush on;
+                      limit_rate 0;
+                      open_file_cache max=100 inactive=60s;
+                      open_file_cache_valid 60s;
+                      open_file_cache_min_uses 1;
+                      open_file_cache_errors off;
                   }
               }
           }
@@ -74,7 +87,9 @@ jobs:
           test "$domain_line" -lt "$admin_line"
           test "$admin_line" -lt "$password_line"
           grep -Fq 'generate_admin_path' "$install"
-          grep -Fq '^[0-9]{18}$' "$install"
+          grep -Fq '^[A-Za-z0-9_-]{40}$' "$install"
+          grep -Fq 'XUI_APPLICATION_ACCEL_PREFIX=/_nova_internal/client-applications/' "$install"
+          grep -Fq 'location ^~ /_nova_internal/client-applications/' "$install"
           grep -Fq 'NOVA_RELEASE_ASSET_DIR' "$install"
           grep -Fq 'NOVA_INSTALL_PORT_SELF_TEST' "$install"
           grep -Fq 'reset_saved_internal_port' "$install"
@@ -92,6 +107,7 @@ jobs:
             test -s "deploy/ubuntu/${helper}.sh"
           done
           grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/update.sh
+          grep -Fq '/usr/local/sbin/nova-rotate-admin-path' deploy/ubuntu/update.sh
           grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/backup.sh
           grep -Fq 'NOVA_ADMIN_PATH' deploy/ubuntu/rollback.sh
           grep -Fq 'generate_admin_path' deploy/ubuntu/rotate-admin-path.sh

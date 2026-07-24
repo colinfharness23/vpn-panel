@@ -117,6 +117,7 @@ export default function MigrationPage() {
   const [preflight, setPreflight] = useState<MigrationPreflight | null>(null);
   const [credentials, setCredentials] = useState<MigrationCredentials | null>(null);
   const [checking, setChecking] = useState(false);
+  const [preflightError, setPreflightError] = useState('');
   const [startOpen, setStartOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [job, setJob] = useState<MigrationJob | null>(null);
@@ -156,10 +157,19 @@ export default function MigrationPage() {
   async function runPreflight(values: MigrationCredentials) {
     setChecking(true);
     setPreflight(null);
+    setPreflightError('');
     setCredentials(values);
     try {
-      const response = await HttpUtil.post<MigrationPreflight>('/panel/api/server/migration/preflight', values);
-      if (response.success && response.obj) setPreflight(response.obj);
+      const response = await HttpUtil.post<MigrationPreflight>(
+        '/panel/api/server/migration/preflight',
+        values,
+        { timeout: 35_000, silent: true },
+      );
+      if (response.success && response.obj) {
+        setPreflight(response.obj);
+      } else {
+        setPreflightError(response.msg || '目标服务器没有返回可用的检测结果，请检查 SSH 地址、端口和账号权限。');
+      }
     } finally {
       setChecking(false);
     }
@@ -191,6 +201,7 @@ export default function MigrationPage() {
 
   function resetConnection() {
     setPreflight(null);
+    setPreflightError('');
     setCredentials(null);
     setJob(null);
     sessionStorage.removeItem(MIGRATION_JOB_KEY);
@@ -285,6 +296,16 @@ export default function MigrationPage() {
 
           <Col xs={24} xl={14}>
             <Card title={<Space><GlobalOutlined />迁移前检查</Space>} className="migration-card migration-preflight-card">
+              {preflightError && (
+                <Alert
+                  type="error"
+                  showIcon
+                  title="迁移环境检测失败"
+                  description={preflightError}
+                  action={<Button size="small" onClick={() => credentials && void runPreflight(credentials)}>重新检测</Button>}
+                  style={{ marginBottom: 16 }}
+                />
+              )}
               {!preflight && !checking && (
                 <div className="migration-empty">
                   <SafetyCertificateOutlined />

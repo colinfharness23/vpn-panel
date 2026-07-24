@@ -604,6 +604,9 @@ func (s *SubService) genTemplatedRemark(inbound *model.Inbound, client model.Cli
 // first link and the name-only part thereafter; displays render the name-only
 // part). With no template it falls back to inbound, host and email joined by "-".
 func (s *SubService) genHostRemark(inbound *model.Inbound, client model.Client, hostRemark string, transport string) string {
+	if relayName, ok := s.residentialRelayRemark(inbound, client.Email); ok {
+		return relayName
+	}
 	if publicName, ok := s.managedRemark(inbound); ok {
 		return publicName
 	}

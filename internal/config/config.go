@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"unicode"
 )
 
 //go:embed version
@@ -144,8 +143,9 @@ func GetPortOverride() (port int, configured bool, err error) {
 
 // GetAdminBasePath returns the externally visible administrator route. The
 // commercial production profile requires an independently configured,
-// unguessable 18-digit path; development keeps the historical base path when
-// no override is present so upstream workflows remain usable.
+// unguessable URL-safe path. New deployments use 40 cryptographically random
+// characters; the former 18-digit form remains readable only so an existing
+// installation can rotate without being locked out.
 func GetAdminBasePath(fallback string) (string, error) {
 	raw := strings.TrimSpace(os.Getenv("XUI_ADMIN_BASE_PATH"))
 	if raw == "" {
@@ -156,12 +156,39 @@ func GetAdminBasePath(fallback string) (string, error) {
 	}
 
 	value := strings.Trim(raw, "/")
-	if len(value) != 18 {
-		return "", fmt.Errorf("XUI_ADMIN_BASE_PATH must contain exactly 18 digits")
+	legacy := len(value) == 18
+	strong := len(value) == 40
+	if !legacy && !strong {
+		return "", fmt.Errorf("XUI_ADMIN_BASE_PATH must contain a 40-character URL-safe secret")
 	}
-	for _, r := range value {
-		if !unicode.IsDigit(r) || r > unicode.MaxASCII {
-			return "", fmt.Errorf("XUI_ADMIN_BASE_PATH must contain exactly 18 ASCII digits")
+	for _, char := range []byte(value) {
+		if legacy {
+			if char < '0' || char > '9' {
+				return "", fmt.Errorf("legacy XUI_ADMIN_BASE_PATH must contain exactly 18 ASCII digits")
+			}
+			continue
+		}
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' || char == '_') {
+			return "", fmt.Errorf("XUI_ADMIN_BASE_PATH must use only ASCII letters, digits, '-' and '_'")
+		}
+	}
+	if strong {
+		hasUpper, hasLower, hasDigit, hasSymbol := false, false, false, false
+		for _, char := range []byte(value) {
+			switch {
+			case char >= 'A' && char <= 'Z':
+				hasUpper = true
+			case char >= 'a' && char <= 'z':
+				hasLower = true
+			case char >= '0' && char <= '9':
+				hasDigit = true
+			case char == '-' || char == '_':
+				hasSymbol = true
+			}
+		}
+		if !hasUpper || !hasLower || !hasDigit || !hasSymbol {
+			return "", fmt.Errorf("XUI_ADMIN_BASE_PATH must include uppercase, lowercase, digit and '-' or '_' characters")
 		}
 	}
 	return "/" + value + "/", nil

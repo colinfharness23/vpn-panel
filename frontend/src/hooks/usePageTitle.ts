@@ -15,7 +15,6 @@ const TITLE_KEYS: Record<string, string> = {
   '/xray': 'menu.xray',
   '/outbound': 'menu.outbounds',
   '/routing': 'menu.routing',
-  '/api-docs': 'menu.apiDocs',
 };
 
 export function usePageTitle() {

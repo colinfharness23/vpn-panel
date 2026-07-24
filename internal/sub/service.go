@@ -71,6 +71,9 @@ type SubService struct {
 	// These names bypass the global remark template, protocol prefix and internal
 	// client email so a managed node is rendered exactly as the admin entered it.
 	managedInboundNames map[int]string
+	// residentialRelayNames overrides one managed line name only for the
+	// entitled client that configured a residential SOCKS5 exit.
+	residentialRelayNames map[int]map[string]string
 }
 
 // NewSubService creates a new subscription service with the given configuration.
@@ -107,6 +110,7 @@ func (s *SubService) PrepareForRequest(host string) {
 	s.fullyPrimedInbounds = map[int]bool{}
 	s.settingsByInbound = map[int]map[string]any{}
 	s.managedInboundNames = map[int]string{}
+	s.residentialRelayNames = map[int]map[string]string{}
 	s.loadNodes()
 	s.loadRemarkSettings()
 }
@@ -481,8 +485,48 @@ func (s *SubService) getInboundsBySubId(subId string) ([]*model.Inbound, error) 
 	if err := s.applyManagedLineBranding(inbounds); err != nil {
 		return nil, err
 	}
+	if err := s.loadResidentialRelayNames(subId); err != nil {
+		return nil, err
+	}
 	s.indexStatsBySubId(subId)
 	return inbounds, nil
+}
+
+func (s *SubService) loadResidentialRelayNames(subId string) error {
+	if strings.TrimSpace(subId) == "" {
+		return nil
+	}
+	type relayNameRow struct {
+		InboundID int    `gorm:"column:inbound_id"`
+		Email     string `gorm:"column:email"`
+		Name      string `gorm:"column:name"`
+	}
+	var rows []relayNameRow
+	now := time.Now().UTC()
+	err := database.GetDB().Table(model.ResidentialRelay{}.TableName()+" AS relays").
+		Select("relays.inbound_id, relays.name, entitlements.internal_client_id AS email").
+		Joins("JOIN "+model.SubscriptionEntitlement{}.TableName()+" AS entitlements ON entitlements.id = relays.entitlement_id AND entitlements.customer_id = relays.customer_id").
+		Where("entitlements.subscription_id = ? AND entitlements.status = ?", subId, "active").
+		Where("entitlements.residential_relay_enabled = ? AND entitlements.residential_relay_limit > 0", true).
+		Where("entitlements.expires_at IS NULL OR entitlements.expires_at > ?", now).
+		Where("relays.status IN ?", []string{"active", "pending"}).
+		Scan(&rows).Error
+	if err != nil {
+		return fmt.Errorf("load residential relay names: %w", err)
+	}
+	for i := range rows {
+		name := strings.TrimSpace(rows[i].Name)
+		if rows[i].InboundID <= 0 || rows[i].Email == "" || name == "" {
+			continue
+		}
+		byEmail := s.residentialRelayNames[rows[i].InboundID]
+		if byEmail == nil {
+			byEmail = map[string]string{}
+			s.residentialRelayNames[rows[i].InboundID] = byEmail
+		}
+		byEmail[rows[i].Email] = name
+	}
+	return nil
 }
 
 // applyManagedLineBranding replaces the private upstream node remark on every
@@ -1961,6 +2005,9 @@ func cloneStringMap(source map[string]string) map[string]string {
 // name-only part on displays); with no template it falls back to the inbound
 // remark, extra and email joined by "-".
 func (s *SubService) genRemark(inbound *model.Inbound, email string, extra string, transport string) string {
+	if relayName, ok := s.residentialRelayRemark(inbound, email); ok {
+		return relayName
+	}
 	if publicName, ok := s.managedRemark(inbound); ok {
 		return publicName
 	}
@@ -1968,6 +2015,18 @@ func (s *SubService) genRemark(inbound *model.Inbound, email string, extra strin
 		return s.genTemplatedRemark(inbound, s.lookupClient(inbound, email), extra, transport)
 	}
 	return s.withProtocolName(inbound, fallbackRemark(inbound.Remark, extra, email))
+}
+
+func (s *SubService) residentialRelayRemark(inbound *model.Inbound, email string) (string, bool) {
+	if inbound == nil || email == "" {
+		return "", false
+	}
+	if byEmail := s.residentialRelayNames[inbound.Id]; byEmail != nil {
+		if name := strings.TrimSpace(byEmail[email]); name != "" {
+			return name, true
+		}
+	}
+	return "", false
 }
 
 func (s *SubService) managedRemark(inbound *model.Inbound) (string, bool) {

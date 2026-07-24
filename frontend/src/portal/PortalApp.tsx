@@ -880,7 +880,7 @@ function PortalContent() {
     setAuthOpen(true);
   }, [authForm, dashboard, invitedByURL, registrationClosed]);
 
-  const refreshDashboard = useCallback(async () => {
+  const refreshDashboard = useCallback(async (quiet = false) => {
     if (preview) {
       setDashboard(previewDashboardForLocale(locale));
       return;
@@ -888,7 +888,10 @@ function PortalContent() {
     try {
       setDashboard(await portalRequest<Dashboard>("/api/v1/user/dashboard"));
     } catch (error) {
-      if (!(error instanceof PortalApiError) || error.status !== 401) {
+      if (
+        !quiet &&
+        (!(error instanceof PortalApiError) || error.status !== 401)
+      ) {
         message.error(
           error instanceof Error ? error.message : "Unable to load account",
         );
@@ -896,6 +899,25 @@ function PortalContent() {
       setDashboard(null);
     }
   }, [locale, message, preview]);
+
+  const authenticatedCustomerID = dashboard?.customer.id || "";
+  useEffect(() => {
+    if (preview || !authenticatedCustomerID) return;
+    const revalidate = () => {
+      void refreshDashboard(true);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") revalidate();
+    };
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const timer = window.setInterval(revalidate, 30_000);
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(timer);
+    };
+  }, [authenticatedCustomerID, preview, refreshDashboard]);
 
   const refreshAuthenticatedPortal = useCallback(async () => {
     if (preview) {
@@ -3288,14 +3310,15 @@ function ResidentialRelayPanel({ locale }: { locale: PortalLocale }) {
   );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [editing, setEditing] = useState<ResidentialRelay | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [qrRelay, setQRRelay] = useState<ResidentialRelay | null>(null);
   const preview =
     new URLSearchParams(window.location.search).get("preview") === "design";
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
     if (preview) {
       setOverview({
         enabled: true,
@@ -3303,10 +3326,11 @@ function ResidentialRelayPanel({ locale }: { locale: PortalLocale }) {
         lines: [
           { id: 101, name: "新加坡高速线路", protocol: "vless" },
           { id: 102, name: "日本优化线路", protocol: "trojan" },
+          { id: 103, name: "AnyTLS 线路", protocol: "anytls" },
         ],
         relays: [],
       });
-      setLoading(false);
+      if (showSpinner) setLoading(false);
       return;
     }
     try {
@@ -3316,15 +3340,35 @@ function ResidentialRelayPanel({ locale }: { locale: PortalLocale }) {
         ),
       );
     } catch (error) {
-      message.error(error instanceof Error ? error.message : String(error));
+      if (showSpinner) {
+        message.error(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }, [message, preview]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (preview) return;
+    const revalidate = () => {
+      void load(false);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") revalidate();
+    };
+    window.addEventListener("focus", revalidate);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    const timer = window.setInterval(revalidate, 30_000);
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.clearInterval(timer);
+    };
+  }, [load, preview]);
 
   const openEditor = (relay?: ResidentialRelay) => {
     setEditing(relay || null);
@@ -3351,13 +3395,15 @@ function ResidentialRelayPanel({ locale }: { locale: PortalLocale }) {
   };
 
   const save = async () => {
-    const values = await form.validateFields();
-    if (!editing && Boolean(values.username) !== Boolean(values.password)) {
-      message.error(text.passwordPair);
-      return;
-    }
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
+      const values = await form.validateFields();
+      if (!editing && Boolean(values.username) !== Boolean(values.password)) {
+        message.error(text.passwordPair);
+        return;
+      }
       const next = await portalRequest<ResidentialRelayOverview>(
         editing
           ? `/api/v1/user/residential-relays/${editing.id}`
@@ -3371,7 +3417,9 @@ function ResidentialRelayPanel({ locale }: { locale: PortalLocale }) {
       message.success(text.saved);
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
+      void load(false);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -3506,8 +3554,11 @@ function ResidentialRelayPanel({ locale }: { locale: PortalLocale }) {
         title={editing ? text.edit : text.add}
         okText={text.save}
         confirmLoading={saving}
+        okButtonProps={{ disabled: saving }}
+        cancelButtonProps={{ disabled: saving }}
         onOk={() => void save()}
         onCancel={() => {
+          if (savingRef.current) return;
           setEditorOpen(false);
           setEditing(null);
           form.resetFields();

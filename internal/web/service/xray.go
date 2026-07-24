@@ -553,6 +553,18 @@ func injectResidentialRelays(cfg *xray.Config) {
 		if err := db.Where("id = ? AND enable = ? AND node_id IS NULL", relay.InboundID, true).First(&inbound).Error; err != nil || inbound.Tag == "" {
 			continue
 		}
+		var carrier model.LineNode
+		carrierErr := db.Select("outbound_tag").Where(
+			"inbound_id = ? AND missing_since IS NULL AND protocol <> ?",
+			inbound.Id, string(model.AnyTLS),
+		).First(&carrier).Error
+		// Fail closed when the selected managed line cannot be resolved. A
+		// direct SOCKS outbound here would silently expose a path that bypasses
+		// the line selected by the customer.
+		if carrierErr != nil || carrier.OutboundTag == "" {
+			logger.Warning("residential relay: load carrier for [", relay.ID, "] failed:", carrierErr)
+			continue
+		}
 		var assigned int64
 		if err := db.Table(model.ClientRecord{}.TableName()+" AS clients").
 			Joins("JOIN "+model.ClientInbound{}.TableName()+" AS bindings ON bindings.client_id = clients.id").
@@ -575,11 +587,17 @@ func injectResidentialRelays(cfg *xray.Config) {
 		if username != "" && password != "" {
 			server["users"] = []any{map[string]any{"user": username, "pass": password}}
 		}
-		outbounds = append(outbounds, map[string]any{
+		relayOutbound := map[string]any{
 			"tag":      relay.OutboundTag,
 			"protocol": "socks",
 			"settings": map[string]any{"servers": []any{server}},
-		})
+		}
+		// Dial the residential SOCKS5 server through the selected managed
+		// line. The resulting path is customer -> selected line -> SOCKS5 ->
+		// destination, so the public exit is the residential proxy rather than
+		// the upstream airport node.
+		relayOutbound["proxySettings"] = map[string]any{"tag": carrier.OutboundTag}
+		outbounds = append(outbounds, relayOutbound)
 		newRules = append(newRules, map[string]any{
 			"type":        "field",
 			"inboundTag":  []any{inbound.Tag},

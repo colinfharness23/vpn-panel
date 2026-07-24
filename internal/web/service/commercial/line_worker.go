@@ -815,15 +815,85 @@ func (w *Worker) reconcileActivePlanClients(planID string) error {
 		desiredSet[inboundID] = struct{}{}
 	}
 	for i := range entitlements {
-		email := entitlements[i].InternalClientID
+		entitlement := &entitlements[i]
+		email := entitlement.InternalClientID
+		relayPolicyChanged := entitlement.ResidentialRelayEnabled != plan.ResidentialRelayEnabled ||
+			entitlement.ResidentialRelayLimit != plan.ResidentialRelayLimit
+		expiryMillis := int64(0)
+		if entitlement.ExpiresAt != nil {
+			expiryMillis = entitlement.ExpiresAt.UnixMilli()
+		}
+		entitlementUpdates := map[string]any{
+			"traffic_quota":               plan.TrafficBytes,
+			"device_limit":                plan.DeviceLimit,
+			"traffic_multiplier_permille": plan.TrafficMultiplierPermille,
+			"upload_limit_mbps":           plan.UploadLimitMbps,
+			"download_limit_mbps":         plan.DownloadLimitMbps,
+			"residential_relay_enabled":   plan.ResidentialRelayEnabled,
+			"residential_relay_limit":     plan.ResidentialRelayLimit,
+			"node_group":                  plan.NodeGroup,
+		}
+		if err := w.db.Model(entitlement).Updates(entitlementUpdates).Error; err != nil {
+			return fmt.Errorf("sync active entitlement %s with plan: %w", entitlement.ID, err)
+		}
+		entitlement.TrafficQuota = plan.TrafficBytes
+		entitlement.DeviceLimit = plan.DeviceLimit
+		entitlement.TrafficMultiplierPermille = plan.TrafficMultiplierPermille
+		entitlement.UploadLimitMbps = plan.UploadLimitMbps
+		entitlement.DownloadLimitMbps = plan.DownloadLimitMbps
+		entitlement.ResidentialRelayEnabled = plan.ResidentialRelayEnabled
+		entitlement.ResidentialRelayLimit = plan.ResidentialRelayLimit
+		entitlement.NodeGroup = plan.NodeGroup
+
 		current, err := w.clients.GetInboundIdsForEmail(w.db, email)
 		if err != nil {
 			return err
 		}
-		needRuntimeRestart, err := w.clients.AttachByEmail(&w.inbounds, email, desired)
+		var record model.ClientRecord
+		if err := w.db.Where("email = ?", email).First(&record).Error; err != nil {
+			return fmt.Errorf("load active subscription client %s: %w", email, err)
+		}
+		client := record.ToClient()
+		client.Email = email
+		client.SubID = entitlement.SubscriptionID
+		client.Enable = true
+		client.TotalGB = plan.TrafficBytes
+		client.TrafficMultiplierPermille = plan.TrafficMultiplierPermille
+		client.UploadLimitMbps = plan.UploadLimitMbps
+		client.DownloadLimitMbps = plan.DownloadLimitMbps
+		client.ExpiryTime = expiryMillis
+		client.LimitIP = plan.DeviceLimit
+		client.Group = plan.NodeGroup
+		client.Reset = resetDaysForPolicy(plan.ResetCycle, w.config.SubscriptionPolicy().MonthlyResetMode)
+
+		needRuntimeRestart, err := w.clients.UpdateByEmail(&w.inbounds, email, *client, current...)
+		if err != nil {
+			return fmt.Errorf("sync active subscription client %s with plan: %w", email, err)
+		}
+		needRuntimeRestart = needRuntimeRestart || relayPolicyChanged
+		// SyncInbound owns the protocol credential projection but intentionally
+		// preserves several record-only commercial limits. Persist the complete
+		// plan snapshot explicitly so dashboard reads and bandwidth/traffic
+		// enforcement observe the same values as the generated inbound users.
+		if err := w.db.Model(&model.ClientRecord{}).Where("id = ?", record.Id).Updates(map[string]any{
+			"sub_id":                      entitlement.SubscriptionID,
+			"limit_ip":                    plan.DeviceLimit,
+			"total_gb":                    plan.TrafficBytes,
+			"traffic_multiplier_permille": plan.TrafficMultiplierPermille,
+			"upload_limit_mbps":           plan.UploadLimitMbps,
+			"download_limit_mbps":         plan.DownloadLimitMbps,
+			"expiry_time":                 expiryMillis,
+			"group_name":                  plan.NodeGroup,
+			"reset":                       client.Reset,
+			"enable":                      true,
+		}).Error; err != nil {
+			return fmt.Errorf("persist active subscription client %s plan limits: %w", email, err)
+		}
+		needAttachRestart, err := w.clients.AttachByEmail(&w.inbounds, email, desired)
 		if err != nil {
 			return err
 		}
+		needRuntimeRestart = needRuntimeRestart || needAttachRestart
 		obsolete := make([]int, 0)
 		for _, inboundID := range current {
 			if _, keep := desiredSet[inboundID]; !keep {

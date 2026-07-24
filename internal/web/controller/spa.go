@@ -44,7 +44,6 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	g.GET("/xray", a.panelSPA)
 	g.GET("/outbound", a.panelSPA)
 	g.GET("/routing", a.panelSPA)
-	g.GET("/api-docs", a.panelSPA)
 
 	// SPA pages built by Vite don't have a server-rendered <meta name="csrf-token">,
 	// so they fetch the session token via this endpoint at startup and replay it
@@ -106,6 +105,9 @@ func isPanelSPAFallbackRequest(c *gin.Context) bool {
 		return false
 	}
 	if reqPath == panelPath+"/api" || strings.HasPrefix(reqPath, panelPath+"/api/") {
+		return false
+	}
+	if reqPath == panelPath+"/api-docs" || strings.HasPrefix(reqPath, panelPath+"/api-docs/") {
 		return false
 	}
 	if isStaticAssetPath(reqPath) {

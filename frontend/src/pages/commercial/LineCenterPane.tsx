@@ -6,7 +6,6 @@ import {
   Col,
   Form,
   Input,
-  InputNumber,
   Modal,
   Row,
   Select,
@@ -21,33 +20,15 @@ import {
 } from "antd";
 import {
   ApartmentOutlined,
-  CloudDownloadOutlined,
   DeleteOutlined,
   EditOutlined,
   PlusOutlined,
-  ReloadOutlined,
   ThunderboltOutlined,
 } from "@ant-design/icons";
 
 import { HttpUtil } from "@/utils";
 
 const { Text } = Typography;
-
-interface LineSource {
-  id: string;
-  name: string;
-  kind: "url" | "manual";
-  urlHost?: string;
-  refreshInterval: number;
-  enabled: boolean;
-  status: string;
-  lastError?: string;
-  lastSuccessAt?: string;
-  groupIds: string[];
-  nodeCount: number;
-  healthyCount: number;
-  publishedCount: number;
-}
 
 interface LineGroup {
   id: string;
@@ -78,10 +59,6 @@ interface LineNode {
   groupIds: string[];
 }
 
-interface PlanItem {
-  plan: { id: string; name: string; active: boolean };
-}
-
 interface ImportEntry {
   index: number;
   remark?: string;
@@ -97,15 +74,6 @@ interface ImportPreview {
   validCount: number;
   invalidCount: number;
   duplicateCount: number;
-}
-
-interface URLSourceValues {
-  name: string;
-  url: string;
-  refreshInterval: number;
-  enabled: boolean;
-  groupIds: string[];
-  planIds: string[];
 }
 
 interface GroupValues {
@@ -159,10 +127,6 @@ function arrayOrEmpty<T>(value: T[] | null | undefined): T[] {
   return Array.isArray(value) ? value : [];
 }
 
-function normalizeSource(source: LineSource): LineSource {
-  return { ...source, groupIds: arrayOrEmpty(source.groupIds) };
-}
-
 function normalizeGroup(group: LineGroup): LineGroup {
   return { ...group, planIds: arrayOrEmpty(group.planIds) };
 }
@@ -178,18 +142,14 @@ function normalizeNode(node: LineNode): LineNode {
 export default function LineCenterPane({ refreshToken }: { refreshToken: number }) {
   const [messageApi, contextHolder] = message.useMessage();
   const [modalApi, modalHolder] = Modal.useModal();
-  const [sources, setSources] = useState<LineSource[]>([]);
   const [groups, setGroups] = useState<LineGroup[]>([]);
   const [nodes, setNodes] = useState<LineNode[]>([]);
-  const [plans, setPlans] = useState<PlanItem[]>([]);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [assignmentGroupIds, setAssignmentGroupIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [busy, setBusy] = useState(false);
-  const [editingSourceId, setEditingSourceId] = useState("");
   const [editingGroupId, setEditingGroupId] = useState("");
   const [editingNode, setEditingNode] = useState<LineNode | null>(null);
-  const [urlForm] = Form.useForm<URLSourceValues>();
   const [groupForm] = Form.useForm<GroupValues>();
   const [manualForm] = Form.useForm<ManualImportValues>();
   const [nodeAliasForm] = Form.useForm<NodeAliasValues>();
@@ -199,13 +159,8 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
     const generation = ++loadGeneration.current;
     setBusy(true);
     try {
-      const [sourceResult, groupResult, nodeResult, planResult] =
+      const [groupResult, nodeResult] =
         await Promise.all([
-          HttpUtil.get<LineSource[]>(
-            "/panel/api/commercial/line-sources",
-            undefined,
-            { silent: true },
-          ),
           HttpUtil.get<LineGroup[]>(
             "/panel/api/commercial/line-groups",
             undefined,
@@ -216,20 +171,12 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
             undefined,
             { silent: true },
           ),
-          HttpUtil.get<PlanItem[]>(
-            "/panel/api/commercial/plans",
-            undefined,
-            { silent: true },
-          ),
         ]);
       if (generation !== loadGeneration.current) return;
-      if (sourceResult.success)
-        setSources(arrayOrEmpty(sourceResult.obj).map(normalizeSource));
       if (groupResult.success)
         setGroups(arrayOrEmpty(groupResult.obj).map(normalizeGroup));
       if (nodeResult.success)
         setNodes(arrayOrEmpty(nodeResult.obj).map(normalizeNode));
-      if (planResult.success) setPlans(arrayOrEmpty(planResult.obj));
     } finally {
       if (generation === loadGeneration.current) setBusy(false);
     }
@@ -254,21 +201,6 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
     groupForm.setFieldsValue({ active: true });
     setEditingGroupId("");
     messageApi.success(editingGroupId ? "线路组已更新" : "线路组已创建");
-    await load();
-  };
-
-  const saveURLSource = async () => {
-    const values = await urlForm.validateFields();
-    const result = await HttpUtil.post(
-      "/panel/api/commercial/line-sources",
-      { ...values, id: editingSourceId },
-      jsonOptions(),
-    );
-    if (!result.success) return;
-    urlForm.resetFields();
-    urlForm.setFieldsValue({ enabled: true, refreshInterval: 1800 });
-    setEditingSourceId("");
-    messageApi.success(editingSourceId ? "订阅来源已更新" : "订阅已导入，新节点会自动继承线路组和套餐");
     await load();
   };
 
@@ -309,17 +241,6 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
     if (!result.success) return;
     messageApi.success("节点分组已更新；托管线路将立即发布，连通探测仅作为参考");
     setSelectedNodeIds([]);
-    await load();
-  };
-
-  const refreshSource = async (id: string) => {
-    const result = await HttpUtil.post(
-      `/panel/api/commercial/line-sources/${id}/refresh`,
-      {},
-      jsonOptions(),
-    );
-    if (!result.success) return;
-    messageApi.success("已加入刷新队列");
     await load();
   };
 
@@ -388,41 +309,6 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
     });
   };
 
-  const editSource = (source: LineSource) => {
-    setEditingSourceId(source.id);
-    urlForm.setFieldsValue({
-      name: source.name,
-      url: "",
-      refreshInterval: source.refreshInterval || 1800,
-      enabled: source.enabled,
-      groupIds: source.groupIds,
-      planIds: Array.from(
-        new Set(
-          source.groupIds.flatMap(
-            (groupId) => groups.find((group) => group.id === groupId)?.planIds || [],
-          ),
-        ),
-      ),
-    });
-  };
-
-  const deleteSource = (source: LineSource) =>
-    confirmDelete(
-      "删除订阅来源",
-      `将停止 ${source.name} 的刷新；只属于该来源的节点会进入 7 天保留期。`,
-      async (headers) => {
-        const result = await HttpUtil.delete(
-          `/panel/api/commercial/line-sources/${source.id}`,
-          undefined,
-          jsonOptions(headers),
-        );
-        if (!result.success) return false;
-        messageApi.success("订阅来源已删除");
-        await load();
-        return true;
-      },
-    );
-
   const editGroup = (group: LineGroup) => {
     setEditingGroupId(group.id);
     groupForm.setFieldsValue({ name: group.name, description: group.description, active: group.active });
@@ -455,14 +341,6 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
       .map((group) => ({ value: group.id, label: group.name })),
     [groups],
   );
-  const planOptions = useMemo(
-    () => plans.map((item) => ({
-      value: item.plan.id,
-      label: `${item.plan.name}${item.plan.active ? "" : "（草稿）"}`,
-    })),
-    [plans],
-  );
-
   return (
     <Space orientation="vertical" size="large" style={{ width: "100%" }}>
       {contextHolder}
@@ -496,69 +374,19 @@ export default function LineCenterPane({ refreshToken }: { refreshToken: number 
         description="用户只连接本站域名并使用你设置的原样别名，上游地址、机场名称和凭证不会下发。VMess、VLESS 与 Trojan 统一通过本站 HTTPS 443 的独立 WebSocket 路径接入，Hysteria2 优先使用 UDP 443；AnyTLS、Shadowsocks、WireGuard 及额外 Hysteria2 线路使用页面显示的随机端口。只有使用随机端口时才需要放行对应的 TCP/UDP 20000–59999。"
       />
       <Row gutter={[16, 16]}>
-        <Col xs={12} lg={6}>
-          <Card size="small"><Statistic title="来源" value={sources.length} /></Card>
-        </Col>
-        <Col xs={12} lg={6}>
+        <Col xs={24} md={8}>
           <Card size="small"><Statistic title="线路组" value={groups.length} /></Card>
         </Col>
-        <Col xs={12} lg={6}>
+        <Col xs={24} md={8}>
           <Card size="small"><Statistic title="全部节点" value={nodes.length} /></Card>
         </Col>
-        <Col xs={12} lg={6}>
+        <Col xs={24} md={8}>
           <Card size="small"><Statistic title="已发布线路" value={nodes.filter((node) => node.published).length} /></Card>
         </Col>
       </Row>
       <Tabs
         animated={false}
         items={[
-          {
-            key: "url",
-            label: "订阅 URL 自动分配",
-            children: (
-              <Row gutter={[16, 16]}>
-                <Col xs={24} xl={10}>
-                  <Card title="添加订阅来源">
-                    <Form
-                      form={urlForm}
-                      layout="vertical"
-                      initialValues={{ refreshInterval: 1800, enabled: true, groupIds: [], planIds: [] }}
-                    >
-                      <Form.Item name="name" label="来源名称" rules={[{ required: true }]}><Input /></Form.Item>
-                      <Form.Item name="url" label="订阅 URL" rules={[{ required: true }, { type: "url" }]}><Input.Password /></Form.Item>
-                      <Form.Item name="groupIds" label="自动加入线路组" rules={[{ required: true }]}><Select mode="multiple" options={groupOptions} /></Form.Item>
-                      <Form.Item name="planIds" label="同时绑定套餐"><Select mode="multiple" options={planOptions} /></Form.Item>
-                      <Form.Item name="refreshInterval" label="刷新周期（秒）"><InputNumber min={300} max={86400} style={{ width: "100%" }} /></Form.Item>
-                      <Form.Item name="enabled" label="自动刷新" valuePropName="checked"><Switch /></Form.Item>
-                      <Space.Compact block>
-                        <Button type="primary" icon={<CloudDownloadOutlined />} onClick={saveURLSource} loading={busy} block>{editingSourceId ? "验证并保存修改" : "导入并验证"}</Button>
-                        {editingSourceId ? <Button onClick={() => { setEditingSourceId(""); urlForm.resetFields(); urlForm.setFieldsValue({ enabled: true, refreshInterval: 1800 }); }}>取消</Button> : null}
-                      </Space.Compact>
-                    </Form>
-                  </Card>
-                </Col>
-                <Col xs={24} xl={14}>
-                  <Card title="已保存来源">
-                    <Table
-                      rowKey="id"
-                      loading={busy}
-                      dataSource={sources}
-                      pagination={false}
-                      columns={[
-                        { title: "名称", dataIndex: "name" },
-                        { title: "类型", dataIndex: "kind", render: (value: string) => <Tag>{value === "url" ? "URL" : "手动"}</Tag> },
-                        { title: "域名", dataIndex: "urlHost", render: (value?: string) => value || "—" },
-                        { title: "已发布/全部", render: (_, row) => `${row.publishedCount || 0}/${row.nodeCount}` },
-                        { title: "状态", dataIndex: "status", render: (value: string) => <Tag color={healthColor(value)}>{value}</Tag> },
-                        { title: "错误", dataIndex: "lastError", ellipsis: true, render: (value?: string) => value || "—" },
-                        { title: "操作", render: (_, row) => <Space size={4}>{row.kind === "url" ? <Button size="small" icon={<EditOutlined />} onClick={() => editSource(row)}>编辑</Button> : null}{row.kind === "url" ? <Button size="small" icon={<ReloadOutlined />} onClick={() => refreshSource(row.id)}>刷新</Button> : null}<Button size="small" danger icon={<DeleteOutlined />} onClick={() => deleteSource(row)}>删除</Button></Space> },
-                      ]}
-                    />
-                  </Card>
-                </Col>
-              </Row>
-            ),
-          },
           {
             key: "manual",
             label: "协议链接批量导入",

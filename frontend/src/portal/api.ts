@@ -32,7 +32,12 @@ export async function portalRequest<T>(path: string, init: RequestInit = {}): Pr
     if (init.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   }
   headers.set('X-Requested-With', 'XMLHttpRequest');
-  const response = await fetch(`${basePath}${path}`, { ...init, headers, credentials: 'include' });
+  const response = await fetch(`${basePath}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+    cache: 'no-store',
+  });
   const payload = await response.json() as Envelope<T>;
   if (!response.ok || !payload.success) {
     throw new PortalApiError(payload.msg || `Request failed (${response.status})`, response.status);

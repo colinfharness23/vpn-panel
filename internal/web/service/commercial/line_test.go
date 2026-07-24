@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -556,6 +557,176 @@ func TestLineAssignmentAndPlanInboundUnion(t *testing.T) {
 	}
 	if len(ids) != 2 || ids[0] != managedInbound.Id || ids[1] != 24443 {
 		t.Fatalf("inbound union = %v", ids)
+	}
+}
+
+func TestReconcileActivePlanClientsSynchronizesPlanBenefits(t *testing.T) {
+	initCommercialTestDB(t)
+	db := database.GetDB()
+	inbound := model.Inbound{
+		Remark: "sync-plan-line", Enable: true, Port: 25558, Protocol: model.VLESS,
+		Settings: `{"clients":[],"decryption":"none"}`, StreamSettings: `{}`, Tag: "sync-plan-line",
+	}
+	if err := db.Create(&inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	plan := model.Plan{
+		ID: uuid.NewString(), Slug: "sync-plan", Name: "Sync plan", TrafficBytes: 250 << 30,
+		DeviceLimit: 8, TrafficMultiplierPermille: 1500, UploadLimitMbps: 80, DownloadLimitMbps: 120,
+		ResidentialRelayEnabled: true, ResidentialRelayLimit: 2, ResetCycle: "monthly",
+		NodeGroup: "premium", Visibility: "public", ProvisionInboundIDs: "[" + strconv.Itoa(inbound.Id) + "]",
+	}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	customer := model.Customer{ID: uuid.NewString(), Email: "benefit-sync@example.com", PasswordHash: "unused", Status: "active", InviteCode: "BENEFIT1"}
+	if err := db.Create(&customer).Error; err != nil {
+		t.Fatal(err)
+	}
+	expiresAt := time.Now().UTC().AddDate(0, 1, 0).Truncate(time.Millisecond)
+	client := model.ClientRecord{
+		Email: "benefit-sync-client", SubID: "benefit-sync-sub", UUID: uuid.NewString(), Enable: true,
+		TotalGB: 10, LimitIP: 1, TrafficMultiplierPermille: 1000, ExpiryTime: expiresAt.UnixMilli(),
+	}
+	if err := db.Create(&client).Error; err != nil {
+		t.Fatal(err)
+	}
+	settings, err := json.Marshal(map[string][]model.Client{"clients": {*client.ToClient()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&inbound).Update("settings", string(settings)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.ClientInbound{ClientId: client.Id, InboundId: inbound.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+	entitlement := model.SubscriptionEntitlement{
+		ID: uuid.NewString(), CustomerID: customer.ID, PlanID: plan.ID, OrderID: uuid.NewString(),
+		InternalClientID: client.Email, SubscriptionID: client.SubID, Status: "active",
+		TrafficQuota: 10, TrafficUsed: 12345, DeviceLimit: 1, TrafficMultiplierPermille: 1000,
+		StartsAt: time.Now().UTC(), ExpiresAt: &expiresAt,
+	}
+	if err := db.Create(&entitlement).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewWorker().reconcileActivePlanClients(plan.ID); err != nil {
+		t.Fatal(err)
+	}
+	var gotEntitlement model.SubscriptionEntitlement
+	if err := db.First(&gotEntitlement, "id = ?", entitlement.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotEntitlement.TrafficQuota != plan.TrafficBytes ||
+		gotEntitlement.DeviceLimit != plan.DeviceLimit ||
+		gotEntitlement.TrafficMultiplierPermille != plan.TrafficMultiplierPermille ||
+		gotEntitlement.UploadLimitMbps != plan.UploadLimitMbps ||
+		gotEntitlement.DownloadLimitMbps != plan.DownloadLimitMbps ||
+		!gotEntitlement.ResidentialRelayEnabled ||
+		gotEntitlement.ResidentialRelayLimit != plan.ResidentialRelayLimit ||
+		gotEntitlement.NodeGroup != plan.NodeGroup {
+		t.Fatalf("entitlement benefits were not synchronized: %#v", gotEntitlement)
+	}
+	if gotEntitlement.TrafficUsed != entitlement.TrafficUsed || gotEntitlement.ExpiresAt == nil || !gotEntitlement.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("usage or expiry changed during plan sync: %#v", gotEntitlement)
+	}
+	var gotClient model.ClientRecord
+	if err := db.First(&gotClient, "id = ?", client.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if gotClient.TotalGB != plan.TrafficBytes || gotClient.LimitIP != plan.DeviceLimit ||
+		gotClient.TrafficMultiplierPermille != plan.TrafficMultiplierPermille ||
+		gotClient.UploadLimitMbps != plan.UploadLimitMbps ||
+		gotClient.DownloadLimitMbps != plan.DownloadLimitMbps ||
+		gotClient.Group != plan.NodeGroup || gotClient.ExpiryTime != expiresAt.UnixMilli() {
+		t.Fatalf("client benefits were not synchronized: %#v", gotClient)
+	}
+}
+
+func TestAttachLineSubscribersAddsNewNodeToExistingActiveSubscription(t *testing.T) {
+	initCommercialTestDB(t)
+	db := database.GetDB()
+
+	group := model.LineGroup{
+		ID: uuid.NewString(), Name: "auto-attach", Active: true,
+	}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	plan := model.Plan{
+		ID: uuid.NewString(), Slug: "auto-attach", Name: "Auto attach",
+		TrafficBytes: 1, ResetCycle: "monthly", Visibility: "public",
+		ProvisionInboundIDs: `[]`,
+	}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.PlanLineGroup{PlanID: plan.ID, GroupID: group.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	inbound := model.Inbound{
+		Remark: "new managed line", Enable: true, Port: 25559, Protocol: model.VLESS,
+		Settings: `{"clients":[],"decryption":"none"}`, StreamSettings: `{}`,
+		Tag: "managed-line-auto-attach",
+	}
+	if err := db.Create(&inbound).Error; err != nil {
+		t.Fatal(err)
+	}
+	port := inbound.Port
+	node := model.LineNode{
+		ID: uuid.NewString(), Fingerprint: strings.Repeat("e", 64),
+		Remark: "new node", PublicName: "New node", Protocol: "vless",
+		OutboundTag: lineTagPrefix + "auto-attach", OutboundCiphertext: "encrypted",
+		PublicPort: &port, InboundID: &inbound.Id,
+		Status: lineStatusReady, HealthStatus: lineHealthHealthy,
+	}
+	if err := db.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.LineGroupNode{GroupID: group.ID, NodeID: node.ID}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	customer := model.Customer{
+		ID: uuid.NewString(), Email: "auto-attach@example.com",
+		PasswordHash: "unused", Status: "active", InviteCode: "AUTOATT1",
+	}
+	if err := db.Create(&customer).Error; err != nil {
+		t.Fatal(err)
+	}
+	client := model.ClientRecord{
+		Email: "auto-attach-client", SubID: "auto-attach-sub",
+		UUID: uuid.NewString(), Enable: true, TrafficMultiplierPermille: 1000,
+	}
+	if err := db.Create(&client).Error; err != nil {
+		t.Fatal(err)
+	}
+	expiresAt := time.Now().UTC().Add(time.Hour)
+	entitlement := model.SubscriptionEntitlement{
+		ID: uuid.NewString(), CustomerID: customer.ID, PlanID: plan.ID,
+		OrderID: uuid.NewString(), InternalClientID: client.Email,
+		SubscriptionID: client.SubID, Status: "active",
+		StartsAt: time.Now().UTC(), ExpiresAt: &expiresAt,
+	}
+	if err := db.Create(&entitlement).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewWorker().attachLineSubscribers(node.ID); err != nil {
+		t.Fatal(err)
+	}
+	var binding model.ClientInbound
+	if err := db.Where("client_id = ? AND inbound_id = ?", client.Id, inbound.Id).First(&binding).Error; err != nil {
+		t.Fatalf("new managed line was not attached to the existing subscription: %v", err)
+	}
+	var stored model.Inbound
+	if err := db.First(&stored, inbound.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stored.Settings, client.Email) {
+		t.Fatalf("new managed line settings do not contain the existing client: %s", stored.Settings)
 	}
 }
 

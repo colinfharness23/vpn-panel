@@ -166,7 +166,7 @@ printf 'ARCH=%s\n' "$(uname -m)"
 printf 'MACHINE_ID=%s\n' "$(cat /etc/machine-id 2>/dev/null || true)"
 printf 'DISK_FREE_KB=%s\n' "$(df -Pk / | awk 'NR==2 {print $4}')"
 if [ -e /usr/local/x-ui ] || [ -e /etc/nova/deploy.env ]; then printf 'EXISTING_INSTALL=1\n'; else printf 'EXISTING_INSTALL=0\n'; fi`
-	out, err := runMigrationRootCommand(ctx, client, req, probe, 30*time.Second)
+	out, err := runMigrationRootCommand(ctx, client, req, probe, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("目标服务器权限或环境检测失败：%w", err)
 	}
@@ -478,6 +478,10 @@ func validateMigrationRequest(req ServerMigrationRequest) (net.IP, error) {
 }
 
 func dialMigrationSSH(ctx context.Context, req ServerMigrationRequest, expectedFingerprint string) (*ssh.Client, string, error) {
+	return dialMigrationSSHWithTimeout(ctx, req, expectedFingerprint, migrationDialTimeout)
+}
+
+func dialMigrationSSHWithTimeout(ctx context.Context, req ServerMigrationRequest, expectedFingerprint string, handshakeTimeout time.Duration) (*ssh.Client, string, error) {
 	port := req.Port
 	if port == 0 {
 		port = 22
@@ -493,16 +497,27 @@ func dialMigrationSSH(ctx context.Context, req ServerMigrationRequest, expectedF
 	}
 	sshConfig := &ssh.ClientConfig{
 		User: strings.TrimSpace(req.Username), Auth: []ssh.AuthMethod{ssh.Password(req.Password)},
-		HostKeyCallback: hostKeyCallback, Timeout: migrationDialTimeout,
+		HostKeyCallback: hostKeyCallback, Timeout: handshakeTimeout,
 	}
-	dialer := net.Dialer{Timeout: migrationDialTimeout}
+	dialer := net.Dialer{Timeout: handshakeTimeout}
 	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
+		return nil, "", err
+	}
+	// x/crypto/ssh's handshake can otherwise remain blocked after the TCP
+	// connection succeeds (for example, a tarpitted port that never sends an
+	// SSH banner). Apply a real socket deadline so preflight always returns.
+	if err := conn.SetDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		conn.Close()
 		return nil, "", err
 	}
 	sshConn, channels, requests, err := ssh.NewClientConn(conn, address, sshConfig)
 	if err != nil {
 		conn.Close()
+		return nil, "", err
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		_ = sshConn.Close()
 		return nil, "", err
 	}
 	return ssh.NewClient(sshConn, channels, requests), fingerprint, nil
@@ -621,8 +636,8 @@ func loadMigrationDeployConfig() (migrationDeployConfig, error) {
 	if !regexp.MustCompile(`^[A-Za-z0-9._-]+$`).MatchString(cfg.ReleaseTag) {
 		return migrationDeployConfig{}, errors.New("当前服务器部署配置缺少有效的 Release 版本")
 	}
-	if !regexp.MustCompile(`^[0-9]{18}$`).MatchString(cfg.AdminPath) {
-		return migrationDeployConfig{}, errors.New("当前服务器部署配置缺少有效的 18 位管理员入口")
+	if !validMigrationAdminPath(cfg.AdminPath) {
+		return migrationDeployConfig{}, errors.New("当前服务器部署配置缺少有效的高强度管理员入口")
 	}
 	if !regexp.MustCompile(`^[A-Za-z0-9_.-]{4,64}$`).MatchString(cfg.AdminUsername) {
 		return migrationDeployConfig{}, errors.New("当前服务器部署配置缺少有效的管理员账号")
@@ -643,6 +658,17 @@ func loadMigrationDeployConfig() (migrationDeployConfig, error) {
 		cfg.DBUser = "nova"
 	}
 	return cfg, nil
+}
+
+func validMigrationAdminPath(value string) bool {
+	if regexp.MustCompile(`^[0-9]{18}$`).MatchString(value) {
+		return true
+	}
+	return regexp.MustCompile(`^[A-Za-z0-9_-]{40}$`).MatchString(value) &&
+		strings.ContainsAny(value, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") &&
+		strings.ContainsAny(value, "abcdefghijklmnopqrstuvwxyz") &&
+		strings.ContainsAny(value, "0123456789") &&
+		strings.ContainsAny(value, "_-")
 }
 
 func migrationInstallScriptPath() (string, error) {

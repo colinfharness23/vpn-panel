@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -113,7 +114,9 @@ func TestManagedLineIngressOnlyProxiesTheRegisteredPortAndToken(t *testing.T) {
 		ID: uuid.NewString(), Fingerprint: strings.Repeat("a", 64), Remark: "provider",
 		PublicName: "IPLC", Protocol: "vless", OutboundTag: "commercial-line-public-ingress-test",
 		OutboundCiphertext: "encrypted", PublicPort: &port, InboundID: &inbound.Id,
-		Status: "ready", HealthStatus: "healthy", ProvisionVersion: 5,
+		// Use a deliberately future-proof version here: the public controller
+		// only cares that this fixture represents a fully provisioned line.
+		Status: "ready", HealthStatus: "healthy", ProvisionVersion: 1 << 30,
 	}
 	if err := db.Create(&node).Error; err != nil {
 		t.Fatal(err)
@@ -257,5 +260,83 @@ func TestAuthenticatedApplicationDownloadSupportsRange(t *testing.T) {
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusPartialContent || response.Body.String() != "cde" {
 		t.Fatalf("range response = %d %q", response.Code, response.Body.String())
+	}
+}
+
+func TestAuthenticatedApplicationDownloadUsesInternalRedirectInProduction(t *testing.T) {
+	t.Setenv("XUI_COMMERCIAL_ENV", "test")
+	t.Setenv("XUI_DB_FOLDER", t.TempDir())
+	t.Setenv("XUI_APPLICATION_ACCEL_PREFIX", "/_nova_internal/client-applications/")
+	if err := database.InitDB(filepath.Join(t.TempDir(), "commercial-accelerated-download.db")); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := database.GetDB().DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	application := model.ClientApplication{ID: uuid.NewString(), Slug: "accelerated-app", Name: "Accelerated App", Platform: "test", Active: true}
+	if err := database.GetDB().Create(&application).Error; err != nil {
+		t.Fatal(err)
+	}
+	var upload bytes.Buffer
+	writer := multipart.NewWriter(&upload)
+	part, err := writer.CreateFormFile("package", "client.zip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(part, "accelerated-content"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	uploadRequest := httptest.NewRequest(http.MethodPost, "/upload", &upload)
+	uploadRequest.Header.Set("Content-Type", writer.FormDataContentType())
+	if err := uploadRequest.ParseMultipartForm(1 << 20); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if uploadRequest.MultipartForm != nil {
+			_ = uploadRequest.MultipartForm.RemoveAll()
+		}
+	})
+	file, header, err := uploadRequest.FormFile("package")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	saved, err := commercial.NewAdminService().SaveApplicationPackage(application.ID, file, header.Filename, header.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	customer := model.Customer{ID: uuid.NewString(), Email: "accel@example.com", PasswordHash: "unused", Status: "active", InviteCode: "ACCEL001"}
+	if err := database.GetDB().Create(&customer).Error; err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := commercial.NewAuthService(nil).CreateSession(customer.ID, "203.0.113.2", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(func(c *gin.Context) {
+		c.Set("base_path", "/")
+		c.Next()
+	})
+	NewCommercialPublicController(engine.Group(""), nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/user/applications/"+application.ID+"/download", nil)
+	request.AddCookie(&http.Cookie{Name: customerSessionCookie, Value: token})
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+
+	want := "/_nova_internal/client-applications/" + url.PathEscape(saved.PackageStoredName)
+	if response.Code != http.StatusOK || response.Header().Get("X-Accel-Redirect") != want {
+		t.Fatalf("accelerated response = %d redirect=%q, want %q", response.Code, response.Header().Get("X-Accel-Redirect"), want)
+	}
+	if response.Body.Len() != 0 {
+		t.Fatalf("accelerated response must not stream through Go, got %d bytes", response.Body.Len())
 	}
 }

@@ -296,7 +296,6 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	})
 	s.index = controller.NewIndexController(adminGroup)
 	s.panel = controller.NewXUIController(adminGroup)
-	adminGroup.GET("/panel/api/openapi.json", controller.ServeOpenAPISpec)
 	s.api = controller.NewAPIController(adminGroup)
 
 	// Initialize WebSocket hub
@@ -308,11 +307,6 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	s.ws = controller.NewWebSocketController(panel.NewWebSocketService(s.wsHub))
 	// Register WebSocket route with the private administrator prefix.
 	adminGroup.GET("/ws", s.ws.HandleWebSocket)
-
-	// Chrome DevTools endpoint for debugging web apps
-	engine.GET("/.well-known/appspecific/com.chrome.devtools.json", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{})
-	})
 
 	// Let unknown panel document routes fall back to the SPA shell, while every
 	// non-SPA miss still returns a hard 404.

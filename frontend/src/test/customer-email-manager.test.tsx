@@ -103,17 +103,17 @@ describe('customer email settings', () => {
 
     render(<EmailTab allSetting={new AllSetting()} updateSetting={updateSetting} />);
 
-    expect(screen.getByText(/Follow these five steps/)).toBeTruthy();
-    expect(screen.getByRole('link', { name: /official domain setup guide/ }).getAttribute('href'))
-      .toBe('https://resend.com/docs/dashboard/domains/introduction');
+    expect(screen.getByText(/Brevo is built in/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: /official domain authentication guide/ }).getAttribute('href'))
+      .toContain('help.brevo.com');
 
     fireEvent.mouseDown(screen.getByRole('combobox', { name: 'Common email provider' }));
-    fireEvent.click(await screen.findByText('Resend'));
+    fireEvent.click(await screen.findByText('Brevo'));
     expect(updateSetting).toHaveBeenLastCalledWith({
-      smtpHost: 'smtp.resend.com',
-      smtpPort: 465,
-      smtpEncryptionType: 'tls',
-      smtpUsername: 'resend',
+      smtpHost: 'smtp-relay.brevo.com',
+      smtpPort: 587,
+      smtpEncryptionType: 'starttls',
+      smtpUsername: '',
     });
   });
 

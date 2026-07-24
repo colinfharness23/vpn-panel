@@ -4,7 +4,14 @@ set -Eeuo pipefail
 [[ $EUID -eq 0 ]] || { echo "请使用 root 执行。" >&2; exit 1; }
 # shellcheck disable=SC1091
 source /etc/nova/deploy.env
-[[ $NOVA_ADMIN_PATH =~ ^[0-9]{18}$ ]] || { echo "部署配置中的管理员入口无效。" >&2; exit 1; }
+valid_admin_path() {
+  local value="$1"
+  [[ $value =~ ^[0-9]{18}$ ]] ||
+    [[ $value =~ ^[A-Za-z0-9_-]{40}$ &&
+       $value =~ [A-Z] && $value =~ [a-z] && $value =~ [0-9] &&
+       $value =~ [_-] ]]
+}
+valid_admin_path "$NOVA_ADMIN_PATH" || { echo "部署配置中的管理员入口无效。" >&2; exit 1; }
 
 backup_dir="/var/backups/nova/database"
 install -d -m 700 "$backup_dir"
